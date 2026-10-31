@@ -1,0 +1,2 @@
+date=2026-10-24 time=07:30:30 devname="FGT-SIM-01" devid="FGT60F0000000001" eventtime=1792827030000000000 tz="+0530" logid="0000000013" type="traffic" subtype="forward" level="notice" vd="root" srcip=10.0.0.5 dstip=198.51.100.30 dstport=443 action="accept" app="Example" sentbyte=5 rcvdbyte=6
+date=2026-10-24 time=07:30:31 devname="FGT-SIM-01" devid="FGT60F0000000001" eventtime=1792827031000000000 tz="+0530" logid="0000000013" type="traffic" subtype="forward" level="notice" vd="root" srcip=10.0.0.5 dstip=198.51.100.31 dstport=443 action="accept" sentbyte=7 rcvdbyte=8
