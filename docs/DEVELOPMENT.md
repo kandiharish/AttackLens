@@ -501,3 +501,13 @@ to the integers in §3.1. `bytes_out` = `network.bytes` when direction is outbou
   `per_attack`, `per_rule_alerts`, `unmatched_incidents`, `targets` (Good/Great pass flags).
 - `run_metrics.json` top level: `total_wall_s`, `peak_rss_mb`, `rows_per_s`, `stages` [{name, wall_s, peak_rss_mb}],
   `episodes`, `episodes_spilled`, `incidents`, `effective_config`.
+
+### 15.7 Accepted deviations from §4–§6 (orchestrator sign-off, 31 Oct; each switchable in config)
+| Spec | Deviation | Why | Literal behaviour |
+|---|---|---|---|
+| §6.6 `ok(i,j)` tactic order | Initial Access, Credential Access, Lateral Movement don't raise the per-host tactic floor (`linking.yaml path.floor_exempt_tactics`) | planted order CredAccess(9)→InitialAccess(3), LatMove(11)→Execution(4) is impossible under the literal rule | `[]` |
+| §4 R3 join | source i must be Credential Access/Persistence/PrivEsc/Initial Access with confidence ≥ 60; also `i.target_user = j.target_user` | 12 shared user names linked all noise | `r3_*` keys |
+| §6.3 gate | episodes with confidence < 40 join the component but don't count toward \|tactics\| (`gate.min_tactic_confidence`) | noise-only incidents 9/20 seeds → 1/20 | `0` |
+| §4 Stage 4 | incidents are peeled from big components (DP path + directly linked episodes; rest re-gated, ≤ 20 per component) | one noise chain can't hide a second attack | `max_incidents_per_component: 1` |
+| §4 Stage 1b hubs | `hub_min_median_daily_peers: 40`, `baseline_max_other_rules: 99` | g1 sweep (§5.3): generator users touch all 28 hosts daily | 20 / 0 |
+| §5.2 new_admin_logon | skipped for routine pairs (≥ 3 prior non-priv logons) during 08–19 UTC | separates the admin decoy without labels | `new_admin_routine_min_logons` very high |

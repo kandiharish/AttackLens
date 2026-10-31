@@ -1,0 +1,97 @@
+"""Host-monotonic path DP over one component (DEVELOPMENT.md §6 "Path DP (FR-5)"). Pure Python, no I/O.
+
+S(j) = sev_j + max(0, max_{i in Pred(j), ok(i,j)} S(i) + w_ij)
+ok(i,j) <=> rule(i,j) = R1  or  tactic_idx(j) >= tactic_idx(i)  or  tactic(i) in floor_exempt
+Nodes are processed in (ts_ms, source_seq, episode_id) order, so every edge points forward (the graph is a DAG).
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Iterable
+
+
+@dataclass(frozen=True)
+class Node:
+    id: str
+    ts_ms: int
+    seq: int
+    severity: float
+    tactic: str
+    tactic_idx: int
+
+    @property
+    def key(self) -> tuple[int, int, str]:
+        return (self.ts_ms, self.seq, self.id)
+
+
+@dataclass(frozen=True)
+class Edge:
+    i: str
+    j: str
+    rule: str
+    weight: float
+
+
+@dataclass
+class PathResult:
+    backbone: list[str]
+    branches: list[list[str]] = field(default_factory=list)
+    scores: dict[str, float] = field(default_factory=dict)
+    back: dict[str, str | None] = field(default_factory=dict)  # DP predecessor of each node
+
+
+def ok(i: Node, j: Node, rule: str, exempt: frozenset[str]) -> bool:
+    return rule == "R1" or j.tactic_idx >= i.tactic_idx or i.tactic in exempt
+
+
+def best_path(nodes: Iterable[Node], edges: Iterable[Edge], exempt: Iterable[str] = (),
+              branch_min_ratio: float = 0.5, max_branches: int = 5) -> PathResult:
+    by_id = {n.id: n for n in nodes}
+    if not by_id:
+        return PathResult(backbone=[])
+    ex = frozenset(exempt)
+    preds: dict[str, list[Edge]] = {}
+    for e in edges:
+        if e.i in by_id and e.j in by_id and by_id[e.i].key < by_id[e.j].key:
+            preds.setdefault(e.j, []).append(e)
+    order = sorted(by_id.values(), key=lambda n: n.key)
+    score: dict[str, float] = {}
+    back: dict[str, str | None] = {}
+    for n in order:
+        # Tie-break on equal value: the later predecessor (closest in time); keys are unique, so deterministic.
+        cands = [(score[e.i] + e.weight, by_id[e.i].key, e.i) for e in preds.get(n.id, ())
+                 if ok(by_id[e.i], n, e.rule, ex)]
+        best = max(cands) if cands else None
+        if best is not None and best[0] > 0.0:
+            score[n.id], back[n.id] = n.severity + best[0], best[2]
+        else:
+            score[n.id], back[n.id] = n.severity, None
+
+    def trace(end: str) -> list[str]:
+        out: list[str] = []
+        cur: str | None = end
+        while cur is not None:
+            out.append(cur)
+            cur = back[cur]
+        return out[::-1]
+
+    end = max(order, key=lambda n: (score[n.id], n.key)).id
+    backbone = trace(end)
+    covered = set(backbone)
+    used_as_pred = {p for p in back.values() if p is not None}
+    top = score[end]
+    branches: list[list[str]] = []
+    for n in sorted(order, key=lambda n: (-score[n.id], n.key)):
+        if len(branches) >= max_branches or score[n.id] < branch_min_ratio * top:
+            break
+        if n.id in covered or n.id in used_as_pred:
+            continue
+        path = trace(n.id)
+        tail = [x for x in path if x not in covered]
+        # A branch must diverge from the backbone (or an earlier branch): it shares a prefix with what is shown.
+        # Disjoint chains are not branches; incidents.py peels them into their own sub-component.
+        if tail and len(tail) < len(path):
+            branches.append(tail)
+            covered.update(tail)
+    return PathResult(backbone=backbone, branches=branches, scores=score, back=back)
