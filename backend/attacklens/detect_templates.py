@@ -229,8 +229,12 @@ def new_admin_logon(con: duckdb.DuckDBPyConnection, rule: dict[str, Any], th: di
     """Privileged remote logon on a rare (user, host) pair. Admin logon = login_success (type 3/10) + priv_assigned
     with the same (host, logon_id), excluding system logon ids and machine accounts; SSH logon = login_success by
     sshd. Pair is rare if it has <= new_admin_max_pair_seen such logons in the data set.
+    Suppressed: pairs with >= new_admin_routine_min_logons non-privileged login_success on the host when the logon
+    hour (UTC) is inside new_admin_business_hours_utc [start, end) - routine admin work.
     Internal source -> T1021 (.002 network, .001 RDP, .004 SSH); external source -> secondary T1078."""
     mx = int(th["new_admin_max_pair_seen"])
+    rmin = int(th.get("new_admin_routine_min_logons", 10**9))
+    bh0, bh1 = (int(v) for v in th.get("new_admin_business_hours_utc", [0, 0]))
     excl = sql_list([str(x).lower() for x in th.get("new_admin_excluded_logon_ids", [])])
     core = f"""
     WITH ls AS (SELECT ts_ms, source_seq, host, target_user, lower(logon_id) AS lid, logon_type, src_ip,
@@ -248,7 +252,16 @@ def new_admin_logon(con: duckdb.DuckDBPyConnection, rule: dict[str, Any], th: di
           UNION ALL BY NAME
           SELECT ls.* FROM ls ANTI JOIN adm ON ls.source_seq = adm.source_seq WHERE ls.is_ssh),
     pairs AS (SELECT host, target_user FROM x GROUP BY ALL HAVING count(*) <= {mx}),
-    k AS (SELECT x.* FROM x SEMI JOIN pairs USING (host, target_user))
+    k0 AS (SELECT x.* FROM x SEMI JOIN pairs USING (host, target_user)),
+    routine AS (SELECT e.host, e.target_user FROM events e SEMI JOIN pairs p
+                    ON e.host = p.host AND e.target_user = p.target_user
+                WHERE {OK} AND e.action = 'login_success'
+                  AND e.source_seq NOT IN (SELECT source_seq FROM x)
+                GROUP BY ALL HAVING count(*) >= {rmin}),
+    k AS (SELECT k0.* FROM k0 LEFT JOIN routine r USING (host, target_user)
+          WHERE NOT (r.host IS NOT NULL
+                     AND ((k0.ts_ms // 3600000) % 24) >= {bh0}
+                     AND ((k0.ts_ms // 3600000) % 24) < {bh1}))
     SELECT CASE WHEN src_ip IS NOT NULL AND NOT al_is_internal_ip(src_ip) THEN 'secondary' ELSE 'primary' END
                AS label,
            CASE WHEN src_ip IS NOT NULL AND NOT al_is_internal_ip(src_ip) THEN NULL

@@ -30,15 +30,20 @@ thresholds:
   beacon_session_gap_ms: 3600000 # a gap > 1 h splits a (host, dst) series into separate sessions
   # new admin logon (T1021 / T1078)
   new_admin_max_pair_seen: 2     # (user, host) pair with <= this many privileged logons in the data set
+  new_admin_routine_min_logons: 3        # pair with >= this many NON-privileged login_success on the host ...
+  new_admin_business_hours_utc: [8, 19]  # ... and logon hour in [start, end) UTC -> routine admin work, no alert
   new_admin_excluded_logon_ids: ["0x3e7", "0x3e4", "0x3e5"]
   lateral_context_window_ms: 86400000  # T1021 needs an earlier alert for the account on the source host, else T1078
   # lookups / scoring (§4 Stage 1b, §6)
-  hub_min_median_daily_peers: 20
+  hub_min_median_daily_peers: 40  # was 20: generator users log onto all 28 hosts daily -> every user/IP a hub,
+                                  # R2/R3 dead. g1 sweep (hub 40, baseline 99): det 100 / lab 100 / rebuilt 100 / FA 16.7
   seed_confidence: 65
   critical_confidence: 90
   raw_ref_score: 15.0
-  baseline_max_other_rules: 0   # rule_host_baseline counts a host-day only if it had <= this many OTHER rules
-                                # firing that day (0 = DEVELOPMENT.md §4 literal; dense noise drives base to 0)
+  baseline_max_other_rules: 99  # rule_host_baseline counts a host-day only if it had <= this many OTHER rules
+                                # firing that day. 0 = §4 literal, but dense noise then drives base_freq to 0 and every
+                                # noise alert becomes a seed. g1 sweep (hub 40, baseline 99): det 100 / lab 100 /
+                                # rebuilt 100 / FA 16.7 (vs FA 44.4 with 0)
   # evidence and episodes (§4 Stage 2/2.5, §15.4)
   evidence_max_lines: 3
   evidence_max_chars: 300
