@@ -205,7 +205,9 @@ kv_sources:
       # remip = remote peer of VPN logins (the attacker side); tunnelip (assigned inside address) is not the source
       src_ip:        [remip, srcip, {key: ui, regex: '\(([0-9A-Fa-f:.]+)\)'}]
       src_port:      [srcport]
-      dst_ip:        [dstip]
+      # VPN rows: tunnelip = inside address assigned to the session (only present on event/vpn rows), so a
+      # VPN login hands off (R1) to later activity from that IP; every other row uses dstip
+      dst_ip:        [tunnelip, dstip]
       dst_port:      [dstport]
       bytes:         [sentbyte]
       bytes_in:      [rcvdbyte]
