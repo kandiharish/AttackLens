@@ -11,7 +11,7 @@ import pytest
 
 from .conftest import FIXTURES, accounting, query, run_ingest
 
-pytest.importorskip("attacklens.ingest", reason="attacklens.ingest not written yet (BB-ingest)")
+from attacklens import ingest as _ingest  # noqa: E402,F401  (plain import: a broken module fails, never skips)
 
 
 def ecs(ts: str, user: str = "pmehta", host: str = "WS-FIN-010", **extra) -> dict:

@@ -23,6 +23,31 @@ from attacklens.schemas import CANONICAL_COLUMNS, PARTITION_COLUMNS
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 
 
+def _install_config_cache() -> None:
+    """load_config() parses ~10 YAML/JSON files (~125 ms) and tests build hundreds of contexts. Cache the parsed
+    result per (config dir, file mtimes) and hand out deep copies: every caller still gets an independent dict,
+    and an edit to config/ during the session invalidates the cache."""
+    import copy
+    import functools
+
+    real = config.load_config
+
+    @functools.lru_cache(maxsize=8)
+    def _parsed(key: tuple) -> dict[str, Any]:
+        return real(Path(key[0]))
+
+    def cached(config_dir: Path | None = None) -> dict[str, Any]:
+        d = Path(config_dir or config.CONFIG_DIR).resolve()
+        stamp = tuple(sorted((p.name, p.stat().st_mtime_ns) for p in d.glob("*") if p.is_file()))
+        return copy.deepcopy(_parsed((str(d), stamp)))
+
+    cached.__wrapped__ = real  # type: ignore[attr-defined]
+    config.load_config = cached
+
+
+_install_config_cache()
+
+
 def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line("markers", "slow: > ~5 s, not an L3 accuracy test; opt-in with -m slow or RUN_SLOW=1")
 
@@ -138,8 +163,7 @@ def write_episodes(ctx: RunContext, eps: list[dict[str, Any]], hubs: list[str] |
 
 def run_ingest(raw_dir: Path, tmp_path: Path, set_name: str = "fx") -> RunContext:
     """Stage 0 + Stage 1 the way run.py calls them, then register the `events` view."""
-    profile = pytest.importorskip("attacklens.profile", reason="attacklens.profile not written yet (BB-ingest)")
-    ingest = pytest.importorskip("attacklens.ingest", reason="attacklens.ingest not written yet (BB-ingest)")
+    from attacklens import ingest, profile  # plain import: a broken module must fail loudly, never skip
     ctx = _new_ctx(tmp_path, set_name, raw_dir=raw_dir)
     profile.run(ctx)
     ingest.run(ctx)

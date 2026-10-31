@@ -18,7 +18,6 @@ import pytest
 from .conftest import FIXTURES, accounting, make_events_parquet, query, run_ingest
 
 FX = FIXTURES / "ingest"
-# run_ingest() importorskips attacklens.profile / attacklens.ingest, so only ingest tests skip if they are missing.
 
 # (source_type) -> (rows_in, rows_ok, dropped)
 EXPECTED_ACCOUNTING = {

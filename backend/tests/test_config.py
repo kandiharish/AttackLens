@@ -13,7 +13,10 @@ from attacklens import config
 from attacklens.schemas import CANONICAL_COLUMNS, TACTICS_V20
 
 RULES_YAML = config.CONFIG_DIR / "rules.yaml"
-pytestmark = pytest.mark.skipif(not RULES_YAML.exists(), reason="config/rules.yaml not written yet (BB-detect)")
+
+
+def test_rules_yaml_exists() -> None:  # was a skipif: a missing rules file must fail, never skip silently
+    assert RULES_YAML.exists()
 
 # DEVELOPMENT.md §5.1 thresholds block
 REQUIRED_THRESHOLDS = {
