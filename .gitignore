@@ -13,3 +13,4 @@ dist/
 logs/
 50g.txt
 *.log
+reports/stress/*_findings.md
