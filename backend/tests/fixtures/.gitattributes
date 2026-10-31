@@ -1,0 +1,2 @@
+# Fixture bytes are part of the test (BOM, CRLF). Never let git normalize line endings here.
+* -text

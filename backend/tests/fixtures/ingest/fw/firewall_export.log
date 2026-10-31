@@ -1,0 +1,3 @@
+timestamp,device,src,dst,dport,bytes_sent,action
+2026-10-24T02:40:00Z,FW-EDGE-01,10.10.3.15,198.51.100.23,443,26214400,allow
+2026-10-24 02:41:00,FW-EDGE-01,10.10.3.15,203.0.113.57,22,,deny

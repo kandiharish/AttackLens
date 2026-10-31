@@ -1,0 +1,4 @@
+Oct 24 22:04:59 srv-web-01 sshd[2209]: Failed password for invalid user admin from 192.0.2.88 port 50510 ssh2
+Oct 24 22:05:11 srv-web-01 sshd[2211]: Accepted password for vreddy from 192.0.2.88 port 50522 ssh2
+Oct 24 22:06:00 srv-web-01 sudo:   vreddy : TTY=pts/0 ; PWD=/home/vreddy ; USER=root ; COMMAND=/bin/bash
+srv-web-01 sshd[2300]: Connection closed by 192.0.2.88 port 50530

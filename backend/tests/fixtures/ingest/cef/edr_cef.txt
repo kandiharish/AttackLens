@@ -1,0 +1,1 @@
+CEF:0|Mitigata|SimEDR|1.0|registry|registry_value_set|0|rt=2026-10-24T02:50:00.000Z dvchost=WS-HR-012 suser=pmehta cat=registry act=registry_value_set externalId=8f0c0e3a-0000-4000-8000-000000000001 dproc=powershell.exe

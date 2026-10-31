@@ -1,0 +1,2 @@
+{"UtcTime":"2026-10-24 02:30:00.000","EventID":1,"Computer":"WS-HR-012","Image":"C:\\Windows\\System32\\cmd.exe","ParentImage":"C:\\Program Files\\Microsoft Office\root\\Office16\\WINWORD.EXE","CommandLine":"cmd.exe /c whoami","User":"CORP\\pmehta"}
+{"UtcTime":"2026-10-24 02:31:00.500","EventID":1,"Computer":"WS-HR-012","Image":"C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe","ParentImage":"C:\\Windows\\System32\\cmd.exe","CommandLine":"powershell.exe -nop","User":"CORP\\pmehta"}
