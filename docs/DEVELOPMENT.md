@@ -521,3 +521,12 @@ to the integers in §3.1. `bytes_out` = `network.bytes` when direction is outbou
 `explicit_creds` (4648). Logon type `NewCredentials` → 9. Rules for T1059.003/.004, T1047, T1548.003, T1070.004,
 T1562.001, T1003.001, T1558.003, T1550.002, T1046, T1021.002 admin shares, T1021.006 WinRM, plus command-line variants of
 T1053.005 / T1543.003 / T1547.001 / T1070.001 / T1059.001.
+
+### 15.9 Real data = FortiGate key=value (official tiers; no ground truth) — 31 Oct
+`logs/firex-10G.log`, `logs/firex-30G.log`, `50g.txt` (small sample; line 1 is a URL) are the organisers' tiers.
+Confidential: gitignored, never copied into tests/fixtures/reports. New source_type `fortigate_kv`; new canonical
+columns `signature`, `vendor_severity`, `app`, `src_zone`, `dst_zone`, `bytes_in`. One device logs everything, so
+`host` = devname and the **entity for internal endpoints is the IP** (`subject_host` = internal src IP when no host
+name resolves). Accuracy is measured on synthetic FortiGate data from `tools/fortigate_gen.py` (planted scenarios +
+ground truth, distribution modelled on the real profile counts, no real lines copied); the real tiers report time,
+memory, accounting and "found" incidents (hand-reviewed, never a score).

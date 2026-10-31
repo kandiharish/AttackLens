@@ -35,6 +35,12 @@ CANONICAL_COLUMNS: dict[str, str] = {
     "auth_package": "VARCHAR",       # NTLM / Kerberos / Negotiate (4624 AuthenticationPackageName, LmPackageName)
     "ticket_encryption": "VARCHAR",  # Kerberos ticket encryption type, lower hex, e.g. 0x17 (4769)
     "service_name": "VARCHAR",       # 7045 ServiceName / 4769 ServiceName / ECS service.name
+    "signature": "VARCHAR",          # vendor detection name: FortiGate IPS attack / virus / webfilter catdesc
+    "vendor_severity": "VARCHAR",    # vendor's own severity/level for that detection (raw field, not a label)
+    "app": "VARCHAR",                # application name (FortiGate app / appcat)
+    "src_zone": "VARCHAR",           # interface role of the source: wan / lan / dmz / undefined
+    "dst_zone": "VARCHAR",           # interface role of the destination
+    "bytes_in": "BIGINT",            # bytes received by the source (FortiGate rcvdbyte)
     "raw_line": "VARCHAR",
 }
 
