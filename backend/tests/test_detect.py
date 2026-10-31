@@ -461,7 +461,8 @@ def test_match_rule_fires_only_on_signal(ev, desc: str, row: dict, expected: set
 def test_every_match_rule_has_a_positive_case() -> None:
     rules, _ = detect.rules_and_thresholds(config.load_config())
     from .test_detect2 import MATCH_CASES2
-    covered = set().union(*(c[2] for c in MATCH_CASES + MATCH_CASES2))
+    from .test_detect_fw import FW_MATCH_RULES
+    covered = set().union(*(c[2] for c in MATCH_CASES + MATCH_CASES2)) | FW_MATCH_RULES
     missing = {r["id"] for r in rules if r["kind"] == "match"} - covered
     assert not missing, f"match rules without a positive fixture: {sorted(missing)}"
 
@@ -471,6 +472,8 @@ def test_every_template_rule_has_tests() -> None:
     tested = {"brute_force_then_success", "password_spray", "account_created_then_elevated", "exfil_volume",
               "beaconing", "ransom_rename", "new_admin_logon",
               "sudo_escalation", "kerberoasting", "pass_the_hash"}  # last three: test_detect2.py
+    from .test_detect_fw import FW_TEMPLATES
+    tested |= FW_TEMPLATES                                     # firewall pack: test_detect_fw.py
     assert {r["template"] for r in rules if r["kind"] == "template"} <= tested
 
 
