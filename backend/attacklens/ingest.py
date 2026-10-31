@@ -28,7 +28,8 @@ from typing import Any
 from attacklens import ingest_sql as q
 from attacklens import profile as profile_stage
 from attacklens.context import RunContext
-from attacklens.db import HIVE_TYPES, count_rejects, drop_rejects, line_reader, sql_path, sql_str
+from attacklens.db import (HIVE_TYPES, MAX_LINE_SIZE, count_rejects, drop_rejects, line_reader, sql_path,
+                           sql_str)
 from attacklens.schemas import CANONICAL_COLUMNS
 
 log = logging.getLogger(__name__)
@@ -210,34 +211,50 @@ def _nonempty(body: bytes) -> int:
     return len(_LINES.findall(body)) - len(_BLANK.findall(body))
 
 
-def physical_lines(files: list[str], chunk: int = 1 << 24) -> int:
-    """Non-empty physical lines over raw bytes, split like the DuckDB line reader (LF, CRLF, lone CR).
+def scan_lines(files: list[str], chunk: int = 1 << 24, limit: int = MAX_LINE_SIZE) -> tuple[int, int]:
+    """(non-empty physical lines, lines longer than `limit`) over raw bytes, split like the DuckDB line reader
+    (LF, CRLF, lone CR).
 
     Byte-level and encoding-agnostic (never throws on invalid UTF-8 / NUL), bounded memory (one chunk at a time,
     no per-event objects). Fast path: a chunk without CR, blank or space-led lines is just count(b"\n").
-    Lines the UTF-8 reader cannot decode are the difference to the rows written.
+    With chunk <= limit only the line that is open across a chunk boundary can exceed the limit, so its length is
+    tracked exactly. Rows written + over-long lines + undecodable lines = physical lines.
     """
-    n = 0
+    chunk = min(chunk, limit)
+    n = too_long = 0
     for f in files:
         rest = b""
+        open_len = 0  # bytes of the line still open at the end of the previous chunk
         with open(f, "rb") as fh:
             while True:
-                buf = fh.read(chunk)
-                if not buf:
+                raw = fh.read(chunk)
+                if not raw:
                     break
-                buf = rest + buf
-                cut = max(buf.rfind(b"\n"), buf.rfind(b"\r"))
-                if cut < 0:  # no terminator: keep only whether the open line is non-empty (bounded memory)
+                hits = [i for i in (raw.find(b"\n"), raw.find(b"\r")) if i >= 0]
+                buf = rest + raw
+                if not hits:  # no terminator: keep only whether the open line is non-empty (bounded memory)
+                    open_len += len(raw)
                     rest = buf if len(buf) <= chunk else (b"x" if buf.strip(b" ") else b"")
                     continue
+                if open_len + min(hits) > limit:
+                    too_long += 1
+                cut = max(buf.rfind(b"\n"), buf.rfind(b"\r"))
                 body, rest = buf[:cut + 1], buf[cut + 1:]
+                open_len = len(rest)
                 if b"\r" in body or b"\n\n" in body or b"\n " in body or body.startswith((b"\n", b" ")):
                     n += _nonempty(body)
                 else:
                     n += body.count(b"\n")
+        if open_len > limit:
+            too_long += 1
         if rest.strip(b" "):
             n += _nonempty(rest)
-    return n
+    return n, too_long
+
+
+def physical_lines(files: list[str], chunk: int = 1 << 24) -> int:
+    """Non-empty physical lines (see scan_lines)."""
+    return scan_lines(files, chunk)[0]
 
 
 def _unrecognized(ctx: RunContext, prof: dict[str, Any]) -> dict[str, Any] | None:
@@ -251,7 +268,7 @@ def _unrecognized(ctx: RunContext, prof: dict[str, Any]) -> dict[str, Any] | Non
 
 
 def _accounting(ctx: RunContext, events_dir: Path, groups: list[dict[str, Any]],
-                prof: dict[str, Any], line_counts: dict[str, Future[int]] | None = None) -> list[dict[str, Any]]:
+                prof: dict[str, Any], line_counts: dict[str, Future[tuple[int, int]]] | None = None) -> list[dict[str, Any]]:
     per: dict[str, dict[str, Any]] = {}
 
     def entry(st: str) -> dict[str, Any]:
@@ -272,13 +289,14 @@ def _accounting(ctx: RunContext, events_dir: Path, groups: list[dict[str, Any]],
                 e["drop_reasons"][f"{what} (kept in ts_ok=false, action=malformed)"] = int(bad)
             if nots:
                 e["drop_reasons"]["missing_or_unparseable_timestamp (kept in ts_ok=false)"] = int(nots)
-    phys: dict[str, int] = {}
+    phys: dict[str, tuple[int, int]] = {}
     for g in groups:
         e = entry(g["source_type"])
         if g["format"] != "csv":
             fut = (line_counts or {}).get(g["rejects_key"])
-            n = fut.result() if fut is not None else physical_lines(g["files"])
-            phys[g["source_type"]] = phys.get(g["source_type"], 0) + n
+            n, lng = fut.result() if fut is not None else scan_lines(g["files"])
+            pn, pl = phys.get(g["source_type"], (0, 0))
+            phys[g["source_type"]] = (pn + n, pl + lng)
             continue
         for _, etype, n in count_rejects(ctx.con, g["rejects"]):
             reason = REJECT_REASONS.get(etype, f"read_error ({etype.lower()})")
@@ -290,10 +308,15 @@ def _accounting(ctx: RunContext, events_dir: Path, groups: list[dict[str, Any]],
                 e.setdefault("notes", {})["truncated_columns (extra fields dropped, row kept)"] = t
                 log.warning("ingest: %d %s rows had more fields than the header; extras dropped",
                             t, g["source_type"])
-    for st, n in phys.items():
+    for st, (n, lng) in phys.items():
         e = entry(st)
-        if n > e["rows_in"]:  # lines the UTF-8 reader could not decode never reached Parquet
-            e["drop_reasons"]["decode_error (invalid UTF-8, line not readable)"] = n - e["rows_in"]
+        if n > e["rows_in"]:  # lines the reader skipped never reached Parquet
+            missing = n - e["rows_in"]
+            too_long = min(lng, missing)
+            if too_long:
+                e["drop_reasons"][f"line_too_long (> {MAX_LINE_SIZE} bytes, skipped by reader)"] = too_long
+            if missing - too_long:
+                e["drop_reasons"]["decode_error (invalid UTF-8, line not readable)"] = missing - too_long
             e["rows_in"] = n
         elif n < e["rows_in"]:
             log.warning("ingest: %s physical line count %d < rows written %d", st, n, e["rows_in"])
@@ -319,7 +342,7 @@ def run(ctx: RunContext) -> dict[str, Any]:
     written = 0
     # physical line counts run on a worker thread while DuckDB (GIL released) does the COPY
     with ThreadPoolExecutor(max_workers=1, thread_name_prefix="linecount") as pool:
-        counts = {u["rejects_key"]: pool.submit(physical_lines, u["files"]) for u in units if u["format"] != "csv"}
+        counts = {u["rejects_key"]: pool.submit(scan_lines, u["files"]) for u in units if u["format"] != "csv"}
         if units:
             written = _run_copies(ctx, units, events_dir)
         else:

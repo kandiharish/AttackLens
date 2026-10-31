@@ -161,8 +161,14 @@ def profile_json(con: duckdb.DuckDBPyConnection, path: Path, sample: int,
     return out
 
 
+def _kv(k: str) -> str:
+    q = chr(34)
+    return (f"trim(nullif(regexp_extract(line, {sql_str('(?:^| )' + k + '=(' + q + '[^' + q + ']*' + q + '|[^ ]*)')}, "
+            f"1), ''), '{q}')")
+
+
 def profile_kv(con: duckdb.DuckDBPyConnection, path: Path, sample: int,
-               count_keys: list[str]) -> dict[str, Any]:
+               count_keys: list[str], kcfg: dict[str, Any] | None = None) -> dict[str, Any]:
     """Bounded sample of a key=value file: key frequencies and value counts of a few low-cardinality keys."""
     src = line_reader([path.as_posix()], filename=False)
     smp = f"(SELECT line FROM {src} WHERE line IS NOT NULL AND trim(line) <> '' LIMIT {int(sample)})"
@@ -176,6 +182,17 @@ def profile_kv(con: duckdb.DuckDBPyConnection, path: Path, sample: int,
         vals = con.execute(f"SELECT {', '.join(count_keys)}, count(*) FROM (SELECT {ex} FROM {smp}) "
                            f"GROUP BY ALL ORDER BY {len(count_keys) + 1} DESC LIMIT 200").fetchall()
         out["value_counts"] = [{**dict(zip(count_keys, r[:-1])), "n": int(r[-1])} for r in vals]
+    ofa = (kcfg or {}).get("outcome_from_action") or {}
+    if ofa.get("map"):  # verdicts the outcome map does not know yet (they would leave outcome NULL)
+        when = " AND ".join(f"lower({_kv(k)}) IN ({', '.join(sql_str(str(x).lower()) for x in v)})"
+                            for k, v in (ofa.get("when") or {}).items()) or "true"
+        known = ", ".join(sql_str(str(k).lower()) for k in ofa["map"])
+        rows = con.execute(f"SELECT lower({_kv('action')}) a, count(*) FROM {smp} WHERE {when} "
+                           f"AND coalesce(lower({_kv('action')}), '') NOT IN ({known}) GROUP BY 1 ORDER BY 2 DESC "
+                           f"LIMIT 50").fetchall()
+        out["unmapped_outcome_actions"] = {str(a): int(n) for a, n in rows}
+        if rows:
+            log.warning("%s: UTM actions without an outcome mapping: %s", path.name, out["unmapped_outcome_actions"])
     return out
 
 
@@ -204,7 +221,8 @@ def run(ctx: RunContext) -> dict[str, Any]:
             info = sniff_lines(first_lines(path, int(pcfg.get("sniff_bytes", 65536)),
                                            int(pcfg.get("sniff_lines", 10))), sources_cfg)
             if info["format"] == "kv":
-                info.update(profile_kv(ctx.con, path, sample, list(pcfg.get("kv_count_keys") or [])))
+                info.update(profile_kv(ctx.con, path, sample, list(pcfg.get("kv_count_keys") or []),
+                                       (sources_cfg.get("kv_sources") or {}).get(info["source_type"])))
             elif info["format"] == "json":
                 info.update(profile_json(ctx.con, path, sample, sources_cfg))
                 if not info.get("source_type"):

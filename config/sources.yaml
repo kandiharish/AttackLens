@@ -189,7 +189,7 @@ kv_sources:
       - '^date=\d{4}-\d\d-\d\d time=\d\d:\d\d:\d\d'
       - '^(?:[a-z_0-9]+=(?:"[^"]*"|[^ "]+) +){3}'   # >= 3 leading key= tokens
     line_regex: '^(?:[a-z_0-9]+=(?:"[^"]*"|[^ "]*) +){2}'
-    null_values: ["", "N/A", "n/a"]
+    null_values: ["", "N/A", "n/a", "(null)"]
     ts:
       epoch_key: eventtime              # 19 digits ns, 16 us, 13 ms, 10 s
       date_key: date
@@ -207,12 +207,13 @@ kv_sources:
       src_port:      [srcport]
       # VPN rows: tunnelip = inside address assigned to the session (only present on event/vpn rows), so a
       # VPN login hands off (R1) to later activity from that IP; every other row uses dstip
-      dst_ip:        [tunnelip, dstip]
+      # DNAT / VIP: the effective internal destination is tranip when trandisp includes dnat
+      dst_ip:        [tunnelip, {key: tranip, when: {trandisp: [dnat, snat+dnat, dnat+snat]}}, dstip]
       dst_port:      [dstport]
       bytes:         [sentbyte]
       bytes_in:      [rcvdbyte]
       user:          [user]
-      dst_domain:    [hostname]
+      dst_domain:    [hostname, qname]       # qname = DNS query name (utm/dns)
       file_path:     [url]
       service_name:  [service]
       app:           [app]
@@ -230,6 +231,11 @@ kv_sources:
         block: blocked
         reset: blocked
         deny: blocked
+        reset_client: blocked
+        reset_server: blocked
+        drop_session: blocked
+        clear_session: blocked
+        block_session: blocked
         pass: allowed
         pass_session: allowed
         detected: allowed
@@ -244,6 +250,7 @@ kv_sources:
       - {when: {type: [event], subtype: [system], logdesc: [admin login successful]}, action: login_success, outcome: success}
       - {when: {type: [event], subtype: [system], action: [login], status: [success]}, action: login_success}
       - {when: {type: [event], subtype: [system], action: [login], status: [failed, failure]}, action: login_failed}
+      - {when: {type: [event], subtype: [vpn], action: [ssl-login-fail, ssl-login-deny]}, action: login_failed, outcome: failure, logon_type: "10"}
       - {when: {type: [event], subtype: [vpn], action: [ssl-login, tunnel-up], status: [success]}, action: login_success, logon_type: "10"}
       - {when: {type: [event], subtype: [vpn], action: [ssl-login, tunnel-up], status: [failed, failure]}, action: login_failed, logon_type: "10"}
       - {when: {type: [utm], subtype: [ips]}, action: ips_alert}

@@ -8,6 +8,9 @@ from pathlib import Path
 
 import duckdb
 
+# Longest line the DuckDB line reader accepts; longer lines are skipped (ingest counts them as line_too_long).
+MAX_LINE_SIZE = 16_777_216
+
 # Partition columns are typed explicitly: hive inference would read ts_ok back as VARCHAR.
 HIVE_TYPES = "{'source_type': 'VARCHAR', 'ts_ok': 'BOOLEAN', 'event_day': 'DATE'}"
 
@@ -64,7 +67,7 @@ def line_reader(files: Sequence[str], filename: bool = True, rejects: str | None
           f"rejects_scan={sql_str(rejects + '_scan')}") if rejects else ""
     rj += f", encoding={sql_str(encoding)}" if encoding else ""
     return (f"read_csv({sql_list([str(f).replace(chr(92), '/') for f in files])}, columns={{'line': 'VARCHAR'}}, "
-            f"header=false, delim='\\0', quote='', escape='', auto_detect=false, max_line_size=16777216, "
+            f"header=false, delim='\\0', quote='', escape='', auto_detect=false, max_line_size={MAX_LINE_SIZE}, "
             f"strict_mode=false, ignore_errors=true{fn}{rj})")
 
 

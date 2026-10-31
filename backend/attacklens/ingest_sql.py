@@ -27,6 +27,8 @@ CANONICAL_ACTIONS = ("login_failed", "login_success", "priv_assigned", "user_cre
                      "log_cleared", "ips_alert", "av_alert", "web_blocked", "web_access", "app_ctrl",
                      "config_change", "other")
 LOGON_ACTIONS = "('login_success', 'login_failed')"
+# key=value value: "quoted (with \\" escapes)" | unquoted (must not start with a quote) | empty
+KV_VALUE = '"(?:[^"\\\\]|\\\\.)*"|[^ "][^ ]*|'
 NONEMPTY = "line IS NOT NULL AND trim(line) <> ''"
 
 
@@ -108,8 +110,7 @@ def cef_select(files: list[str], root: str, ccfg: dict[str, Any], formats: list[
     pfx_host = ("nullif(regexp_extract(line, '^(?:<\\d+>)?(?:[A-Z][a-z]{2}\\s+\\d+\\s+\\d\\d:\\d\\d:\\d\\d|"
                 "\\d{4}-\\d\\d-\\d\\dT\\S+)\\s+(\\S+)\\s+.*?CEF:\\d+\\|', 1), '')")
     vals["host"] = f"coalesce({vals['host']}, {pfx_host})" if "host" in vals else pfx_host
-    # raw_line: header signature id / name / severity blanked (the generator puts rule labels there),
-    # and the cs<N>Label=mitre technique field removed.
+    # raw_line: header signature/name/severity blanked (generator rule labels), cs<N>Label=mitre removed
     hdr = ("regexp_replace(line, 'CEF:(\\d+)\\|([^|]*)\\|([^|]*)\\|([^|]*)\\|[^|]*\\|[^|]*\\|[^|]*\\|', "
            "'CEF:\\1|\\2|\\3|\\4|-|-|-|')")
     raw = f"regexp_replace({hdr}, '\\s*cs\\d+Label=mitre\\s+cs\\d+=\\S*', '', 'g')"
@@ -123,8 +124,7 @@ def cef_select(files: list[str], root: str, ccfg: dict[str, Any], formats: list[
 
 def syslog_select(files: list[str], root: str, scfg: dict[str, Any], year: int, syslog_fmt: str,
                   formats: list[str], rejects: str | None = None) -> str:
-    """RFC 3164 lines carry no year: `year` (pipeline.yaml baseline_year) is used for every line. A Dec -> Jan
-    rollover inside one file is NOT corrected (that needs a window over the whole input)."""
+    """RFC 3164 has no year: baseline_year for every line; Dec->Jan rollover is not corrected (see sources.yaml)."""
     msgs: list[dict[str, Any]] = scfg.get("messages") or []
     conds = []
     for m in msgs:
@@ -198,28 +198,41 @@ def kv_select(stype: str, files: list[str], root: str, kcfg: dict[str, Any],
     tcfg: dict[str, Any] = kcfg.get("ts") or {}
     ts_keys = [tcfg.get(k) for k in ("epoch_key", "date_key", "time_key", "tz_key") if tcfg.get(k)]
     keys: list[str] = []
-    for k in ([a if isinstance(a, str) else a["key"] for v in fields.values() for a in v]
-              + [k for r in rules for k in (r.get("when") or {})] + ts_keys
+    alias_keys = [a if isinstance(a, str) else a["key"] for v in fields.values() for a in v]
+    alias_when = [k for v in fields.values() for a in v if isinstance(a, dict) for k in (a.get("when") or {})]
+    for k in (alias_keys + alias_when + [k for r in rules for k in (r.get("when") or {})] + ts_keys
               + list((kcfg.get("outcome_from_action") or {}).get("when") or {}) + ["action"]):
         if k not in keys:
             keys.append(k)
     nulls = sql_list([str(x) for x in kcfg.get("null_values", ["", "N/A"])])
-    raw_k = ", ".join(f"regexp_extract(line, {sql_str('(?:^| )' + k + '=(\"[^\"]*\"|[^ ]*)')}, 1) AS \"r_{k}\""
-                      for k in keys)
+    # Fast anchored `(?:^| )key=` can match INSIDE a quoted value (msg="... srcip=x"); lines flagged by a cheap
+    # match-only token walk are re-extracted by a left-to-right token walk (~5x cheaper than walking every line).
+    tok = '[a-z_0-9-]+=(?:' + KV_VALUE + ') +'
+    sus = sql_str('^(?:' + tok + ')*?[a-z_0-9-]+="(?:(?:[^"\\\\]|\\\\.)*[ ])?[a-z_0-9-]+=')
+    raw_k = ", ".join(
+        f"CASE WHEN kv_spoof THEN regexp_extract(line, {sql_str('^(?:' + tok + ')*?' + k + '=(' + KV_VALUE + ')')}, 1) "
+        f"ELSE regexp_extract(line, {sql_str('(?:^| )' + k + '=(' + KV_VALUE + ')')}, 1) END AS \"r_{k}\""
+        for k in keys)
     unquote = ", ".join(
         f"nullif(CASE WHEN list_contains({nulls}, trim(\"r_{k}\", '\"')) THEN '' ELSE trim(\"r_{k}\", '\"') END, '') "
         f"AS \"kv_{k}\"" for k in keys)
 
     def kv(a: Any) -> str:
+        """alias: "key" | {key, regex?: group 1 of the value, when?: {key: [values]} row condition}"""
         if isinstance(a, str):
             return f'"kv_{a}"'
-        return f"nullif(regexp_extract(\"kv_{a['key']}\", {sql_str(a['regex'])}, 1), '')"
-
-    vals = {f: "coalesce(" + ", ".join(kv(a) for a in v) + ")" for f, v in fields.items() if v}
+        v = f'"kv_{a["key"]}"'
+        if a.get("regex"):
+            v = f"nullif(regexp_extract({v}, {sql_str(a['regex'])}, 1), '')"
+        if a.get("when"):
+            v = f"CASE WHEN {cond(a)} THEN {v} END"
+        return v
 
     def cond(r: dict[str, Any]) -> str:
         return " AND ".join(f"lower(\"kv_{k}\") IN ({', '.join(sql_str(str(x).lower()) for x in v)})"
                             for k, v in (r.get("when") or {}).items()) or "true"
+
+    vals = {f: "coalesce(" + ", ".join(kv(a) for a in v) + ")" for f, v in fields.items() if v}
 
     def case(attr: str) -> str | None:
         arms = [f"WHEN {cond(r)} THEN {sql_str(str(r[attr]))}" for r in rules if attr in r]
@@ -256,9 +269,10 @@ def kv_select(stype: str, files: list[str], root: str, kcfg: dict[str, Any],
     return (f"SELECT {sql_str(stype)} AS source_type, rel, line, line AS raw_line, NOT ok AS malformed, "
             f"CASE WHEN ok THEN CAST({ts} AS BIGINT) END AS ts_ms, * EXCLUDE (rel, line, ok, et_ms, naive_ms, tz_ms) "
             f"FROM (SELECT rel, line, ok, {et_ms} AS et_ms, {naive} AS naive_ms, {tzms} AS tz_ms, {_fcols(vals)} FROM ("
-            f"SELECT rel, line, ok, {unquote} FROM ("
-            f"SELECT {_rel(root)} AS rel, line, regexp_matches(line, {sql_str(kcfg.get('line_regex', '='))}) AS ok, {raw_k} "
-            f"FROM {line_reader(files, rejects=rejects)} WHERE {NONEMPTY})))")
+            f"SELECT rel, line, ok, {unquote} FROM (SELECT rel, line, ok, {raw_k} FROM ("
+            f"SELECT {_rel(root)} AS rel, line, regexp_matches(line, {sql_str(kcfg.get('line_regex', '='))}) AS ok, "
+            f"regexp_matches(line, {sus}) AS kv_spoof "
+            f"FROM {line_reader(files, rejects=rejects)} WHERE {NONEMPTY}))))")
 
 
 def _user(x: str) -> str:
@@ -377,8 +391,7 @@ def normalize_sql(union_sql: str, sources: dict[str, Any]) -> str:
         "dst_zone": "lower(f_dst_zone)",
         "bytes_in": "try_cast(try_cast(f_bytes_in AS DOUBLE) AS BIGINT)",
     }
-    # Emit EVERY canonical column (schemas.CANONICAL_COLUMNS order): one added to the schema but not mapped here
-    # becomes a typed NULL with a warning, never a binder error.
+    # Emit EVERY canonical column in schema order; an unmapped one is a typed NULL + warning, never a binder error
     missing = [k for k in CANONICAL_COLUMNS if k not in cols]
     if missing:
         log.warning("ingest: canonical columns with no mapping (written as NULL): %s", missing)
