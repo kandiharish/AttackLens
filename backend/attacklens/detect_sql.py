@@ -77,6 +77,7 @@ def ev_keys(th: dict[str, Any], col: str = "source_seq", order: str = TIE_ORDER)
 
 FALLBACK_ACTIONS = ("conn_out", "conn_allowed", "conn_denied", "dns_query", "ips_alert", "av_alert", "web_blocked",
                     "web_access", "app_ctrl")
+FALLBACK_SOURCE_TYPES = ("fortigate_kv", "firewall_csv")
 
 
 def internal_ip_expr(e: str, th: dict[str, Any] | None = None) -> str:
@@ -91,12 +92,15 @@ def internal_ip_expr(e: str, th: dict[str, Any] | None = None) -> str:
 
 def subject_host_expr(e: str = "e", m: str = "m", th: dict[str, Any] | None = None) -> str:
     """Network rows: the host owning src_ip (al_ip_host joined as `m`), else the reporting host. With
-    thresholds.entity_fallback_ip, rows of entity_fallback_actions whose src_ip has no host use the internal
-    endpoint IP (firewall logs: the reporting host is the firewall itself). Needs src_zone/dst_zone on `e`."""
+    thresholds.entity_fallback_ip, rows of entity_fallback_source_types (firewalls: the reporting host is the
+    firewall itself) and entity_fallback_actions whose src_ip has no host use the internal endpoint IP. Every
+    other source keeps host_ip_map, then host. Needs source_type, src_zone and dst_zone on `e`."""
     th = th or {}
     if th.get("entity_fallback_ip"):
         acts = sql_list(list(th.get("entity_fallback_actions") or FALLBACK_ACTIONS))
-        return (f"CASE WHEN {e}.action IN {acts} THEN coalesce({m}.host, {internal_ip_expr(e, th)}, {e}.host) "
+        srcs = sql_list([str(x) for x in th.get("entity_fallback_source_types") or FALLBACK_SOURCE_TYPES])
+        return (f"CASE WHEN {e}.action IN {acts} AND {e}.source_type IN {srcs} "
+                f"THEN coalesce({m}.host, {internal_ip_expr(e, th)}, {e}.host) "
                 f"WHEN {e}.action IN {sql_list(list(NET_ACTIONS))} THEN coalesce({m}.host, {e}.host) "
                 f"ELSE {e}.host END")
     return (f"CASE WHEN {e}.action IN {sql_list(list(NET_ACTIONS))} THEN coalesce({m}.host, {e}.host) "

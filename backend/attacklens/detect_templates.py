@@ -152,7 +152,8 @@ def beaconing(con: duckdb.DuckDBPyConnection, rule: dict[str, Any], th: dict[str
     WITH c0 AS (SELECT host, src_ip, coalesce(dst_ip, lower(dst_domain)) AS dk FROM events
                 WHERE {OK} AND action IN ('conn_out', 'conn_allowed') AND coalesce(dst_ip, dst_domain) IS NOT NULL),
     cand AS (SELECT host, src_ip, dk FROM c0 GROUP BY ALL HAVING count(*) >= {n}),
-    c AS (SELECT e.ts_ms, e.source_seq, e.action, e.host, e.src_ip, e.dst_ip, e.src_user, e.target_user,
+    c AS (SELECT e.ts_ms, e.source_seq, e.source_type, e.action, e.host, e.src_ip, e.dst_ip, e.src_user,
+                 e.target_user,
                  e.src_zone, e.dst_zone, e.raw_line, coalesce(e.dst_ip, lower(e.dst_domain)) AS dk
           FROM events e WHERE {OK} AND e.action IN ('conn_out', 'conn_allowed')
                          AND coalesce(e.dst_ip, e.dst_domain) IS NOT NULL),
@@ -206,7 +207,8 @@ def exfil_volume(con: duckdb.DuckDBPyConnection, rule: dict[str, Any], th: dict[
                 WHERE {OK} AND action IN ('conn_out', 'conn_allowed') AND bytes_out > 0 AND dst_ip IS NOT NULL
                   AND NOT al_is_internal_ip(dst_ip)),
     cand AS (SELECT host, src_ip, dst_ip FROM c0 GROUP BY ALL HAVING sum(bytes_out) > {mn}),
-    c AS (SELECT e.ts_ms, e.source_seq, e.action, e.host, e.src_ip, e.dst_ip, e.bytes_out, e.src_user,
+    c AS (SELECT e.ts_ms, e.source_seq, e.source_type, e.action, e.host, e.src_ip, e.dst_ip, e.bytes_out,
+                 e.src_user,
                  e.target_user, e.src_zone, e.dst_zone, e.raw_line
           FROM events e SEMI JOIN cand ON e.host = cand.host AND e.src_ip IS NOT DISTINCT FROM cand.src_ip
                                        AND e.dst_ip = cand.dst_ip

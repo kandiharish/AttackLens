@@ -95,7 +95,8 @@ def build_match_hits(con: duckdb.DuckDBPyConnection, rules: list[dict[str, Any]]
               "], lambda x: x IS NOT NULL)"
     con.execute(f"""
         CREATE OR REPLACE TEMP TABLE al_match_hits AS
-        SELECT ts_ms, source_seq, action, host, src_user, target_user, src_ip, dst_ip, src_zone, dst_zone,
+        SELECT ts_ms, source_seq, source_type, action, host, src_user, target_user, src_ip, dst_ip, src_zone,
+               dst_zone,
                left(raw_line, {mc}) AS raw_line, {ids} AS rule_ids
         FROM events WHERE {OK} AND ts_ms IS NOT NULL AND ({cond})""")
 

@@ -43,6 +43,7 @@ thresholds:
   pth_auth_packages: ["negotiate", "ntlm"]
   entity_fallback_ip: true       # no host name for an internal endpoint -> its IP is the subject (firewall logs)
   entity_internal_zones: [lan, dmz]
+  entity_fallback_source_types: [fortigate_kv, firewall_csv]   # IP fallback only for these sources
   entity_fallback_actions: [conn_out, conn_allowed, conn_denied, dns_query, ips_alert, av_alert, web_blocked,
                             web_access, app_ctrl]
   vendor_severity_map: {critical: 90, high: 80, medium: 60, low: 40}   # signature_map row severity
