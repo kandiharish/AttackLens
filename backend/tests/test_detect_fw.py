@@ -188,12 +188,28 @@ def test_ips_other_action_silent(run) -> None:
 
 
 @pytest.mark.parametrize("sev,outcome,expected", [
-    ("critical", None, 90), ("high", "pass_session", 80), ("medium", None, 60), ("low", None, 40),
-    ("weird", None, 40), ("critical", "dropped", 70), ("high", "BLOCKED", 60), ("medium", "reset", 40),
-    ("low", "deny", 30), ("critical", "failure", 70)])
+    ("critical", None, 90), ("high", "allowed", 80), ("medium", None, 60), ("low", None, 40),
+    ("weird", None, 40), ("critical", "allowed", 90), ("high", "pass_session", 80)])
 def test_ips_row_severity(run, sev: str, outcome: str | None, expected: int) -> None:
     rows = run([ips("Log4j.RCE", sev, outcome)], "ips_signatures")
     assert [r["severity"] for r in rows] == [expected]
+
+
+# 'blocked' is what ingest writes for UTM rows the device stopped (primary case); raw verdicts kept for robustness
+BLOCKED_OUTCOMES = [("high", "blocked"), ("critical", "dropped"), ("high", "BLOCKED"), ("medium", "reset"),
+                    ("low", "deny"), ("critical", "failure")]
+
+
+@pytest.mark.parametrize("sev,outcome", BLOCKED_OUTCOMES)
+def test_ips_blocked_hit_not_an_ips_signatures_alert(run, sev: str, outcome: str) -> None:
+    assert run([ips("Log4j.RCE", sev, outcome)], "ips_signatures") == []
+
+
+@pytest.mark.parametrize("sev,outcome", BLOCKED_OUTCOMES)
+def test_ips_blocked_hit_is_one_low_severity_alert(run, sev: str, outcome: str) -> None:
+    rows = run([ips("Log4j.RCE", sev, outcome)], "ips_blocked")
+    assert lab(rows) == [("T1190", None, "Initial Access")]
+    assert (rows[0]["severity"], rows[0]["raw_alert_count"], rows[0]["subject_host"]) == (30, 1, "10.0.1.20")
 
 
 @pytest.mark.parametrize("src,dst,subject", [(EXT, "10.0.1.20", "10.0.1.20"), ("10.0.1.30", EXT, "10.0.1.30"),
@@ -212,6 +228,114 @@ def test_av_alert_fires(run) -> None:
 
 def test_av_web_access_silent(run) -> None:
     assert run([fw(T0, "web_access", src_ip="10.0.2.37", dst_ip=EXT)], "av_malware_download") == []
+
+
+@pytest.mark.parametrize("outcome,fires", [("allowed", True), (None, True), ("blocked", False), ("DROPPED", False),
+                                          ("failure", False), ("reset", False), ("deny", False)])
+def test_av_malware_download_allowed_only(run, outcome: str | None, fires: bool) -> None:
+    rows = run([fw(T0, "av_alert", signature="W32/Sim.Test!tr", src_ip="10.0.2.37", dst_ip=EXT, outcome=outcome)],
+               "av_malware_download")
+    assert [r["severity"] for r in rows] == ([80] if fires else [])
+
+
+# ================================================================ blocked_daily: av_blocked / ips_blocked
+DAY = 86_400_000
+
+
+def av(ts: int, outcome: str | None = "blocked", src: str = "10.0.2.37") -> dict:
+    return fw(ts, "av_alert", signature="W32/Sim.Test!tr", src_ip=src, dst_ip="203.0.113.5", outcome=outcome)
+
+
+def test_av_blocked_one_alert(run) -> None:
+    rows = run([av(T0)], "av_blocked")
+    assert lab(rows) == [("T1105", None, "Command and Control")]
+    r = rows[0]
+    assert (r["severity"], r["raw_alert_count"], r["subject_host"], r["src_ip"], r["dst_ip"]) == (
+        30, 1, "10.0.2.37", "10.0.2.37", "203.0.113.5")
+    assert run([av(T0)], "av_malware_download") == []  # the same row is not an allowed download
+
+
+@pytest.mark.parametrize("outcome", ["blocked", "dropped", "BLOCKED", "reset", "deny", "failure"])
+def test_av_blocked_outcomes(run, outcome: str) -> None:
+    assert [r["raw_alert_count"] for r in run([av(T0, outcome)], "av_blocked")] == [1]
+
+
+def test_av_blocked_daily_bucket_per_subject(run) -> None:
+    rows = run([av(T0), av(T0 + 3_600_000, "DROPPED"), av(T0 + DAY), av(T0, src="10.0.2.38")], "av_blocked")
+    assert sorted((r["subject_host"], r["ts_ms"], r["raw_alert_count"]) for r in rows) == [
+        ("10.0.2.37", T0, 2), ("10.0.2.37", T0 + DAY, 1), ("10.0.2.38", T0, 1)]
+
+
+@pytest.mark.parametrize("outcome", [None, "allowed", "monitored"])
+def test_av_blocked_silent_when_allowed(run, outcome: str | None) -> None:
+    assert run([av(T0, outcome)], "av_blocked") == []
+
+
+def test_ips_blocked_three_hits_one_day(run) -> None:
+    hits = [{**ips("Log4j.RCE", "high", o), "ts_ms": T0 + k * 60_000} for k, o in
+            enumerate(["blocked", "BLOCKED", "reset"])]
+    rows = run(hits, "ips_blocked")
+    assert [(r["raw_alert_count"], r["subject_host"], r["ts_ms"], r["last_ts_ms"], r["severity"]) for r in rows] == [
+        (3, "10.0.1.20", T0, T0 + 120_000, 30)]
+    assert run(hits, "ips_signatures") == []
+
+
+def test_ips_blocked_two_days_two_alerts(run) -> None:
+    hits = [{**ips("Log4j.RCE", "high", "blocked"), "ts_ms": T0 + d * DAY} for d in range(2)]
+    assert [r["raw_alert_count"] for r in run(hits, "ips_blocked")] == [1, 1]
+
+
+def test_ips_blocked_ignores_allowed_hits_and_other_actions(run) -> None:
+    rows = [ips("Log4j.RCE", "high", "allowed"), {**av(T0), "ts_ms": T0 + 1}]
+    assert run(rows, "ips_blocked") == []
+
+
+# ================================================================ inbound_remote_service
+@pytest.mark.parametrize("port,sub", [(445, "T1021.002"), (3389, "T1021.001"), (5985, "T1021.006"),
+                                      (5986, "T1021.006"), (22, "T1021.004")])
+def test_inbound_remote_service_fires(run, port: int, sub: str) -> None:
+    rows = run([conn(T0, "203.0.113.66", "10.10.20.15", port)], "inbound_remote_service")
+    assert lab(rows) == [("T1021", sub, "Lateral Movement")]
+    r = rows[0]
+    assert (r["severity"], r["subject_host"], r["src_ip"], r["dst_ip"]) == (70, "10.10.20.15", "203.0.113.66",
+                                                                             "10.10.20.15")
+
+
+def test_inbound_remote_service_twice_fires_twice(run) -> None:
+    rows = [conn(T0 + i * H, "203.0.113.66", "10.10.20.15", 3389) for i in range(2)]
+    assert len(run(rows, "inbound_remote_service")) == 2
+
+
+@pytest.mark.parametrize("case", ["internal_src", "denied", "external_dst", "triple_3x", "port_80"])
+def test_inbound_remote_service_near_misses(run, case: str) -> None:
+    rows = {"internal_src": [conn(T0, "10.0.1.5", "10.10.20.15", 3389)],
+            "denied": [conn(T0, "203.0.113.66", "10.10.20.15", 3389, "conn_denied")],
+            "external_dst": [conn(T0, "203.0.113.66", "49.36.200.10", 3389)],
+            "triple_3x": [conn(T0 + i * H, "203.0.113.66", "10.10.20.15", 3389) for i in range(3)],
+            "port_80": [conn(T0, "203.0.113.66", "10.10.20.15", 80)]}[case]
+    assert run(rows, "inbound_remote_service") == []
+
+
+def test_internal_lateral_and_inbound_are_disjoint(run) -> None:
+    inbound = [conn(T0, "203.0.113.66", "10.10.20.15", 3389)]
+    internal = [conn(T0, "10.0.1.5", "10.10.20.15", 3389)]
+    assert run(inbound, "internal_lateral") == [] and run(internal, "inbound_remote_service") == []
+
+
+# ================================================================ firewall beaconing: external C2 only
+def fw_beacon(dst: str) -> list[dict]:
+    return [conn(T0 + i * 60_000, "10.0.2.37", dst, 443) for i in range(11)]
+
+
+def test_fw_beacon_to_external_fires(run) -> None:
+    rows = run(fw_beacon("203.0.113.50"), "beaconing")
+    assert lab(rows) == [("T1071", "T1071.001", "Command and Control")]
+    assert (rows[0]["subject_host"], rows[0]["dst_ip"], rows[0]["raw_alert_count"]) == ("10.0.2.37", "203.0.113.50",
+                                                                                         11)
+
+
+def test_fw_beacon_to_internal_silent(run) -> None:
+    assert run(fw_beacon("10.0.0.2"), "beaconing") == []
 
 
 # ================================================================ port_scan
@@ -347,7 +471,7 @@ def test_fallback_off_restores_literal_behaviour(run) -> None:
 
 # ================================================================ coverage table for the guards in test_detect.py
 FW_MATCH_RULES = {"av_malware_download", "tor_or_proxy_app", "web_malicious_category"}
-FW_TEMPLATES = {"signature_map", "port_scan", "internal_lateral", "config_change_after_login"}
+FW_TEMPLATES = {"signature_map", "port_scan", "internal_lateral", "config_change_after_login", "blocked_daily"}
 
 
 def test_fw_rules_present_in_config() -> None:
@@ -355,3 +479,33 @@ def test_fw_rules_present_in_config() -> None:
     ids = {r["id"] for r in rules}
     assert {"fw_admin_bruteforce", "fw_admin_spray", "vpn_bruteforce_success", "ips_signatures", "port_scan",
             "internal_lateral", "fw_config_change_after_login"} | FW_MATCH_RULES <= ids
+
+
+# ================================================================ rarity N for firewall sources (episodes.py)
+def _rarity(tmp_path, fallback: bool) -> float:
+    import math  # noqa: F401
+    from attacklens import episodes
+    from .test_detect import _alert, _write_alerts
+    from .conftest import query
+    ev = [conn(T0 + k, f"10.0.0.{k}", EXT, 443) for k in range(1, 10)]          # 9 internal src IPs
+    ev += [conn(T0 + 20, EXT, "10.0.0.50", 443)]                                 # external src: not an entity
+    ev += [{"ts_ms": T0 + 30, "source_type": "ecs_json", "action": "proc_start", "host": "ws-1"}]
+    ctx = make_events_parquet(tmp_path, ev)
+    try:
+        ctx.cfg["rules"]["thresholds"]["entity_fallback_ip"] = fallback
+        _write_alerts(ctx, [_alert(T0, rule="r_fw", severity=50)])
+        ctx.con.execute(f"COPY (SELECT 'r_fw' AS rule_id, 2.0::DOUBLE AS base_freq) TO "
+                        f"'{(ctx.work_dir / 'rule_host_baseline.parquet').as_posix()}' (FORMAT PARQUET)")
+        episodes.run(ctx)
+        return query(ctx, f"SELECT rarity FROM read_parquet('{(ctx.work_dir / 'episodes.parquet').as_posix()}')"
+                     )[0]["rarity"]
+    finally:
+        ctx.con.close()
+
+
+def test_rarity_n_counts_internal_src_ips_for_firewall_rows(tmp_path) -> None:
+    import math
+    # N = 9 internal firewall src IPs + 1 ECS host (fgt-01 itself and the external src are not endpoints)
+    assert _rarity(tmp_path / "on", True) == pytest.approx(math.log(1 + 10 / 2) / math.log(1 + 10))
+    # literal §6.1: N = reporting hosts = {fgt-01, ws-1}
+    assert _rarity(tmp_path / "off", False) == pytest.approx(math.log(1 + 2 / 2) / math.log(1 + 2))

@@ -126,9 +126,8 @@ def test_vpn_login_success(ctx) -> None:
         "login_success", "success", 10, "jdoe")
 
 
-@pytest.mark.xfail(strict=True, reason="BUG (BB-ingest): FortiGate VPN login remip (the client's public IP) is not "
-                   "mapped to src_ip, so the attacker IP of a VPN logon is lost (fields.src_ip = [srcip, ui])")
 def test_vpn_login_keeps_remote_ip(ctx) -> None:
+    # regression (fixed by BB-ingest): remip used to be dropped
     assert row(ctx, T0 + 3000)["src_ip"] == "203.0.113.20"
 
 
