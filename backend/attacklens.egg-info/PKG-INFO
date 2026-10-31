@@ -1,0 +1,18 @@
+Metadata-Version: 2.4
+Name: attacklens
+Version: 0.1.0
+Summary: AttackLens: kill chain and attack path analysis over large security logs
+Requires-Python: >=3.12
+Requires-Dist: duckdb>=1.1
+Requires-Dist: pyyaml
+Requires-Dist: networkx
+Requires-Dist: fastapi
+Requires-Dist: uvicorn
+Requires-Dist: pydantic>=2
+Requires-Dist: psutil
+Requires-Dist: jinja2
+Provides-Extra: llm
+Requires-Dist: anthropic; extra == "llm"
+Provides-Extra: dev
+Requires-Dist: pytest; extra == "dev"
+Requires-Dist: httpx; extra == "dev"
