@@ -73,15 +73,35 @@ def _furthest_stage(log_path: Path) -> str | None:
     return max(seen, key=lambda s: STAGE_PERCENT[s]) if seen else None
 
 
+_SAFE_PART = re.compile(r"^[A-Za-z0-9._-]+$")
+
+
 def resolve_path(p: str) -> Path:
     path = Path(p)
     return (path if path.is_absolute() else REPO_ROOT / path).resolve()
 
 
+def confined(p: str, root: Path, what: str) -> Path:
+    """Resolve p and require it strictly under root with plain name parts (paths end up in DuckDB SQL).
+    Errors never echo the submitted path."""
+    try:
+        path = resolve_path(p)
+        rel = path.relative_to(root.resolve())
+    except (ValueError, OSError):
+        raise ValueError(f"{what} must be under {root.relative_to(REPO_ROOT).as_posix()}/") from None
+    if not rel.parts or not all(_SAFE_PART.match(x) for x in rel.parts):
+        raise ValueError(f"{what} must be a sub-directory of {root.relative_to(REPO_ROOT).as_posix()}/ "
+                         f"with names of [A-Za-z0-9._-]")
+    return path
+
+
 class RunManager:
     """Owns the run subprocesses. One run at a time (the pipeline needs the whole RAM budget)."""
 
-    def __init__(self, runs_dir: Path | None = None) -> None:
+    def __init__(self, runs_dir: Path | None = None, raw_root: Path | None = None,
+                 out_root: Path | None = None) -> None:
+        self.raw_root = raw_root or REPO_ROOT / "data" / "raw"
+        self.out_root = out_root or REPO_ROOT / "data" / "out"
         self._runs: dict[str, RunJob] = {}
         self._lock = threading.Lock()
         self._runs_dir = runs_dir or REPO_ROOT / "data" / "runs"
@@ -91,15 +111,15 @@ class RunManager:
             return next((j for j in self._runs.values() if j.status == "running"), None)
 
     def start(self, raw_dir: str, out_dir: str | None, ground_truth: str | None) -> RunJob:
-        raw = resolve_path(raw_dir)
+        raw = confined(raw_dir, self.raw_root, "raw_dir")
         if not raw.is_dir():
-            raise ValueError(f"raw_dir is not a directory: {raw_dir}")
-        out = resolve_path(out_dir) if out_dir else REPO_ROOT / "data" / "out" / raw.name
+            raise ValueError("raw_dir is not an existing directory")
+        out = confined(out_dir or str(self.out_root / raw.name), self.out_root, "out_dir")
         cmd = [sys.executable, "-m", "attacklens.run", "--raw", str(raw), "--out", str(out)]
         if ground_truth:
-            gt = resolve_path(ground_truth)
+            gt = confined(ground_truth, self.raw_root, "ground_truth")
             if not gt.is_file():
-                raise ValueError(f"ground_truth is not a file: {ground_truth}")
+                raise ValueError("ground_truth is not an existing file")
             cmd += ["--ground-truth", str(gt)]
         if self.active() is not None:
             raise RuntimeError("a run is already in progress")

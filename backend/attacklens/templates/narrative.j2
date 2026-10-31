@@ -1,4 +1,8 @@
 {#- Deterministic narrative. Every variable is a placeholder token, enum, count, ISO time or technique id/name. -#}
+{#- reach_admin = entries with via_user (AdminTo evidence); reach_network = entries without (network flow only). -#}
+{%- macro hostlist(items, total, show_user, phrase="") -%}
+{{ total }} more host{{ 's' if total != 1 else '' }}{{ phrase }}: {% for r in items %}{{ r.host }} ({% if show_user and r.via_user %}via {{ r.via_user }}, {% endif %}{% if r.crown_jewel %}{{ r.crown_jewel }} server, {% endif %}{{ r.hops }} hop{{ 's' if r.hops != 1 else '' }}){% if not loop.last %}, {% endif %}{% endfor %}{% if total > items|length %}, and {{ total - items|length }} more{% endif %}
+{%- endmacro -%}
 {%- if not steps -%}
 No linked attack steps were found for this incident (risk {{ risk }}/100, {{ merged_alert_count }} merged alerts).
 {%- else -%}
@@ -8,5 +12,7 @@ The attack started at {{ first.ts }} with {{ first.tech }} ({{ first.tactic }}){
 {% if hosts|length > 1 %}It then moved across {{ hosts|length }} hosts in order: {{ hosts|join(' -> ') }}.{% elif hosts %}All linked activity stayed on {{ hosts[0] }}.{% endif %}
 Steps in order: {% for s in steps %}{{ s.tech }} ({{ s.tactic }}){% if not loop.last %}, {% endif %}{% endfor %}{% if omitted %}, plus {{ omitted }} more steps{% endif %}.
 The last step was {{ last.tech }} ({{ last.tactic }}){% if last.host %} on {{ last.host }}{% endif %}{% if last.dst %} towards {{ last.dst }}{% endif %} at {{ last.ts }}; risk is {{ risk }}/100 across {{ episode_count }} episodes and {{ merged_alert_count }} merged alerts{% if gaps %}, with no evidence for {{ gaps|join(', ') }}{% endif %}.
-{% if reach %}{% if reach_user %}{{ reach_user }} still has admin rights on{% else %}The attacker can still reach{% endif %} {{ reach_total }} more host{{ 's' if reach_total != 1 else '' }}: {% for r in reach %}{{ r.host }} ({% if r.crown_jewel %}{{ r.crown_jewel }} server, {% endif %}{{ r.hops }} hop{{ 's' if r.hops != 1 else '' }}){% if not loop.last %}, {% endif %}{% endfor %}{% if reach_total > reach|length %}, and {{ reach_total - reach|length }} more{% endif %}.{% else %}No further reachable hosts were found from the last compromised accounts.{% endif %}
+{% if reach_admin %}{% if reach_user %}{{ reach_user }} still has{% else %}Compromised accounts still have{% endif %} admin rights on {{ hostlist(reach_admin, reach_admin_total, not reach_user) }}.{% endif %}
+{% if reach_network %}The attacker can {{ 'also ' if reach_admin else '' }}reach {{ hostlist(reach_network, reach_network_total, false, " over the network") }}.{% endif %}
+{% if not reach_admin and not reach_network %}No further reachable hosts were found from the last compromised accounts.{% endif %}
 {%- endif -%}

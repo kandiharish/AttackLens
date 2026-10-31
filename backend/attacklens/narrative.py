@@ -32,6 +32,11 @@ log = logging.getLogger(__name__)
 
 TEMPLATE_DIR = Path(__file__).resolve().parent / "templates"
 DEFAULT_MODEL = "claude-haiku-5-5"
+# Every optional template variable has a default, so facts missing a key (e.g. no reach) never raise.
+TEMPLATE_DEFAULTS: dict[str, Any] = {
+    "steps": [], "hosts": [], "gaps": [], "omitted": 0, "risk": 0, "episode_count": 0, "merged_alert_count": 0,
+    "reach_admin": [], "reach_admin_total": 0, "reach_network": [], "reach_network_total": 0, "reach_user": None,
+}
 _MIN_GUARD_LEN = 4  # raw values shorter than this are not used by the prompt leak guard (too many false hits)
 
 SYSTEM_PROMPT = (
@@ -57,7 +62,7 @@ def _env() -> Environment:
 
 def render_template(facts: dict[str, Any]) -> str:
     """Deterministic placeholder-form narrative."""
-    text = _env().get_template("narrative.j2").render(**facts)
+    text = _env().get_template("narrative.j2").render(**{**TEMPLATE_DEFAULTS, **facts})
     return " ".join(line.strip() for line in text.splitlines() if line.strip())
 
 

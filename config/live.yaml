@@ -1,0 +1,13 @@
+# Live mode (B-5, DEVELOPMENT.md §4 "Live mode"): python -m attacklens.live --watch data/raw/live --out data/out/live
+# Relative paths are resolved against the repo root.
+watch_dir: data/raw/live
+out_dir: data/out/live
+state_dir: null            # null -> <pipeline.parquet_root>/<basename of out_dir>  (window Parquet + tail offsets)
+poll_s: 2.0                # tail interval
+memory_limit: "1.5GB"      # DuckDB memory_limit for every live cycle
+threads: null              # null -> os.cpu_count()
+lookback_ms: null          # event-time window kept for re-detection; null -> longest *_window_ms in rules.yaml
+extra_lookback_ms: 0       # added to lookback_ms
+max_read_bytes: 268435456  # max new bytes read per file per cycle (rest is read next cycle)
+status_stale_s: 10         # /api/live/status reports enabled=false if the heartbeat is older than this
+compact_max_files: 200      # window Parquet files before a rewrite into one file per partition

@@ -154,13 +154,17 @@ def build_facts(incident: Incident, pm: PlaceholderMap, cfg: dict[str, Any], ncf
         "host": pm.token("host", r.host), "hops": int(r.hops), "via_user": pm.token("user", r.via_user),
         "crown_jewel": r.crown_jewel if r.crown_jewel in CROWN_JEWELS else None, "touched": bool(r.touched),
     } for r in incident.reach_next if pm.token("host", r.host)]
-    via = {r["via_user"] for r in reach if r["via_user"]}
+    # via_user set -> AdminTo evidence ("has admin rights on"); via_user None -> network flow ("can reach over the network")
+    admin = [r for r in reach if r["via_user"]]
+    network = [r for r in reach if not r["via_user"]]
+    via = {r["via_user"] for r in admin}
     return {
         "risk": int(incident.risk), "first_ts": iso(incident.first_ts), "last_ts": iso(incident.last_ts),
         "episode_count": int(incident.episode_count), "merged_alert_count": int(incident.merged_alert_count),
         "tactics": [safe_tactic(t) for t in incident.tactics], "gaps": [t for t in incident.gaps if t in TACTICS],
         "steps": steps, "omitted": omitted, "hosts": hosts,
-        "reach": reach[:max_reach], "reach_total": len(reach),
+        "reach_admin": admin[:max_reach], "reach_admin_total": len(admin),
+        "reach_network": network[:max_reach], "reach_network_total": len(network),
         "reach_user": next(iter(via)) if len(via) == 1 else None,
         "required_technique_ids": sorted(set(required)),
     }

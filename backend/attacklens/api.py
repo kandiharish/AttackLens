@@ -17,6 +17,7 @@ from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
+import yaml
 from pydantic import BaseModel
 
 from attacklens.api_runs import RunManager
@@ -45,6 +46,18 @@ class AppState:
         self.store = Store()
         self.runs = RunManager()
         self.started = time.time()
+        self._live_cfg: dict[str, Any] | None = None
+
+    def live_cfg(self) -> dict[str, Any]:
+        """{"live": <config/live.yaml>} loaded once (status calls must stay cheap)."""
+        if self._live_cfg is None:
+            path = REPO_ROOT / "config" / "live.yaml"
+            try:
+                data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+            except (OSError, yaml.YAMLError):
+                data = {}
+            self._live_cfg = {"live": data if isinstance(data, dict) else {}}
+        return self._live_cfg
 
     def refresh(self) -> None:
         """Reload when a finished run produced new output, else the rate-limited mtime check."""
@@ -137,7 +150,7 @@ def create_app() -> FastAPI:
         return st.runs.status(job)
 
     @app.get("/api/live/status")
-    def live_status() -> dict[str, Any]:
+    def live_status(st: AppState = Depends(fresh)) -> dict[str, Any]:
         try:
             live = importlib.import_module("attacklens.live")
         except ImportError:
@@ -145,8 +158,11 @@ def create_app() -> FastAPI:
         fn = getattr(live, "status", None)
         if not callable(fn):
             return {"enabled": False}
+        out = st.store.snap.out_dir
+        # the served out dir if it is a live output, else live.yaml out_dir (data/out/live)
+        target = out if out is not None and (out / getattr(live, "STATUS_FILE", "live_status.json")).exists() else None
         try:
-            result = fn()
+            result = fn(target, st.live_cfg())
         except Exception as exc:  # noqa: BLE001 - live mode problems must not break the API
             log.warning("api: live.status() failed: %s", exc)
             return {"enabled": False, "error": type(exc).__name__}

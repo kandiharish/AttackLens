@@ -1,0 +1,20 @@
+# docker compose up -d   ->   http://localhost:8000  (API under /api, SPA at /)
+# First start generates data/raw/demo (200 MB synthetic) and runs the pipeline into data/out/demo (~1 min).
+services:
+  attacklens:
+    build: .
+    image: attacklens:latest
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+    environment:
+      ATTACKLENS_OUT: /app/data/out/demo
+      DEMO_SIZE: 200M
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 180s
+    restart: unless-stopped
