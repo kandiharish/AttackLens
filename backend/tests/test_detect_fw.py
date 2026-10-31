@@ -334,10 +334,8 @@ def test_ecs_row_with_mapped_src_ip_keeps_host_name(run) -> None:
     assert [r["subject_host"] for r in rows] == ["ws-hr-012"]
 
 
-@pytest.mark.xfail(strict=True, reason="BUG (BB-detect): entity fallback applies to ECS rows too - an ECS conn_out "
-                   "with no src_ip and an internal dst gets subject_host = the DESTINATION IP (10.10.0.40) instead of "
-                   "its reporting endpoint ws-hr-012 (§3.1: subject_host = resolved source host, else host)")
 def test_ecs_row_without_src_ip_keeps_reporting_host(run) -> None:
+    # regression (fixed by BB-detect): the entity fallback used to give ECS rows the destination IP
     rows = run(ecs_beacon(None), "beaconing")
     assert [r["subject_host"] for r in rows] == ["ws-hr-012"]
 
