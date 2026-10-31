@@ -530,3 +530,7 @@ columns `signature`, `vendor_severity`, `app`, `src_zone`, `dst_zone`, `bytes_in
 name resolves). Accuracy is measured on synthetic FortiGate data from `tools/fortigate_gen.py` (planted scenarios +
 ground truth, distribution modelled on the real profile counts, no real lines copied); the real tiers report time,
 memory, accounting and "found" incidents (hand-reviewed, never a score).
+| §6.6 DP | node score = confidence (`path.dp_node_score`) | g10: severity-scored DP started S1 from noise (95.2 / 80) | `severity` |
+| §4 Stage 4 | every seed in a component is shown as a branch, never silently absorbed; invariant in_incidents + in_suppressed = episodes logged per run | g10 S4 steps hidden as absorbed members | — |
+| §4 R3 | ≤ 5 successors per source (`r3_max_succs_per_source`) | g10: ~65 svc_backup R3 links | large value |
+| §4 R1/R2 (firewall) | log devices (devname) barred as R2/R1 host keys; R2 keyed on IP for user-less IP subjects; R1 attacker-IP handoff (same external src_ip, 2 h) and R1 `i.dst_ip = j.subject_host` | f1: endpoint steps had no edges | `r2_ip_session: false`, `r1_ext_ip: false` |

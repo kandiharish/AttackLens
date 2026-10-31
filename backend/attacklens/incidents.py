@@ -45,6 +45,7 @@ def _params(cfg: dict[str, Any]) -> dict[str, Any]:
         "tactic_conf": float(gate.get("min_tactic_confidence", 0)),
         "critical_min_merged": int(gate.get("critical_min_merged_alerts", 5)),
         "peel_tails": bool(path.get("peel_standalone_branch_tails", False)),
+        "node_score": str(path.get("dp_node_score", "severity")),
         "max_per_comp": int(gate.get("max_incidents_per_component", 20)),
         "seed": float(th.get("seed_confidence", gate.get("seed_confidence", 65))),
         "critical": float(th.get("critical_confidence", gate.get("critical_confidence", 90))),
@@ -149,7 +150,12 @@ def _evidence(ctx: RunContext, ids: set[str], p: dict[str, Any]) -> dict[str, li
     rows = ctx.con.execute(f"SELECT e.episode_id, e.evidence_lines FROM ({src}) e "
                            "JOIN _ev_ids x ON e.episode_id = x.id").fetchall()
     ctx.con.execute("DROP TABLE IF EXISTS _ev_ids")
-    return {i: [str(x)[: p["ev_chars"]] for x in (lines or [])[: p["ev_lines"]]] for i, lines in rows}
+    return {i: [clip(str(x), p["ev_chars"]) for x in (lines or [])[: p["ev_lines"]]] for i, lines in rows}
+
+
+def clip(text: str, n: int) -> str:
+    """At most n characters; a cut line ends with an ellipsis so the reader knows it was truncated."""
+    return text if len(text) <= n else text[: max(0, n - 1)] + "…"
 
 
 def _tech_name(cfg: dict[str, Any], e: dict[str, Any]) -> str | None:
@@ -222,7 +228,8 @@ def _path_edge(edge_map: dict[tuple[str, str], tuple], i: str, j: str, label: di
         return None
     rule, w, why = rec[2], float(rec[3]), str(rec[5])
     if rule == "R3" and i in label and j in label:
-        why = why.replace(f"step {i}", f"step {label[i]}").replace(f"step {j}", f"step {label[j]}")
+        # User-facing step numbers are 1-based (Step.step stays 0-based per the contract).
+        why = why.replace(f"step {i}", f"step {label[i] + 1}").replace(f"step {j}", f"step {label[j] + 1}")
     return PathEdge(**{"from": i, "to": j, "rule": rule, "weight": round(w, 3), "why_linked": why})
 
 
@@ -233,11 +240,11 @@ def build_incident(ctx: RunContext, c: Comp, eps: dict[str, dict[str, Any]], edg
     path_eps = bb + [e for b in br for e in b]
     comp_eps = [eps[x] for x in c.ids]
     steps = [_step(k, e, ev.get(e["episode_id"], []), ctx.cfg) for k, e in enumerate(bb)]
-    label = {s.episode_id: s.step for s in steps}
     nxt, branches = len(steps), []
     for b in br:
         branches.append([_step(nxt + k, e, ev.get(e["episode_id"], []), ctx.cfg) for k, e in enumerate(b)])
         nxt += len(b)
+    label = {s.episode_id: s.step for s in steps + [x for b in branches for x in b]}
     back: list[tuple[str, str]] = list(zip(c.backbone, c.backbone[1:]))
     for b in c.branches:
         # A branch hangs off the DP predecessor of its first node (on the backbone or an earlier branch).
@@ -284,20 +291,35 @@ def _gate_ids(ids: list[str], eps: dict[str, dict[str, Any]], allow: set[str],
 
 def _extract(ids: list[str], eps: dict[str, dict[str, Any]], by_j: dict[str, list[Edge]], g: nx.Graph,
              p: dict[str, Any]) -> tuple[Comp, set[str]]:
-    """Path DP on one (sub)component. Members = path + episodes directly linked to it; returns (comp, remainder)."""
+    """Path DP on one (sub)component. Members = path + non-seed episodes directly linked to it; returns
+    (comp, remainder). A seed is either shown (backbone / branch) or left in the remainder to be re-gated."""
     sid = set(ids)
-    nodes = [Node(x, int(eps[x]["ts_ms"]), int(eps[x].get("source_seq") or 0), float(eps[x].get("severity") or 0),
+    val = "confidence" if p["node_score"] == "confidence" else "severity"
+    nodes = [Node(x, int(eps[x]["ts_ms"]), int(eps[x].get("source_seq") or 0), float(eps[x].get(val) or 0),
                   eps[x].get("tactic") or "", tactic_idx(eps[x])) for x in ids]
+    seeds = {x for x in ids if float(eps[x].get("confidence") or 0) >= p["seed"]}
     cedges = [e for x in ids for e in by_j.get(x, []) if e.i in sid]
     standalone = None
     if p["peel_tails"]:
         def standalone(tail: list[str]) -> bool:  # multi-tactic tail that passes the gate by itself
             reason, tactics, _ = _gate_ids(tail, eps, set(), p)
             return reason is None and len(tactics) >= p["min_tactics"]
-    res = best_path(nodes, cedges, p["exempt"], p["branch_ratio"], p["max_branches"], standalone)
+    res = best_path(nodes, cedges, p["exempt"], p["branch_ratio"], p["max_branches"], standalone, seeds)
     path = set(res.backbone) | {x for b in res.branches for x in b}
-    members = path | {n for x in path for n in g.neighbors(x) if n in sid}
+    members = path | {n for x in path for n in g.neighbors(x) if n in sid and n not in seeds}
     return Comp(ids=sorted(members), backbone=res.backbone, branches=res.branches, back=res.back), sid - members
+
+
+def episode_accounting(eps: dict[str, Any], kept: list[list[str]], suppressed: list[list[str]]) -> dict[str, Any]:
+    """Invariant: every episode is in exactly one kept incident or one suppressed entry (no silent loss)."""
+    n_kept, n_sup = sum(map(len, kept)), sum(map(len, suppressed))
+    seen = [x for ids in kept + suppressed for x in ids]
+    out = {"episodes": len(eps), "in_incidents": n_kept, "in_suppressed": n_sup,
+           "missing": len(set(eps) - set(seen)), "duplicated": len(seen) - len(set(seen))}
+    out["ok"] = out["missing"] == 0 and out["duplicated"] == 0 and n_kept + n_sup == len(eps)
+    if not out["ok"]:
+        log.error("incidents: episode accounting invariant violated: %s", out)
+    return out
 
 
 def run(ctx: RunContext) -> dict[str, Any]:
@@ -314,6 +336,7 @@ def run(ctx: RunContext) -> dict[str, Any]:
     for i, j, rule, w, *_ in edges:
         by_j.setdefault(j, []).append(Edge(i, j, rule, float(w)))
     kept: list[Comp] = []
+    sup_all: list[list[str]] = []  # full id lists of suppressed entries (suppressed.json keeps only sup_ids)
     suppressed: list[dict[str, Any]] = []
     reasons: dict[str, int] = {}
     peeled = 0
@@ -328,6 +351,7 @@ def run(ctx: RunContext) -> dict[str, Any]:
                 named = reason.startswith(("allow", "fewer", "more", "critical"))
                 key = reason.split(" and ")[0].split(":")[0] if named else "low confidence"
                 reasons[key] = reasons.get(key, 0) + 1
+                sup_all.append(ids)
                 suppressed.append({"episode_ids": ids[: p["sup_ids"]], "episode_count": len(ids),
                                    "tactics": sorted(tactics, key=lambda t: TACTIC_IDX.get(t, 99)),
                                    "max_confidence": round(max_conf, 1), "reason": reason})
@@ -340,6 +364,7 @@ def run(ctx: RunContext) -> dict[str, Any]:
                 n_out += 1
             else:
                 reasons["extracted path fails gate"] = reasons.get("extracted path fails gate", 0) + 1
+                sup_all.append(c.ids)
                 suppressed.append({"episode_ids": c.ids[: p["sup_ids"]], "episode_count": len(c.ids),
                                    "tactics": sorted(c_tactics, key=lambda t: TACTIC_IDX.get(t, 99)),
                                    "max_confidence": round(c_conf, 1),
@@ -349,6 +374,7 @@ def run(ctx: RunContext) -> dict[str, Any]:
                 subs = sorted((sorted(cc) for cc in nx.connected_components(g.subgraph(rest))), key=lambda cc: cc[0])
                 peeled += len(subs)
                 queue.extend(subs)
+    accounting = episode_accounting(eps, [c.ids for c in kept], sup_all)
     ev = _evidence(ctx, {x for c in kept for x in c.backbone + [y for b in c.branches for y in b]}, p)
     reach_stats = reach.prepare(ctx)
     rg = reach.load_graph(ctx)
@@ -362,7 +388,7 @@ def run(ctx: RunContext) -> dict[str, Any]:
     suppressed.sort(key=lambda s: (-s["max_confidence"], s["episode_ids"][0]))
     _write_json(ctx.out_dir / "suppressed.json", {"total": len(suppressed), "by_reason": dict(sorted(reasons.items())),
                                                   "components": suppressed[: p["sup_max"]]})
-    stats = {"components": len(comps), "peeled_subcomponents": peeled, "kept": len(kept), "suppressed": len(suppressed), "incidents": len(incidents),
+    stats = {"episode_accounting": accounting, "components": len(comps), "peeled_subcomponents": peeled, "kept": len(kept), "suppressed": len(suppressed), "incidents": len(incidents),
              "suppressed_by_reason": dict(sorted(reasons.items())), "largest_component": max(map(len, comps), default=0),
              "raw_risk": raws, "reach": reach_stats, "seconds": round(time.perf_counter() - t0, 3)}
     log.info("incidents: %s", {k: v for k, v in stats.items() if k != "raw_risk"})

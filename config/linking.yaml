@@ -4,7 +4,8 @@
 link:
   # Link windows tau_R (ms) and multipliers M_R. weight = M_R * rarity_j * exp(-dt / tau_R)
   rules:
-    R1: {tau_ms: 86400000, mult: 1.5, src_tau_ms: 21600000}  # handoff host -> host, 24 h
+    R1: {tau_ms: 86400000, mult: 1.5, src_tau_ms: 21600000, ext_ip_tau_ms: 7200000}  # handoff host -> host, 24 h
+    # ext_ip_tau_ms: window for the attacker-IP variant (same external src_ip on two subjects), 2 h.
     # src_tau_ms: window for the i.subject_host = j.src_host variant only (6 h); weight decay still uses tau_ms.
     # Omit (or set = tau_ms) for the literal 24 h.
     R2: {tau_ms: 7200000, mult: 1.0}     # same session (subject_host + user), 2 h
@@ -22,6 +23,20 @@ link:
   # Without this, a handful of shared user names within 72 h links most noise together.
   r3_source_tactics: ["Credential Access", "Persistence", "Privilege Escalation", "Initial Access"]
   r3_min_source_confidence: 60
+  # R3 fan-out cap per source episode (one account): keep its top-k successors by weight. At 10G a brute force on
+  # svc_backup had ~65 R3 links to unrelated svc_backup activity (17 at 1G). 0 = off.
+  r3_max_succs_per_source: 5
+  # Log devices (firewall devname, logs every flow as host): barred as R2 keys and as host-name R1 keys.
+  # Auto: any `host` that logs episodes about another subject_host. Add names here to force.
+  device_hosts: []
+  auto_device_hosts: true
+  # R2 for user-less episodes on IP endpoints (FortiGate: the entity of an internal endpoint is its IP).
+  r2_ip_session: true
+  # false: hub IPs may still key a user-less IP session (the victim server is a busy IP); true bars them.
+  r2_ip_session_bar_hubs: false
+  # R1 attacker-IP handoff on the same external (non-internal, non-hub) src_ip; window R1.ext_ip_tau_ms.
+  r1_ext_ip: true
+  internal_ip_regex: '^(10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.|127\.|169\.254\.|::1$|f[cd]|fe80:)'
 
 gate:
   min_tactics: 2
@@ -55,6 +70,9 @@ path:
   # true: a branch tail with >= min_tactics tactics that passes the gate alone is not attached as a branch;
   # if it is not directly linked to the backbone it is peeled into its own incident.
   peel_standalone_branch_tails: true
+  # DP node value: confidence (rarity-calibrated, scale-invariant: common noise stays low as data grows) or
+  # severity (literal §6.6). Seeds (confidence >= seed_confidence) are always shown as backbone or branch.
+  dp_node_score: confidence
   max_branches: 5
   max_evidence_lines: 3
   max_evidence_chars: 300

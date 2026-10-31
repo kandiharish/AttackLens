@@ -47,9 +47,14 @@ def ok(i: Node, j: Node, rule: str, exempt: frozenset[str]) -> bool:
 
 def best_path(nodes: Iterable[Node], edges: Iterable[Edge], exempt: Iterable[str] = (),
               branch_min_ratio: float = 0.5, max_branches: int = 5,
-              standalone: Callable[[list[str]], bool] | None = None) -> PathResult:
-    """standalone(tail) -> True means the tail is an incident on its own: it is not attached as a branch
-    (incidents.py then peels it if it is not directly linked to the path)."""
+              standalone: Callable[[list[str]], bool] | None = None, seeds: Iterable[str] = ()) -> PathResult:
+    """Node.severity is the node value of the DP (incidents.py passes confidence or severity per config).
+
+    standalone(tail) -> True means the tail is an incident on its own: it is not attached as a branch
+    (incidents.py then peels it if it is not directly linked to the path).
+    seeds: high-confidence episodes that must never be hidden. Every seed not on the backbone joins as a branch
+    (ignoring max_branches / branch_min_ratio / standalone) if its DP chain shares a prefix with what is shown, or
+    if it has a link from a shown episode. Seeds with neither are left for incidents.py to peel and re-gate."""
     by_id = {n.id: n for n in nodes}
     if not by_id:
         return PathResult(backbone=[])
@@ -97,4 +102,16 @@ def best_path(nodes: Iterable[Node], edges: Iterable[Edge], exempt: Iterable[str
         if tail and len(tail) < len(path) and not (standalone and standalone(tail)):
             branches.append(tail)
             covered.update(tail)
+    for s in sorted((x for x in set(seeds) if x in by_id), key=lambda x: by_id[x].key):
+        if s in covered:
+            continue
+        path = trace(s)
+        tail = [x for x in path if x not in covered]
+        if len(tail) == len(path):  # own chain: hang the seed off its best shown predecessor, if any
+            shown = [(score[e.i] + e.weight, by_id[e.i].key, e.i) for e in preds.get(s, ()) if e.i in covered]
+            if not shown:
+                continue
+            back[s], tail = max(shown)[2], [s]
+        branches.append(tail)
+        covered.update(tail)
     return PathResult(backbone=backbone, branches=branches, scores=score, back=back)
