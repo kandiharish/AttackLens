@@ -42,20 +42,41 @@ def _skip(path: Path, root: Path, pcfg: dict[str, Any]) -> str | None:
     return None
 
 
-def first_line(path: Path, nbytes: int = 65536) -> str | None:
-    """First non-empty line (BOM and CR stripped), or None if the file has none / is binary."""
+def first_lines(path: Path, nbytes: int = 65536, n: int = 10) -> list[str] | None:
+    """First n non-empty lines (BOM and CR stripped); None if the file is binary."""
     with path.open("rb") as fh:
         chunk = fh.read(nbytes)
     if chunk[:4096].count(b"\x00") * 20 > len(chunk[:4096]):  # >5 % NUL: binary / UTF-16, not a text log
         return None
-    chunk = chunk.replace(b"\x00", b"")
-    text = chunk.decode("utf-8", errors="replace")
+    text = chunk.replace(b"\x00", b"").decode("utf-8", errors="replace")
     if text.startswith(BOM):
         text = text[1:]
-    for line in text.splitlines():
-        if line.strip():
-            return line.strip(BOM).rstrip("\r")
-    return None
+    lines = [ln.strip(BOM).rstrip("\r") for ln in text.splitlines() if ln.strip()]
+    if len(chunk) == nbytes and len(lines) > 1:
+        lines = lines[:-1]  # the last line may be cut by the byte budget
+    return lines[:n]
+
+
+def first_line(path: Path, nbytes: int = 65536) -> str | None:
+    """First non-empty line (BOM and CR stripped), or None if the file has none / is binary."""
+    lines = first_lines(path, nbytes, 1)
+    return lines[0] if lines else None
+
+
+def sniff_lines(lines: list[str] | None, sources_cfg: dict[str, Any]) -> dict[str, Any]:
+    """Sniff the first few non-empty lines: the first line in a known format decides, so one stray header line
+    (e.g. a URL) does not make the file unrecognized. A CSV header only counts on the first line."""
+    if not lines:
+        return sniff(None, sources_cfg)
+    first = sniff(lines[0], sources_cfg)
+    if first["format"] != "unrecognized":
+        return first
+    for i, line in enumerate(lines[1:], start=1):
+        info = sniff(line, sources_cfg)
+        if info["format"] not in ("unrecognized", "csv"):
+            log.info("format decided by non-empty line %d; earlier lines are counted as dropped", i + 1)
+            return {**info, "sniff_line": i + 1}
+    return first
 
 
 def _csv_header(line: str) -> tuple[str, list[str]] | None:
@@ -77,6 +98,9 @@ def sniff(line: str | None, sources_cfg: dict[str, Any]) -> dict[str, Any]:
         return {"format": "cef", "source_type": "cef"}
     if any(r.match(s) for r in SYSLOG_RES):
         return {"format": "syslog", "source_type": "syslog"}
+    for name, kcfg in (sources_cfg.get("kv_sources") or {}).items():
+        if any(re.match(rx, s) for rx in kcfg.get("detect_regex") or []):
+            return {"format": "kv", "source_type": name}
     hdr = _csv_header(s)
     if hdr:
         delim, cols = hdr
@@ -137,6 +161,24 @@ def profile_json(con: duckdb.DuckDBPyConnection, path: Path, sample: int,
     return out
 
 
+def profile_kv(con: duckdb.DuckDBPyConnection, path: Path, sample: int,
+               count_keys: list[str]) -> dict[str, Any]:
+    """Bounded sample of a key=value file: key frequencies and value counts of a few low-cardinality keys."""
+    src = line_reader([path.as_posix()], filename=False)
+    smp = f"(SELECT line FROM {src} WHERE line IS NOT NULL AND trim(line) <> '' LIMIT {int(sample)})"
+    rows = con.execute(f"SELECT k, count(*) FROM (SELECT unnest(list_distinct(regexp_extract_all(line, "
+                       f"'(?:^| )([a-z_0-9]+)=', 1))) k FROM {smp}) GROUP BY 1 ORDER BY 2 DESC").fetchall()
+    out: dict[str, Any] = {"sampled_rows": int(con.execute(f"SELECT count(*) FROM {smp}").fetchone()[0]),
+                           "fields": {str(k): int(n) for k, n in rows}}
+    if count_keys:
+        ex = ", ".join(f"trim(nullif(regexp_extract(line, {sql_str('(?:^| )' + k + '=(' + chr(34) + '[^' + chr(34) + ']*' + chr(34) + '|[^ ]*)')}, 1), ''), "
+                       f"'{chr(34)}') AS {k}" for k in count_keys)
+        vals = con.execute(f"SELECT {', '.join(count_keys)}, count(*) FROM (SELECT {ex} FROM {smp}) "
+                           f"GROUP BY ALL ORDER BY {len(count_keys) + 1} DESC LIMIT 200").fetchall()
+        out["value_counts"] = [{**dict(zip(count_keys, r[:-1])), "n": int(r[-1])} for r in vals]
+    return out
+
+
 def run(ctx: RunContext) -> dict[str, Any]:
     root = Path(ctx.raw_dir)
     pcfg = (ctx.cfg.get("pipeline") or {}).get("profile") or {}
@@ -159,8 +201,11 @@ def run(ctx: RunContext) -> dict[str, Any]:
             empty.append(rel)
             continue
         try:
-            info = sniff(first_line(path, int(pcfg.get("sniff_bytes", 65536))), sources_cfg)
-            if info["format"] == "json":
+            info = sniff_lines(first_lines(path, int(pcfg.get("sniff_bytes", 65536)),
+                                           int(pcfg.get("sniff_lines", 10))), sources_cfg)
+            if info["format"] == "kv":
+                info.update(profile_kv(ctx.con, path, sample, list(pcfg.get("kv_count_keys") or [])))
+            elif info["format"] == "json":
                 info.update(profile_json(ctx.con, path, sample, sources_cfg))
                 if not info.get("source_type"):
                     info = {"format": "unrecognized", "reason": "JSON with no known source fields",

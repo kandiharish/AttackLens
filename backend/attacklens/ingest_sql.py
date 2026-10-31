@@ -19,10 +19,13 @@ FIELDS: tuple[str, ...] = (
     "subject_user", "target_name", "member_name", "group", "src_ip", "src_port", "dst_ip", "dst_port",
     "dst_domain", "process_name", "process_path", "parent_process", "command_line", "file_path", "file_ext",
     "registry_path", "bytes", "direction", "service_name", "auth_package", "ticket_encryption",
+    "signature", "vendor_severity", "app", "src_zone", "dst_zone", "bytes_in",
 )
 CANONICAL_ACTIONS = ("login_failed", "login_success", "priv_assigned", "user_created", "group_member_added",
-                     "kerberos_tgs", "explicit_creds", "proc_start", "conn_out", "conn_allowed", "conn_denied", "dns_query", "file_write",
-                     "file_rename", "reg_set", "service_installed", "scheduled_task", "log_cleared", "other")
+                     "kerberos_tgs", "explicit_creds", "proc_start", "conn_out", "conn_allowed", "conn_denied",
+                     "dns_query", "file_write", "file_rename", "reg_set", "service_installed", "scheduled_task",
+                     "log_cleared", "ips_alert", "av_alert", "web_blocked", "web_access", "app_ctrl",
+                     "config_change", "other")
 LOGON_ACTIONS = "('login_success', 'login_failed')"
 NONEMPTY = "line IS NOT NULL AND trim(line) <> ''"
 
@@ -186,6 +189,78 @@ def csv_select(stype: str, files: list[str], root: str, delim: str, columns: lis
             f"SELECT {_rel(root)} AS rel, {raw} AS raw, {_fcols(vals)} FROM {reader})")
 
 
+def kv_select(stype: str, files: list[str], root: str, kcfg: dict[str, Any],
+              rejects: str | None = None) -> str:
+    """key=value logs (FortiGate). Each key = one anchored regex on the line, unquoted, null_values -> NULL.
+    Lines not matching line_regex are malformed (accounted as unparseable_line); their ts is NULL."""
+    fields: dict[str, list[Any]] = kcfg.get("fields") or {}
+    rules: list[dict[str, Any]] = kcfg.get("actions") or []
+    tcfg: dict[str, Any] = kcfg.get("ts") or {}
+    ts_keys = [tcfg.get(k) for k in ("epoch_key", "date_key", "time_key", "tz_key") if tcfg.get(k)]
+    keys: list[str] = []
+    for k in ([a if isinstance(a, str) else a["key"] for v in fields.values() for a in v]
+              + [k for r in rules for k in (r.get("when") or {})] + ts_keys
+              + list((kcfg.get("outcome_from_action") or {}).get("when") or {}) + ["action"]):
+        if k not in keys:
+            keys.append(k)
+    nulls = sql_list([str(x) for x in kcfg.get("null_values", ["", "N/A"])])
+    raw_k = ", ".join(f"regexp_extract(line, {sql_str('(?:^| )' + k + '=(\"[^\"]*\"|[^ ]*)')}, 1) AS \"r_{k}\""
+                      for k in keys)
+    unquote = ", ".join(
+        f"nullif(CASE WHEN list_contains({nulls}, trim(\"r_{k}\", '\"')) THEN '' ELSE trim(\"r_{k}\", '\"') END, '') "
+        f"AS \"kv_{k}\"" for k in keys)
+
+    def kv(a: Any) -> str:
+        if isinstance(a, str):
+            return f'"kv_{a}"'
+        return f"nullif(regexp_extract(\"kv_{a['key']}\", {sql_str(a['regex'])}, 1), '')"
+
+    vals = {f: "coalesce(" + ", ".join(kv(a) for a in v) + ")" for f, v in fields.items() if v}
+
+    def cond(r: dict[str, Any]) -> str:
+        return " AND ".join(f"lower(\"kv_{k}\") IN ({', '.join(sql_str(str(x).lower()) for x in v)})"
+                            for k, v in (r.get("when") or {}).items()) or "true"
+
+    def case(attr: str) -> str | None:
+        arms = [f"WHEN {cond(r)} THEN {sql_str(str(r[attr]))}" for r in rules if attr in r]
+        return f"CASE {' '.join(arms)} END" if arms else None
+
+    act = " ".join(f"WHEN {cond(r)} THEN {sql_str(r['action'])}" for r in rules)
+    vals["event_action"] = f"CASE {act} END" if act else "CAST(NULL AS VARCHAR)"
+    ofa = kcfg.get("outcome_from_action") or {}
+    if ofa.get("map") and "action" in keys:
+        verdict = (f"CASE WHEN {cond(ofa)} THEN {_sql_map({str(k).lower(): str(v) for k, v in ofa['map'].items()})}"
+                   f"[lower(\"kv_action\")] END")
+        vals["outcome"] = f"coalesce({vals.get('outcome', 'NULL')}, {verdict})"
+    oc = case("outcome")
+    if oc:
+        vals["outcome"] = f"coalesce({vals.get('outcome', 'NULL')}, {oc})"
+    lt = case("logon_type")
+    if lt:
+        vals["logon_type"] = lt
+    et, d, t, tz = (f'"kv_{tcfg[k]}"' if tcfg.get(k) else "NULL"
+                    for k in ("epoch_key", "date_key", "time_key", "tz_key"))
+    et_ms = (f"CASE WHEN regexp_full_match({et}, '\\d+') THEN CASE length({et}) "
+             f"WHEN 19 THEN CAST(CAST({et} AS HUGEINT) // 1000000 AS BIGINT) WHEN 16 THEN CAST({et} AS BIGINT) // 1000 "
+             f"WHEN 13 THEN CAST({et} AS BIGINT) WHEN 10 THEN CAST({et} AS BIGINT) * 1000 END END")
+    naive = f"epoch_ms(try_cast({d} || ' ' || {t} AS TIMESTAMP))"
+    z = f"replace({tz}, ':', '')"  # "+0530" / "+05:30" / "-0400"
+    off = (f"CASE WHEN regexp_full_match({z}, '[+-]\\d{{4}}') THEN (CASE WHEN starts_with({z}, '-') THEN -1 ELSE 1 END)"
+           f" * (CAST(substr({z}, 2, 2) AS BIGINT) * 3600000 + CAST(substr({z}, 4, 2) AS BIGINT) * 60000) END")
+    tzms = f"({naive} - {off})"
+    if tcfg.get("eventtime_is_local", False):
+        ts = (f"CASE WHEN et_ms IS NOT NULL AND tz_ms IS NOT NULL AND abs(et_ms - naive_ms) < 1000 "
+              f"THEN tz_ms + (et_ms - naive_ms) ELSE coalesce(et_ms, tz_ms, naive_ms) END")
+    else:
+        ts = "coalesce(et_ms, tz_ms, naive_ms)"
+    return (f"SELECT {sql_str(stype)} AS source_type, rel, line, line AS raw_line, NOT ok AS malformed, "
+            f"CASE WHEN ok THEN CAST({ts} AS BIGINT) END AS ts_ms, * EXCLUDE (rel, line, ok, et_ms, naive_ms, tz_ms) "
+            f"FROM (SELECT rel, line, ok, {et_ms} AS et_ms, {naive} AS naive_ms, {tzms} AS tz_ms, {_fcols(vals)} FROM ("
+            f"SELECT rel, line, ok, {unquote} FROM ("
+            f"SELECT {_rel(root)} AS rel, line, regexp_matches(line, {sql_str(kcfg.get('line_regex', '='))}) AS ok, {raw_k} "
+            f"FROM {line_reader(files, rejects=rejects)} WHERE {NONEMPTY})))")
+
+
 def _user(x: str) -> str:
     """NFC, lower, strip DOMAIN\\ and @domain, '' / '-' -> NULL."""
     inner = f"regexp_replace(regexp_replace(lower(nfc_normalize(trim({x}))), '^.*\\\\', ''), '@.*$', '')"
@@ -196,36 +271,49 @@ def _base(x: str) -> str:
     return f"lower(nullif(regexp_extract({x}, '([^\\\\/]+)$', 1), ''))"
 
 
+def _sql_map(pairs: dict[Any, str], int_keys: bool = False) -> str:
+    items = ", ".join(f"{int(k) if int_keys else sql_str(str(k))}: {sql_str(v)}" for k, v in pairs.items())
+    return f"MAP {{{items}}}"
+
+
 def action_case(sources: dict[str, Any]) -> str:
+    """Precedence: malformed -> event_id map -> event_action (outcome split / simple map) -> 'other'.
+    Map lookups (one hash probe per row) instead of a CASE arm per vocabulary entry."""
     am = sources.get("action_map") or {}
-    arms = [f"WHEN event_id_i = {int(k)} THEN {sql_str(v)}" for k, v in (am.get("event_ids") or {}).items()]
+    ids = {int(k): str(v) for k, v in (am.get("event_ids") or {}).items()}
     eva = {str(k).lower(): v for k, v in (am.get("event_actions") or {}).items()}
     for a in CANONICAL_ACTIONS:
         eva.setdefault(a, a)
-    for k, v in eva.items():
-        if isinstance(v, dict):
-            v = (f"CASE outcome_n WHEN 'success' THEN {sql_str(v.get('success', 'other'))} "
-                 f"WHEN 'failure' THEN {sql_str(v.get('failure', 'other'))} ELSE {sql_str(v.get('default', 'other'))} END")
-        else:
-            v = sql_str(v)
-        arms.append(f"WHEN ev_act = {sql_str(k)} THEN {v}")
-    return "CASE WHEN malformed THEN 'malformed' " + " ".join(arms) + " ELSE 'other' END"
+    simple = {k: str(v) for k, v in eva.items() if not isinstance(v, dict)}
+    split = {k: v for k, v in eva.items() if isinstance(v, dict)}
+    parts = ["CASE WHEN malformed THEN 'malformed' END"]
+    if ids:
+        parts.append(f"{_sql_map(ids, int_keys=True)}[event_id_i]")
+    if split:
+        arms = " ".join(
+            f"WHEN ev_act = {sql_str(k)} THEN CASE outcome_n WHEN 'success' THEN {sql_str(v.get('success', 'other'))} "
+            f"WHEN 'failure' THEN {sql_str(v.get('failure', 'other'))} ELSE {sql_str(v.get('default', 'other'))} END"
+            for k, v in split.items())
+        parts.append(f"CASE {arms} END")
+    if simple:
+        parts.append(f"{_sql_map(simple)}[ev_act]")
+    return "coalesce(" + ", ".join(parts) + ", 'other')"
 
 
 def normalize_sql(union_sql: str, sources: dict[str, Any]) -> str:
     """Canonical columns (schemas.CANONICAL_COLUMNS order) from the unioned intermediate rows."""
     am = sources.get("action_map") or {}
     oc = am.get("outcomes") or {}
-    succ = sql_list([str(x).lower() for x in oc.get("success", ["success"])])
-    fail = sql_list([str(x).lower() for x in oc.get("failure", ["failure"])])
+    oc = oc or {"success": ["success"], "failure": ["failure"]}
+    oc_case = " ".join(f"WHEN list_contains({sql_list([str(x).lower() for x in vals])}, lower(trim(f_outcome))) "
+                       f"THEN {sql_str(str(name))}" for name, vals in oc.items())
     lt = sources.get("logon_types") or {}
     lt_arms = " ".join(f"WHEN {sql_str(str(k).lower())} THEN {int(v)}" for k, v in lt.items())
     ssh_lt = int(sources.get("default_logon_type_ssh", 10))
     member = ("CASE WHEN f_member_name ILIKE 'cn=%' THEN nullif(regexp_extract(f_member_name, "
               "'^[Cc][Nn]=((?:\\\\,|[^,])+)', 1), '') ELSE f_member_name END")
     a = (f"SELECT *, try_cast(f_event_id AS INTEGER) AS event_id_i, lower(trim(f_event_action)) AS ev_act, "
-         f"CASE WHEN list_contains({succ}, lower(trim(f_outcome))) THEN 'success' "
-         f"WHEN list_contains({fail}, lower(trim(f_outcome))) THEN 'failure' END AS outcome_n FROM ({union_sql})")
+         f"CASE {oc_case} END AS outcome_n FROM ({union_sql})")
     b = f"SELECT *, {action_case(sources)} AS action FROM ({a})"
     c = (f"SELECT *, "
          f"CASE WHEN action IN {LOGON_ACTIONS} THEN {_user('f_subject_user')} "
@@ -282,6 +370,12 @@ def normalize_sql(union_sql: str, sources: dict[str, Any]) -> str:
                               "WHEN regexp_full_match(f_ticket_encryption, '\\d+') THEN '0x' || "
                               "lower(to_hex(CAST(f_ticket_encryption AS BIGINT))) ELSE lower(f_ticket_encryption) END"),
         "service_name": "lower(f_service_name)",
+        "signature": "f_signature",
+        "vendor_severity": "lower(f_vendor_severity)",
+        "app": "lower(f_app)",
+        "src_zone": "lower(f_src_zone)",
+        "dst_zone": "lower(f_dst_zone)",
+        "bytes_in": "try_cast(try_cast(f_bytes_in AS DOUBLE) AS BIGINT)",
     }
     # Emit EVERY canonical column (schemas.CANONICAL_COLUMNS order): one added to the schema but not mapped here
     # becomes a typed NULL with a warning, never a binder error.

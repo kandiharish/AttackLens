@@ -47,18 +47,22 @@ def sql_path(path: str | Path) -> str:
     return sql_str(Path(path).as_posix() if isinstance(path, Path) else str(path).replace("\\", "/"))
 
 
-def line_reader(files: Sequence[str], filename: bool = True, rejects: str | None = None) -> str:
+def line_reader(files: Sequence[str], filename: bool = True, rejects: str | None = None,
+                encoding: str | None = None) -> str:
     """Table function reading files as one VARCHAR column `line` per physical line (no quoting, no parsing).
 
     - Empty lines come back as NULL; a UTF-8 BOM and CR/LF/CRLF endings (also mixed) are stripped.
     - Delimiter NUL: the whole line lands in one column. A NUL byte inside a line truncates it there
       (strict_mode=false); the truncated JSON then counts as malformed, so it is still counted.
     - Lines that cannot be read (invalid UTF-8) are skipped by the reader; pass `rejects=<name>` to record
-      them in temp tables <name>_err / <name>_scan (see count_rejects) so they are counted, never lost.
+      them in temp tables <name>_err / <name>_scan (see count_rejects). Rejects tables hold every rejected
+      line in memory, so for big line files count physical lines with encoding='latin-1' instead (every byte
+      decodes, so nothing is skipped) and report the difference.
     """
     fn = ", filename=true" if filename else ""
     rj = (f", store_rejects=true, rejects_table={sql_str(rejects + '_err')}, "
           f"rejects_scan={sql_str(rejects + '_scan')}") if rejects else ""
+    rj += f", encoding={sql_str(encoding)}" if encoding else ""
     return (f"read_csv({sql_list([str(f).replace(chr(92), '/') for f in files])}, columns={{'line': 'VARCHAR'}}, "
             f"header=false, delim='\\0', quote='', escape='', auto_detect=false, max_line_size=16777216, "
             f"strict_mode=false, ignore_errors=true{fn}{rj})")

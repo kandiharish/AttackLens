@@ -181,6 +181,77 @@ syslog:
       outcome: success
       fields: {user: 1, target_name: 2, command_line: 3}
 
+# key=value logs (DEVELOPMENT.md §15.9). Each key is read with an anchored regex `(?:^| )key=("..."|[^ ]*)`,
+# unquoted; '' and 'N/A' -> NULL. Lines matching none of line_regex are counted as dropped (unparseable_line).
+kv_sources:
+  fortigate_kv:
+    detect_regex:                       # profile: first matching line among the first sniff_lines decides
+      - '^date=\d{4}-\d\d-\d\d time=\d\d:\d\d:\d\d'
+      - '^(?:[a-z_0-9]+=(?:"[^"]*"|[^ "]+) +){3}'   # >= 3 leading key= tokens
+    line_regex: '^(?:[a-z_0-9]+=(?:"[^"]*"|[^ "]*) +){2}'
+    null_values: ["", "N/A", "n/a"]
+    ts:
+      epoch_key: eventtime              # 19 digits ns, 16 us, 13 ms, 10 s
+      date_key: date
+      time_key: time
+      tz_key: tz                        # "+0530"
+      # Measured on the official tiers: eventtime == local date+time written as if it were UTC (+ ms), i.e. it is
+      # off by the tz offset. When eventtime is within 1 s of naive date+time, ts = date+time+tz (true UTC) plus
+      # eventtime's sub-second part. Set false to trust eventtime as UTC epoch.
+      eventtime_is_local: true
+    # intermediate field -> keys (first non-null wins); {key, regex} = regex group 1 of that key's value
+    fields:
+      host:          [devname]
+      src_ip:        [srcip, {key: ui, regex: '\(([0-9A-Fa-f:.]+)\)'}]
+      src_port:      [srcport]
+      dst_ip:        [dstip]
+      dst_port:      [dstport]
+      bytes:         [sentbyte]
+      bytes_in:      [rcvdbyte]
+      user:          [user]
+      dst_domain:    [hostname]
+      file_path:     [url]
+      service_name:  [service]
+      app:           [app]
+      signature:     [attack, virus, catdesc]
+      vendor_severity: [severity, level]     # vendor fields, not generator labels
+      src_zone:      [srcintfrole]
+      dst_zone:      [dstintfrole]
+      outcome:       [status]
+    # UTM verdict -> outcome (blocked / allowed) when type/subtype match; status (logins) still wins.
+    outcome_from_action:
+      when: {type: [utm], subtype: [ips, virus, webfilter, app-ctrl]}
+      map:
+        dropped: blocked
+        blocked: blocked
+        block: blocked
+        reset: blocked
+        deny: blocked
+        pass: allowed
+        pass_session: allowed
+        detected: allowed
+        monitored: allowed
+        passthrough: allowed
+    # Action rules, first match wins. when: key -> allowed lower-case values (all keys must match).
+    # Rule outcome / logon_type apply when the line has no status / type of its own.
+    actions:
+      - {when: {type: [traffic], action: [accept, close, timeout, server-rst, client-rst, pass]}, action: conn_allowed, outcome: success}
+      - {when: {type: [traffic], action: [deny, blocked, dropped, block, drop]}, action: conn_denied, outcome: failure}
+      - {when: {type: [event], subtype: [system], logdesc: [admin login failed]}, action: login_failed, outcome: failure}
+      - {when: {type: [event], subtype: [system], logdesc: [admin login successful]}, action: login_success, outcome: success}
+      - {when: {type: [event], subtype: [system], action: [login], status: [success]}, action: login_success}
+      - {when: {type: [event], subtype: [system], action: [login], status: [failed, failure]}, action: login_failed}
+      - {when: {type: [event], subtype: [vpn], action: [ssl-login, tunnel-up], status: [success]}, action: login_success, logon_type: "10"}
+      - {when: {type: [event], subtype: [vpn], action: [ssl-login, tunnel-up], status: [failed, failure]}, action: login_failed, logon_type: "10"}
+      - {when: {type: [utm], subtype: [ips]}, action: ips_alert}
+      - {when: {type: [utm], subtype: [virus]}, action: av_alert}
+      - {when: {type: [utm], subtype: [webfilter], action: [blocked, block]}, action: web_blocked, outcome: failure}
+      - {when: {type: [utm], subtype: [webfilter]}, action: web_access}
+      - {when: {type: [utm], subtype: [dns]}, action: dns_query}
+      - {when: {type: [utm], subtype: [app-ctrl]}, action: app_ctrl}
+      - {when: {logdesc: [attribute configured, object attribute configured]}, action: config_change}
+      - {when: {type: [event], action: [edit, add, delete]}, action: config_change}
+
 # Action normalisation (§3.3, §15.5). Precedence: event_id -> event_action -> "other".
 action_map:
   event_ids:
@@ -244,9 +315,12 @@ action_map:
     block: conn_denied
     blocked: conn_denied
     reject: conn_denied
+  # canonical outcome -> raw values (lower-case); checked in this order
   outcomes:
-    success: [success, succeeded, ok, true, "audit success", allowed]
+    success: [success, succeeded, ok, true, "audit success"]
     failure: [failure, failed, fail, false, "audit failure", denied]
+    blocked: [blocked]        # vendor security control stopped it (FortiGate UTM)
+    allowed: [allowed]        # vendor security control saw it and let it through
 
 # Logon type names -> integers (numbers pass through).
 logon_types:

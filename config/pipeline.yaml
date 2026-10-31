@@ -12,7 +12,9 @@ baseline_year: 2026
 
 profile:
   sample_lines: 20000        # lines per JSON file sampled for field paths / actions (bounded)
-  sniff_bytes: 65536         # bytes read to find the first non-empty line
+  sniff_bytes: 65536         # bytes read to find the first non-empty lines
+  sniff_lines: 10            # first non-empty lines tried; the first in a known format decides
+  kv_count_keys: [type, subtype, action]   # key=value sources: value counts recorded in source_profile.json
   skip_names: ["manifest.json"]
   skip_suffixes: [".md"]
   skip_dir_components: ["ground_truth"]

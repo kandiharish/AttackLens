@@ -19,7 +19,9 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import shutil
+from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
@@ -34,6 +36,10 @@ log = logging.getLogger(__name__)
 REJECT_REASONS = {"INVALID ENCODING": "decode_error", "MISSING COLUMNS": "csv_missing_columns",
                   "TOO MANY COLUMNS": "csv_too_many_columns", "UNQUOTED VALUE": "csv_parse_error",
                   "LINE SIZE OVER MAXIMUM": "line_too_long", "CAST": "csv_parse_error"}
+
+
+# key=value sources: a line that is not a log line (e.g. a URL header) is "unparseable", not malformed JSON.
+MALFORMED_AS_UNPARSEABLE = frozenset({"fortigate_kv"})
 
 
 def _load_profile(ctx: RunContext) -> dict[str, Any]:
@@ -91,8 +97,10 @@ def build_units(prof: dict[str, Any], cfg: dict[str, Any]) -> list[dict[str, Any
         fmt, stype = key[0], key[1]
         for chunk in _chunks(gfiles, budget):
             files = [f["path"] for f in chunk]
-            rj = f"rej_ingest_{len(units)}"
+            # rejects tables only for CSV (quote-aware record counts); line formats are counted physically
+            rj = f"rej_ingest_{len(units)}" if fmt == "csv" else None
             u: dict[str, Any] = {"source_type": stype, "format": fmt, "files": files, "rejects": rj,
+                                 "rejects_key": f"unit_{len(units)}",
                                  "bytes": sum(int(f.get("size", 0)) for f in chunk)}
             if fmt == "json":
                 scfg = (sources.get("json_sources") or {}).get(stype) or {}
@@ -104,6 +112,9 @@ def build_units(prof: dict[str, Any], cfg: dict[str, Any]) -> list[dict[str, Any
                                               int(pipe.get("baseline_year", 2026)),
                                               ing.get("syslog_ts_format", "%Y %b %d %H:%M:%S"), formats,
                                               rejects=rj)
+            elif fmt == "kv":
+                kcfg = (sources.get("kv_sources") or {}).get(stype) or {}
+                u["select"] = q.kv_select(stype, files, root, kcfg, rejects=rj)
             elif fmt == "csv":
                 ccfg = (sources.get("csv_sources") or {}).get(stype) or {}
                 u["select"] = q.csv_select(stype, files, root, key[2], list(key[3]), ccfg, formats, rejects=rj)
@@ -188,21 +199,57 @@ def _truncated_csv(ctx: RunContext, g: dict[str, Any]) -> int:
     ).fetchone()[0])
 
 
+# linear-time patterns: runs of non-terminator bytes, and runs that are only spaces (blank lines)
+_LINES = re.compile(rb"[^\r\n]+")
+_BLANK = re.compile(rb"(?<![^\r\n]) +(?![^\r\n])")
+
+
+def _nonempty(body: bytes) -> int:
+    return len(_LINES.findall(body)) - len(_BLANK.findall(body))
+
+
+def physical_lines(files: list[str], chunk: int = 1 << 24) -> int:
+    """Non-empty physical lines over raw bytes, split like the DuckDB line reader (LF, CRLF, lone CR).
+
+    Byte-level and encoding-agnostic (never throws on invalid UTF-8 / NUL), bounded memory (one chunk at a time,
+    no per-event objects). Fast path: a chunk without CR, blank or space-led lines is just count(b"\n").
+    Lines the UTF-8 reader cannot decode are the difference to the rows written.
+    """
+    n = 0
+    for f in files:
+        rest = b""
+        with open(f, "rb") as fh:
+            while True:
+                buf = fh.read(chunk)
+                if not buf:
+                    break
+                buf = rest + buf
+                cut = max(buf.rfind(b"\n"), buf.rfind(b"\r"))
+                if cut < 0:  # no terminator: keep only whether the open line is non-empty (bounded memory)
+                    rest = buf if len(buf) <= chunk else (b"x" if buf.strip(b" ") else b"")
+                    continue
+                body, rest = buf[:cut + 1], buf[cut + 1:]
+                if b"\r" in body or b"\n\n" in body or b"\n " in body or body.startswith((b"\n", b" ")):
+                    n += _nonempty(body)
+                else:
+                    n += body.count(b"\n")
+        if rest.strip(b" "):
+            n += _nonempty(rest)
+    return n
+
+
 def _unrecognized(ctx: RunContext, prof: dict[str, Any]) -> dict[str, Any] | None:
     files = [f["path"] for f in prof.get("files", []) if f.get("format") == "unrecognized"]
     if not files:
         return None
-    drop_rejects(ctx.con, "rej_unrec")
-    n = int(ctx.con.execute(f"SELECT count(*) FROM {line_reader(files, filename=False, rejects='rej_unrec')} "
-                            f"WHERE line IS NOT NULL AND trim(line) <> ''").fetchone()[0])
-    n += sum(c for _, _, c in count_rejects(ctx.con, "rej_unrec"))
+    n = physical_lines(files)
     return {"source_type": "unrecognized", "rows_in": n, "rows_ok": 0, "dropped": n,
             "drop_reasons": {"unrecognized_format": n} if n else {}, "quarantined": 0,
             "files": [u["path"] for u in prof.get("unrecognized", [])]}
 
 
 def _accounting(ctx: RunContext, events_dir: Path, groups: list[dict[str, Any]],
-                prof: dict[str, Any]) -> list[dict[str, Any]]:
+                prof: dict[str, Any], line_counts: dict[str, Future[int]] | None = None) -> list[dict[str, Any]]:
     per: dict[str, dict[str, Any]] = {}
 
     def entry(st: str) -> dict[str, Any]:
@@ -219,11 +266,18 @@ def _accounting(ctx: RunContext, events_dir: Path, groups: list[dict[str, Any]],
             e = entry(st)
             e.update(rows_in=int(written), rows_ok=int(ok), quarantined=int(written - ok))
             if bad:
-                e["drop_reasons"]["malformed_line (kept in ts_ok=false, action=malformed)"] = int(bad)
+                what = "unparseable_line" if st in MALFORMED_AS_UNPARSEABLE else "malformed_line"
+                e["drop_reasons"][f"{what} (kept in ts_ok=false, action=malformed)"] = int(bad)
             if nots:
                 e["drop_reasons"]["missing_or_unparseable_timestamp (kept in ts_ok=false)"] = int(nots)
+    phys: dict[str, int] = {}
     for g in groups:
         e = entry(g["source_type"])
+        if g["format"] != "csv":
+            fut = (line_counts or {}).get(g["rejects_key"])
+            n = fut.result() if fut is not None else physical_lines(g["files"])
+            phys[g["source_type"]] = phys.get(g["source_type"], 0) + n
+            continue
         for _, etype, n in count_rejects(ctx.con, g["rejects"]):
             reason = REJECT_REASONS.get(etype, f"read_error ({etype.lower()})")
             e["rows_in"] += n
@@ -234,6 +288,13 @@ def _accounting(ctx: RunContext, events_dir: Path, groups: list[dict[str, Any]],
                 e.setdefault("notes", {})["truncated_columns (extra fields dropped, row kept)"] = t
                 log.warning("ingest: %d %s rows had more fields than the header; extras dropped",
                             t, g["source_type"])
+    for st, n in phys.items():
+        e = entry(st)
+        if n > e["rows_in"]:  # lines the UTF-8 reader could not decode never reached Parquet
+            e["drop_reasons"]["decode_error (invalid UTF-8, line not readable)"] = n - e["rows_in"]
+            e["rows_in"] = n
+        elif n < e["rows_in"]:
+            log.warning("ingest: %s physical line count %d < rows written %d", st, n, e["rows_in"])
     out = sorted(per.values(), key=lambda a: a["source_type"])
     for e in out:
         e["dropped"] = e["rows_in"] - e["rows_ok"]
@@ -251,13 +312,17 @@ def run(ctx: RunContext) -> dict[str, Any]:
     events_dir.parent.mkdir(parents=True, exist_ok=True)
     units = build_units(prof, ctx.cfg)
     for u in units:
-        drop_rejects(ctx.con, u["rejects"])
+        if u["rejects"]:
+            drop_rejects(ctx.con, u["rejects"])
     written = 0
-    if units:
-        written = _run_copies(ctx, units, events_dir)
-    else:
-        log.warning("ingest: no recognized source files under %s", ctx.raw_dir)
-    acc = _accounting(ctx, events_dir, units, prof)
+    # physical line counts run on a worker thread while DuckDB (GIL released) does the COPY
+    with ThreadPoolExecutor(max_workers=1, thread_name_prefix="linecount") as pool:
+        counts = {u["rejects_key"]: pool.submit(physical_lines, u["files"]) for u in units if u["format"] != "csv"}
+        if units:
+            written = _run_copies(ctx, units, events_dir)
+        else:
+            log.warning("ingest: no recognized source files under %s", ctx.raw_dir)
+        acc = _accounting(ctx, events_dir, units, prof, counts)
     ctx.out_dir.mkdir(parents=True, exist_ok=True)
     (ctx.out_dir / "ingest_accounting.json").write_text(json.dumps(acc, indent=2), encoding="utf-8")
     rows_in = sum(a["rows_in"] for a in acc)
