@@ -1,0 +1,50 @@
+{
+  "id": "inc-3f2a9c1e",
+  "risk": 86,
+  "first_ts": "2026-10-24T02:00:00Z",
+  "last_ts": "2026-10-24T03:05:00Z",
+  "merged_alert_count": 312,
+  "episode_count": 9,
+  "entry_point": {"step": 0, "summary": "Brute force on user:svc_backup from ip:203.0.113.57 against host:srv-dc-01"},
+  "tactics": ["Initial Access", "Execution", "Credential Access", "Discovery", "Lateral Movement", "Collection", "Exfiltration"],
+  "gaps": ["Persistence", "Privilege Escalation", "Stealth", "Defense Impairment", "Command and Control"],
+  "backbone": [
+    {"step": 0, "episode_id": "e12", "ts": "2026-10-24T02:00:00Z", "technique_id": "T1110", "sub_technique_id": "T1110.001", "technique_name": "Brute Force", "tactic": "Credential Access", "rule_id": "brute_force_then_success", "host": "srv-dc-01", "user": "svc_backup", "src_ip": "203.0.113.57", "dst_ip": null, "severity": 85, "confidence": 85, "merged_alert_count": 61, "evidence": ["{\"@timestamp\":\"2026-10-24T02:00:03.120Z\",\"event\":{\"action\":\"user_logon\",\"outcome\":\"failure\"},\"winlog\":{\"event_id\":4625},\"user\":{\"name\":\"svc_backup\"},\"source\":{\"ip\":\"203.0.113.57\"}}", "{\"@timestamp\":\"2026-10-24T02:04:51.004Z\",\"event\":{\"action\":\"user_logon\",\"outcome\":\"success\"},\"winlog\":{\"event_id\":4624}}"]},
+    {"step": 1, "episode_id": "e13", "ts": "2026-10-24T02:04:51Z", "technique_id": "T1078", "sub_technique_id": null, "technique_name": "Valid Accounts", "tactic": "Initial Access", "rule_id": "brute_force_then_success", "host": "srv-dc-01", "user": "svc_backup", "src_ip": "203.0.113.57", "dst_ip": null, "severity": 80, "confidence": 80, "merged_alert_count": 1, "evidence": ["{\"winlog\":{\"event_id\":4624,\"logon\":{\"type\":\"Network\",\"id\":\"0x8a3f21\"}},\"user\":{\"name\":\"svc_backup\"}}"]},
+    {"step": 2, "episode_id": "e15", "ts": "2026-10-24T02:12:10Z", "technique_id": "T1021", "sub_technique_id": null, "technique_name": "Remote Services", "tactic": "Lateral Movement", "rule_id": "new_admin_logon", "host": "ws-fin-010", "user": "svc_backup", "src_ip": "10.10.0.10", "dst_ip": null, "severity": 75, "confidence": 72, "merged_alert_count": 2, "evidence": ["{\"winlog\":{\"event_id\":4672,\"logon\":{\"id\":\"0x91bc02\"}},\"host\":{\"name\":\"WS-FIN-010\"}}"]},
+    {"step": 3, "episode_id": "e16", "ts": "2026-10-24T02:15:40Z", "technique_id": "T1059", "sub_technique_id": "T1059.001", "technique_name": "PowerShell", "tactic": "Execution", "rule_id": "encoded_powershell", "host": "ws-fin-010", "user": "svc_backup", "src_ip": null, "dst_ip": null, "severity": 80, "confidence": 80, "merged_alert_count": 1, "evidence": ["{\"process\":{\"name\":\"powershell.exe\",\"command_line\":\"powershell.exe -enc SQBFAFgA...\"}}"]},
+    {"step": 4, "episode_id": "e17", "ts": "2026-10-24T02:20:02Z", "technique_id": "T1087", "sub_technique_id": "T1087.002", "technique_name": "Account Discovery", "tactic": "Discovery", "rule_id": "discovery_commands", "host": "ws-fin-010", "user": "svc_backup", "src_ip": null, "dst_ip": null, "severity": 55, "confidence": 52, "merged_alert_count": 3, "evidence": ["{\"process\":{\"name\":\"net.exe\",\"command_line\":\"net group \\\"domain admins\\\" /domain\"}}"]},
+    {"step": 5, "episode_id": "e18", "ts": "2026-10-24T02:41:15Z", "technique_id": "T1560", "sub_technique_id": "T1560.001", "technique_name": "Archive via Utility", "tactic": "Collection", "rule_id": "archive_staging", "host": "ws-fin-010", "user": "svc_backup", "src_ip": null, "dst_ip": null, "severity": 65, "confidence": 61, "merged_alert_count": 1, "evidence": ["{\"process\":{\"name\":\"7z.exe\",\"command_line\":\"7z a C:\\Users\\Public\\q3.7z D:\\Finance\\*\"}}"]},
+    {"step": 6, "episode_id": "e20", "ts": "2026-10-24T02:55:00Z", "technique_id": "T1048", "sub_technique_id": null, "technique_name": "Exfiltration Over Alternative Protocol", "tactic": "Exfiltration", "rule_id": "exfil_volume", "host": "ws-fin-010", "user": "svc_backup", "src_ip": "10.10.1.10", "dst_ip": "198.51.100.23", "severity": 90, "confidence": 90, "merged_alert_count": 4, "evidence": ["{\"destination\":{\"ip\":\"198.51.100.23\",\"port\":443},\"network\":{\"bytes\":26214400}}", "<img src=x onerror=alert(1)> must render as text"]}
+  ],
+  "branches": [],
+  "edges": [
+    {"from": "e12", "to": "e13", "rule": "R2", "weight": 0.98, "why_linked": "Same session: svc_backup on srv-dc-01, 4m51s apart"},
+    {"from": "e13", "to": "e15", "rule": "R1", "weight": 1.41, "why_linked": "Activity moved from srv-dc-01 to ws-fin-010 7m19s later"},
+    {"from": "e15", "to": "e16", "rule": "R2", "weight": 0.97, "why_linked": "Same session: svc_backup on ws-fin-010, 3m30s apart"},
+    {"from": "e16", "to": "e17", "rule": "R2", "weight": 0.96, "why_linked": "Same session: svc_backup on ws-fin-010, 4m22s apart"},
+    {"from": "e17", "to": "e18", "rule": "R2", "weight": 0.83, "why_linked": "Same session: svc_backup on ws-fin-010, 21m13s apart"},
+    {"from": "e18", "to": "e20", "rule": "R4", "weight": 1.08, "why_linked": "Data staged on ws-fin-010 sent to 198.51.100.23"}
+  ],
+  "graph": {
+    "nodes": [
+      {"id": "ip:203.0.113.57", "type": "ip", "label": "203.0.113.57", "compromised": false},
+      {"id": "user:svc_backup", "type": "user", "label": "svc_backup", "compromised": true},
+      {"id": "host:srv-dc-01", "type": "host", "label": "SRV-DC-01", "compromised": true},
+      {"id": "host:ws-fin-010", "type": "host", "label": "WS-FIN-010", "compromised": true},
+      {"id": "ip:198.51.100.23", "type": "ip", "label": "198.51.100.23", "compromised": false},
+      {"id": "host:srv-file-01", "type": "host", "label": "SRV-FILE-01", "compromised": false}
+    ],
+    "edges": [
+      {"source": "ip:203.0.113.57", "target": "host:srv-dc-01", "label": "T1110", "step": 0},
+      {"source": "user:svc_backup", "target": "host:srv-dc-01", "label": "T1078", "step": 1},
+      {"source": "host:srv-dc-01", "target": "host:ws-fin-010", "label": "T1021", "step": 2},
+      {"source": "host:ws-fin-010", "target": "ip:198.51.100.23", "label": "T1048", "step": 6}
+    ]
+  },
+  "reach_next": [
+    {"host": "srv-file-01", "hops": 1, "via_user": "svc_backup", "evidence": "4624 type 3 + 4672 at 2026-10-22T11:02:00Z", "crown_jewel": "file", "touched": false},
+    {"host": "srv-db-01", "hops": 2, "via_user": "svc_backup", "evidence": "allowed flow srv-file-01 -> 10.10.0.40:22", "crown_jewel": "db", "touched": false}
+  ],
+  "narrative": {"source": "template", "text": "An external IP brute-forced the account svc_backup on SRV-DC-01 (61 failures, then a success). The account then logged on to WS-FIN-010 with admin rights, ran encoded PowerShell, enumerated domain admins, archived finance data with 7-Zip and sent about 100 MB to 198.51.100.23. svc_backup still has admin rights on SRV-FILE-01."}
+}
