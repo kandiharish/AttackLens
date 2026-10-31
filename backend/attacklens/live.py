@@ -1,12 +1,15 @@
 """Live mode (B-5): tail a folder every poll_s, ingest the delta, re-run Stages 2-7 on a bounded event-time window.
 
-    python -m attacklens.live --watch data/raw/live --out data/out/live [--once] [--config DIR]
+    python -m attacklens.live --watch data/raw/live --out data/out/live [--once] [--reset] [--config DIR]
 
 Per cycle with new data:
 1. Tail every file by byte offset; only complete lines ('\\n'-terminated) are taken (offsets in tail_state.json).
 2. Delta lines -> batch raw dir -> Stage 0 profile + Stage 1 ingest (the batch code, unchanged) -> batch Parquet.
-3. Window Parquet = (previous window UNION batch) WHERE ts_ok AND ts_ms >= watermark - lookback (one DuckDB COPY).
-   lookback = longest *_window_ms in rules.yaml (configurable), so every rule sees its full window.
+3. Window Parquet: the batch's ts_ok files are moved in (no rewrite); whole event days older than
+   watermark - lookback are deleted; > compact_max_files triggers one rewrite. lookback = longest *_window_ms
+   in rules.yaml (configurable), so every rule sees its full window.
+State lives in <parquet_root>/<out name>; it is discarded automatically if it belongs to another watch/out dir.
+--reset also clears this out dir's published incidents.
 4. Stages 2-7 (lookups ... publish) over the window into out_dir. Alerts are recomputed from the window each
    cycle, so an alert exists once per (rule, key, window) - no duplicates across cycles.
 5. Incidents that ended before the window start are kept from the previous index (frozen), not dropped.
@@ -16,7 +19,6 @@ Per cycle with new data:
 from __future__ import annotations
 
 import argparse
-import json
 import logging
 import os
 import shutil
@@ -31,10 +33,15 @@ from attacklens import run as batch
 from attacklens.config import REPO_ROOT, load_config
 from attacklens.context import RunContext
 from attacklens.db import HIVE_TYPES, connect, register_events, sql_path
+from attacklens.live_tail import Tailer
+from attacklens.live_tail import read_json as _read_json
+from attacklens.live_tail import write_json as _write_json
 
 log = logging.getLogger("attacklens.live")
 
 STATUS_FILE = "live_status.json"
+PUBLISHED_FILES = (STATUS_FILE, "incidents_index.json", "ingest_accounting.json", "suppressed.json",
+                   "run_metrics.json", "eval_scorecard.json", "source_profile.json")
 LIVE_STAGES = batch.STAGES[2:]  # lookups, detect, episodes, link, incidents, publish
 
 
@@ -51,21 +58,6 @@ def _iso_ms(ms: int | float | None) -> str | None:
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")[:-4] + "Z"
-
-
-def _write_json(path: Path, obj: Any) -> None:
-    """Atomic write (tmp + replace) so the API never reads a half-written file."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(json.dumps(obj, ensure_ascii=False, indent=1), encoding="utf-8")
-    os.replace(tmp, path)
-
-
-def _read_json(path: Path, default: Any) -> Any:
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return default
 
 
 def longest_window_ms(rules: Any) -> int:
@@ -90,55 +82,6 @@ def _parquet_glob(d: Path) -> str | None:
     return (ev / "**" / "*.parquet").as_posix() if ev.exists() and any(ev.rglob("*.parquet")) else None
 
 
-class Tailer:
-    """Byte-offset tail of every file under watch_dir; returns only complete lines."""
-
-    def __init__(self, watch: Path, state_file: Path, pcfg: dict[str, Any], max_read: int) -> None:
-        self.watch, self.state_file, self.max_read = watch, state_file, max_read
-        self.offsets: dict[str, int] = _read_json(state_file, {})
-        self._pending: dict[str, int] = {}
-        self.skip_names = set(pcfg.get("skip_names") or ["manifest.json"])
-        self.skip_suffixes = tuple(pcfg.get("skip_suffixes") or [".md"])
-        self.skip_dirs = set(pcfg.get("skip_dir_components") or ["ground_truth"])
-
-    def _skip(self, p: Path) -> bool:
-        rel = p.relative_to(self.watch)
-        return (p.name in self.skip_names or p.name.endswith(self.skip_suffixes) or p.name.startswith(".")
-                or bool(self.skip_dirs.intersection(rel.parts[:-1])))
-
-    def poll(self) -> dict[str, bytes]:
-        out: dict[str, bytes] = {}
-        self._pending = {}
-        if not self.watch.is_dir():
-            return out
-        for p in sorted(x for x in self.watch.rglob("*") if x.is_file()):
-            if self._skip(p):
-                continue
-            rel = p.relative_to(self.watch).as_posix()
-            off = self.offsets.get(rel, 0)
-            size = p.stat().st_size
-            if size < off:  # truncated / replaced -> start again
-                log.warning("live: %s shrank (%d < %d); re-reading from 0", rel, size, off)
-                off = 0
-            if size == off:
-                continue
-            with p.open("rb") as fh:
-                fh.seek(off)
-                data = fh.read(min(size - off, self.max_read))
-            cut = data.rfind(b"\n")
-            if cut < 0:
-                continue  # no complete line yet
-            out[rel] = data[: cut + 1]
-            self._pending[rel] = off + cut + 1
-        return out
-
-    def commit(self) -> None:
-        """Advance offsets only after the batch was processed (a failed cycle re-reads the same bytes)."""
-        self.offsets.update(self._pending)
-        self._pending = {}
-        _write_json(self.state_file, self.offsets)
-
-
 class LiveEngine:
     def __init__(self, watch: Path, out: Path, cfg: dict[str, Any]) -> None:
         self.cfg = cfg
@@ -150,9 +93,17 @@ class LiveEngine:
         self.temp = _repo_path(pipe.get("temp_directory", "data/spill"))
         self.lookback = int(self.lcfg.get("lookback_ms") or longest_window_ms(cfg.get("rules")))
         self.lookback += int(self.lcfg.get("extra_lookback_ms") or 0)
+        saved = _read_json(self.state / "live_state.json", {})
+        if saved and (saved.get("watch_dir"), saved.get("out_dir")) != (watch.as_posix(), out.as_posix()):
+            log.warning("live: state in %s belongs to another watch/out dir; starting fresh", self.state)
+            reset(self.state, out)  # its published incidents came from the other watch dir too
+            saved = {}
+        elif not saved:  # no committed batch: any tail offsets / window files are leftovers
+            shutil.rmtree(self.state, ignore_errors=True)
+        shutil.rmtree(self.state / "batches", ignore_errors=True)  # transient; leftovers of a killed cycle
+        # built after the state check so stale offsets are never used
         self.tailer = Tailer(watch, self.state / "tail_state.json", pipe.get("profile") or {},
                              int(self.lcfg.get("max_read_bytes", 256 * 2**20)))
-        saved = _read_json(self.state / "live_state.json", {})
         self.batch_no = int(saved.get("batch_no", 0))
         self.window_name: str | None = saved.get("window")
         self.watermark: int | None = saved.get("watermark_ms")
@@ -287,6 +238,8 @@ class LiveEngine:
 
     def _save(self) -> None:
         _write_json(self.state / "live_state.json", {"batch_no": self.batch_no, "window": self.window_name,
+                                                      "watch_dir": self.watch.as_posix(),
+                                                      "out_dir": self.out.as_posix(),
                                                       "watermark_ms": self.watermark,
                                                       "accounting": self.accounting,
                                                       "last_batch_ts": self.status.get("last_batch_ts")})
@@ -310,7 +263,7 @@ class LiveEngine:
             t_ing = time.perf_counter() - t0
             window, wm, wrows, cutoff_iso = self._rebuild_window(con, bdir)
             t_win = time.perf_counter() - t0 - t_ing
-            frozen = self._frozen(cutoff_iso)
+            frozen = self._frozen(cutoff_iso) if self.batch_no > 1 else []  # first batch: old index is not ours
             walls = self._run_stages(con, window)
             n_inc = self._merge_frozen(frozen)
         except Exception as exc:
@@ -349,6 +302,16 @@ class LiveEngine:
             self.write_status(running=False, enabled=False)
 
 
+def reset(state: Path, out: Path) -> None:
+    """Forget tail offsets + window Parquet and remove this live out dir's published files (named files only)."""
+    shutil.rmtree(state, ignore_errors=True)
+    for d in ("incidents", "work"):
+        shutil.rmtree(out / d, ignore_errors=True)
+    for f in PUBLISHED_FILES:
+        (out / f).unlink(missing_ok=True)
+    log.info("live: reset state %s and outputs in %s", state, out)
+
+
 def status(out_dir: str | Path | None = None, cfg: dict[str, Any] | None = None) -> dict[str, Any]:
     """Live status for the API: live_status.json of out_dir (default live.yaml out_dir); enabled only if fresh."""
     lcfg = (cfg if cfg is not None else load_config()).get("live") or {}
@@ -371,7 +334,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--out", help="output dir (default live.yaml out_dir)")
     ap.add_argument("--config", help="config directory")
     ap.add_argument("--once", action="store_true", help="run one cycle and exit")
-    ap.add_argument("--reset", action="store_true", help="forget tail offsets and window state first")
+    ap.add_argument("--reset", action="store_true",
+                    help="start clean: forget tail offsets + window state and clear this out dir's incidents")
     ap.add_argument("-v", "--verbose", action="store_true")
     a = ap.parse_args(argv)
     logging.basicConfig(level=logging.DEBUG if a.verbose else logging.INFO, stream=sys.stderr,
@@ -384,7 +348,7 @@ def main(argv: list[str] | None = None) -> int:
     out.mkdir(parents=True, exist_ok=True)
     eng = LiveEngine(watch, out, cfg)
     if a.reset:
-        shutil.rmtree(eng.state, ignore_errors=True)
+        reset(eng.state, out)
         eng = LiveEngine(watch, out, cfg)
     log.info("live: watching %s -> %s (poll %.1f s, lookback %d ms, state %s)", watch, out,
              float(lcfg.get("poll_s", 2.0)), eng.lookback, eng.state)

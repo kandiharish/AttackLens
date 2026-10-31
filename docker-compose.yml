@@ -1,11 +1,11 @@
-# docker compose up -d   ->   http://localhost:8000  (API under /api, SPA at /)
+# docker compose up -d   ->   http://localhost:8000  (API under /api, SPA at /; other host port: ATTACKLENS_PORT=8001)
 # First start generates data/raw/demo (200 MB synthetic) and runs the pipeline into data/out/demo (~1 min).
 services:
   attacklens:
     build: .
     image: attacklens:latest
     ports:
-      - "8000:8000"
+      - "${ATTACKLENS_PORT:-8000}:8000"   # host port: ATTACKLENS_PORT=8001 docker compose up -d
     volumes:
       - ./data:/app/data
     environment:

@@ -94,10 +94,22 @@ def substitute(text: str, values: dict[str, str]) -> str:
     return strip_control(TOKEN_RE.sub(lambda m: values.get(m.group(0), ""), text)).strip()
 
 
-def _prompt_leaks(prompt: str, pm: PlaceholderMap) -> list[str]:
-    """Defence in depth: any raw entity value appearing verbatim in the prompt is a leak."""
-    low = prompt.lower()
-    return [tok for tok, v in pm.values.items() if len(v) >= _MIN_GUARD_LEN and v.lower() in low]
+def _fact_strings(obj: Any) -> list[str]:
+    """Every string VALUE in the facts (dict keys such as 'reach_admin' are schema, not data)."""
+    if isinstance(obj, str):
+        return [obj]
+    if isinstance(obj, dict):
+        return [s for v in obj.values() for s in _fact_strings(v)]
+    if isinstance(obj, (list, tuple)):
+        return [s for v in obj for s in _fact_strings(v)]
+    return []
+
+
+def _prompt_leaks(facts: dict[str, Any], pm: PlaceholderMap) -> list[str]:
+    """Defence in depth: a raw entity value appearing as a whole token inside any fact value is a leak."""
+    data = "\n".join(_fact_strings(facts)).lower()
+    return [tok for tok, v in pm.values.items() if len(v) >= _MIN_GUARD_LEN
+            and re.search(r"(?<![a-z0-9_.\-])" + re.escape(v.lower()) + r"(?![a-z0-9_.\-])", data)]
 
 
 def _llm_available(ncfg: dict[str, Any]) -> bool:
@@ -143,7 +155,7 @@ def try_llm(facts: dict[str, Any], pm: PlaceholderMap, ncfg: dict[str, Any]) -> 
     if not _llm_available(ncfg):
         return None
     prompt = build_prompt(facts)
-    leaks = _prompt_leaks(prompt, pm)
+    leaks = _prompt_leaks(facts, pm)
     if leaks:
         log.warning("narrative: raw entity values found in prompt for %s; using template", leaks)
         return None

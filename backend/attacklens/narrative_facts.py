@@ -46,6 +46,10 @@ class PlaceholderMap:
         if not clean:
             return None
         key = (kind, clean.lower())
+        if kind in ("ip", "domain"):  # FortiGate: an internal endpoint's IP is also its host -> one token
+            tok = self._tokens.get(("host", clean.lower()))
+            if tok is not None:
+                return tok
         tok = self._tokens.get(key)
         if tok is None:
             prefix = _KINDS[kind]
@@ -66,9 +70,18 @@ class PlaceholderMap:
 
 
 def build_placeholders(incident: Incident) -> PlaceholderMap:
+    """Hosts are registered first (steps, reach-next, graph), so a value that is a host anywhere (an IP-string
+    host or a firewall devname) is always {{HOST_n}}, even where it also appears as src_ip/dst_ip."""
     pm = PlaceholderMap()
-    for step in [*incident.backbone, *(s for br in incident.branches for s in br)]:
+    steps = [*incident.backbone, *(s for br in incident.branches for s in br)]
+    for step in steps:
         pm.token("host", step.host)
+    for r in incident.reach_next:
+        pm.token("host", r.host)
+    for node in incident.graph.nodes:
+        if node.type == "host":
+            pm.token("host", node.id.split(":", 1)[1] if ":" in node.id else node.label)
+    for step in steps:
         pm.token("user", step.user)
         pm.token("ip", step.src_ip)
         pm.token("ip", step.dst_ip)
