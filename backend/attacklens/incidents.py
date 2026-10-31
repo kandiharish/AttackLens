@@ -35,6 +35,7 @@ class Comp:
     backbone: list[str]
     branches: list[list[str]]
     back: dict[str, str | None]
+    burst: bool = False  # kept only via the hands-on-keyboard burst gate path
 
 
 def iso(ms: int | None) -> str:
@@ -168,6 +169,8 @@ def build_incident(ctx: RunContext, c: Comp, eps: dict[str, dict[str, Any]], edg
         back += ([(first_pred, b[0])] if first_pred else []) + list(zip(b, b[1:]))
     pedges = [pe for i, j in back if (pe := _path_edge(edge_map, i, j, label)) is not None]
     risk, raw = risk_score(path_eps, p)
+    if c.burst:  # a confirmed burst never sorts below single-tactic noise (gate.burst_risk_floor, 0 = literal §6.4)
+        risk = max(risk, p["burst_risk_floor"])
     path_tactics = sorted({e.get("tactic") for e in path_eps if e.get("tactic")}, key=lambda t: TACTIC_IDX.get(t, 99))
     comp_tactics = {e.get("tactic") for e in comp_eps}
     idxs = [tactic_idx(e) for e in bb if tactic_idx(e) > 0]
@@ -292,7 +295,9 @@ def run(ctx: RunContext) -> dict[str, Any]:
                 queue.extend(subs)
     accounting = episode_accounting(eps, [c.ids for c in kept], sup_all)
     no_burst = {**p, "burst_techniques": 0}
-    via_burst = sum(_gate_ids(c.ids, eps, allow, no_burst)[0] is not None for c in kept)
+    for c in kept:
+        c.burst = p["burst_techniques"] > 0 and _gate_ids(c.ids, eps, allow, no_burst)[0] is not None
+    via_burst = sum(c.burst for c in kept)
     ev = _evidence(ctx, {x for c in kept for x in c.backbone + [y for b in c.branches for y in b]}, p)
     reach_stats = reach.prepare(ctx)
     rg = reach.load_graph(ctx)

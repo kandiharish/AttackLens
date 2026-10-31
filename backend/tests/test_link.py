@@ -212,3 +212,96 @@ def test_link_run_writes_edges_schema(ctx) -> None:
     assert [(d["column_name"], d["column_type"]) for d in desc] == [
         ("i", "VARCHAR"), ("j", "VARCHAR"), ("rule", "VARCHAR"), ("weight", "DOUBLE"), ("dt_ms", "BIGINT"),
         ("why_linked", "VARCHAR")]
+
+
+
+# ================================================================ R3 fan-out cap per source (linking.yaml r3_max_succs_per_source)
+def r3_fan(n: int) -> list[dict]:
+    src = ep("a", T0, "srv-dc-01", tactic="Credential Access", target_user="svc_backup", confidence=85)
+    return [src] + [ep(f"j{k:02d}", T0 + (k + 1) * H, f"ws-{k:02d}", src_user="svc_backup") for k in range(n)]
+
+
+def test_r3_cap_per_source(ctx, p) -> None:
+    cap = int(p["r3_max_succs_per_source"])
+    assert 0 < cap < 20
+    rows = [r for r in edges(ctx, r3_fan(20)) if r["i"] == "a" and r["rule"] == "R3"]
+    assert sorted(r["j"] for r in rows) == [f"j{k:02d}" for k in range(cap)]  # the cap nearest (heaviest) successors
+
+
+def test_r3_cap_off_keeps_all_within_window(ctx, p) -> None:
+    q = {**p, "r3_max_succs_per_source": 0}
+    rows = [r for r in edges(ctx, r3_fan(20), p=q) if r["i"] == "a" and r["rule"] == "R3"]
+    assert len(rows) == 20  # all 20 are within 72 h; only the cap limits them
+
+
+# ================================================================ log devices and IP sessions (FortiGate entities)
+DEV = "fgt-01"
+
+
+def dev_ep(eid: str, ts: int, **kw) -> dict:
+    return ep(eid, ts, DEV, subject_host=kw.pop("subject_host", DEV), **kw)
+
+
+def test_userless_device_episodes_no_r2(ctx) -> None:
+    rows = edges(ctx, [dev_ep(f"d{k:02d}", T0 + k * 3 * MIN) for k in range(30)])  # 30 within 2 h (87 min)
+    assert [r for r in rows if r["rule"] == "R2"] == []
+
+
+def test_device_barred_as_r2_key_even_with_a_user(ctx) -> None:
+    eps = [dev_ep(f"d{k:02d}", T0 + k * 3 * MIN, target_user="admin") for k in range(30)]
+    eps.append(dev_ep("x", T0 - H, subject_host="10.0.2.37"))  # the devname logs another subject -> a device
+    rows = edges(ctx, eps)
+    assert [r for r in rows if r["rule"] == "R2"] == []
+
+
+def test_device_with_user_links_when_not_detected_as_device(ctx, p) -> None:
+    # control for the test above: without the device-revealing episode (and auto detection) R2 links them
+    q = {**p, "auto_device_hosts": False}
+    eps = [dev_ep(f"d{k}", T0 + k * MIN, target_user="admin") for k in range(2)]
+    assert pairs(edges(ctx, eps, p=q)) == {("d0", "d1", "R2")}
+
+
+def test_userless_ip_session_r2(ctx, p) -> None:
+    rows = edges(ctx, [ep("a", T0, DEV, subject_host="10.0.2.37"), ep("b", T0 + 30 * MIN, DEV,
+                                                                       subject_host="10.0.2.37")])
+    assert pairs(rows) == {("a", "b", "R2")}
+    assert rows[0]["why_linked"] == "Same session: endpoint on 10.0.2.37, 30m00s apart"
+    tau = p["rules"]["R2"]["tau_ms"]
+    late = edges(ctx, [ep("a", T0, DEV, subject_host="10.0.2.37"), ep("b", T0 + tau + 1, DEV,
+                                                                      subject_host="10.0.2.37")])
+    assert late == []
+
+
+def test_userless_ip_session_off(ctx, p) -> None:
+    q = {**p, "r2_ip_session": False}
+    rows = edges(ctx, [ep("a", T0, DEV, subject_host="10.0.2.37"), ep("b", T0 + MIN, DEV, subject_host="10.0.2.37")],
+                 p=q)
+    assert rows == []
+
+
+def ext_pair(src_ip: str, dt: int) -> list[dict]:
+    return [dev_ep("fw", T0, src_ip=src_ip, target_user="admin", tactic="Credential Access", confidence=40),
+            dev_ep("rdp", T0 + dt, subject_host="10.10.20.15", src_ip=src_ip, tactic="Lateral Movement")]
+
+
+def test_r1_same_external_src_ip_on_device_then_internal_host(ctx, p) -> None:
+    rows = edges(ctx, ext_pair("203.0.113.66", 30 * MIN))
+    assert pairs(rows) == {("fw", "rdp", "R1")}
+    assert rows[0]["why_linked"] == "Activity from 203.0.113.66 moved from fgt-01 to 10.10.20.15 30m00s later"
+
+
+@pytest.mark.parametrize("case", ["internal_src_ip", "outside_ext_window"])
+def test_r1_ext_ip_near_misses(ctx, p, case: str) -> None:
+    tau = p["rules"]["R1"].get("ext_ip_tau_ms") or p["rules"]["R1"]["tau_ms"]
+    eps = ext_pair("10.0.9.9", 30 * MIN) if case == "internal_src_ip" else ext_pair("203.0.113.66", tau + 1)
+    assert edges(ctx, eps) == []
+
+
+def test_r1_ext_ip_hub_barred(ctx) -> None:
+    assert edges(ctx, ext_pair("203.0.113.66", 30 * MIN), hubs=["ip:203.0.113.66"]) == []
+
+
+def test_link_stats_report_devices(ctx) -> None:
+    write_episodes(ctx, [dev_ep("x", T0, subject_host="10.0.2.37"), ep("y", T0, "ws-01", src_user="u")])
+    stats = link.run(ctx)
+    assert stats["devices"] == [DEV]

@@ -106,3 +106,29 @@ def test_max_branches() -> None:
 
 def test_empty_component() -> None:
     assert best_path([], []).backbone == []
+
+
+
+# ================================================================ seeds are never hidden (best_path seeds=)
+def test_seed_off_backbone_with_link_from_shown_becomes_branch() -> None:
+    # backbone a->b->c; seed s has its own (weaker) chain from x but a link from shown b -> it hangs off b
+    nodes = [n("a", 0, "Execution", 80), n("b", 1, "Discovery", 80), n("c", 2, "Collection", 80),
+             n("x", 3, "Execution", 5), n("s", 4, "Persistence", 70)]
+    edges = [Edge("a", "b", "R2", 1.0), Edge("b", "c", "R2", 1.0), Edge("x", "s", "R2", 1.0), Edge("b", "s", "R1", 0.1)]
+    r = best_path(nodes, edges, EXEMPT, branch_min_ratio=0.99, max_branches=0, seeds={"s"})
+    assert r.backbone == ["a", "b", "c"]
+    assert ["s"] in r.branches  # shown despite branch_min_ratio / max_branches
+
+
+def test_seed_without_any_link_to_shown_is_left_for_peeling() -> None:
+    nodes = [n("a", 0, "Execution", 80), n("b", 1, "Discovery", 80), n("s", 2, "Persistence", 70)]
+    r = best_path(nodes, [Edge("a", "b", "R2", 1.0)], EXEMPT, seeds={"s"})
+    assert r.backbone == ["a", "b"] and r.branches == []
+
+
+def test_non_seed_respects_branch_limits() -> None:
+    nodes = [n("a", 0, "Execution", 80), n("b", 1, "Discovery", 80), n("c", 2, "Collection", 80),
+             n("d", 3, "Discovery", 60)]
+    edges = [Edge("a", "b", "R2", 1.0), Edge("b", "c", "R2", 1.0), Edge("a", "d", "R2", 1.0)]
+    assert best_path(nodes, edges, EXEMPT, max_branches=0).branches == []
+    assert best_path(nodes, edges, EXEMPT, max_branches=0, seeds={"d"}).branches == [["d"]]

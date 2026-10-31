@@ -185,3 +185,139 @@ def test_stage4_two_attacks_two_incidents_sorted_by_risk(tmp_path: Path) -> None
     assert [[s["episode_id"] for s in d["backbone"]] for d in data] == [["e1", "e2", "e3", "e4", "e5"],
                                                                          ["f1", "f2"]]
     assert data[0]["risk"] > data[1]["risk"]
+
+
+
+# ================================================================ scale invariance: seeds vs a high-severity noise chain
+def _write_edges(ctx, rows: list[tuple[str, str, str, float]]) -> None:
+    con = ctx.con
+    con.execute("CREATE OR REPLACE TEMP TABLE _ed (i VARCHAR, j VARCHAR, rule VARCHAR, weight DOUBLE, dt_ms BIGINT, "
+                "why_linked VARCHAR)")
+    if rows:
+        con.executemany("INSERT INTO _ed VALUES (?, ?, ?, ?, 0, ?)", [(i, j, r, w, f"{r} {i}->{j}") for i, j, r, w in rows])
+    con.execute(f"COPY _ed TO '{(ctx.work_dir / 'edges.parquet').as_posix()}' (FORMAT PARQUET)")
+
+
+SEEDS = [
+    {"episode_id": "s1", "ts_ms": T0, "host": "srv-dc-01", "tactic": "Credential Access", "technique_id": "T1110",
+     "target_user": "svc_backup", "src_ip": "203.0.113.57", "severity": 75, "confidence": 85},
+    {"episode_id": "s2", "ts_ms": T0 + 5 * MIN, "host": "srv-dc-01", "tactic": "Initial Access",
+     "technique_id": "T1078", "target_user": "svc_backup", "severity": 85, "confidence": 85},
+    {"episode_id": "s3", "ts_ms": T0 + 20 * MIN, "host": "ws-fin-010", "tactic": "Lateral Movement",
+     "technique_id": "T1021", "target_user": "svc_backup", "severity": 75, "confidence": 75},
+    {"episode_id": "s4", "ts_ms": T0 + 60 * MIN, "host": "ws-fin-010", "tactic": "Exfiltration",
+     "technique_id": "T1048", "src_user": "svc_backup", "dst_ip": "198.51.100.23", "severity": 85, "confidence": 85},
+]
+NOISE_TACTICS = ["Discovery", "Collection", "Command and Control", "Impact", "Execution", "Persistence"]
+
+
+def _noise(n: int) -> tuple[list[dict], list[tuple[str, str, str, float]]]:
+    """An earlier noise Execution n0, then an n-step noise chain (severity 80, confidence 17-52) on another host."""
+    eps = [{"episode_id": "n0", "ts_ms": T0 - 30 * MIN, "host": "ws-it-003", "tactic": "Execution",
+            "technique_id": "T1059", "src_user": "kiyer", "severity": 80, "confidence": 30}]
+    for k in range(1, n + 1):
+        eps.append({"episode_id": f"n{k:02d}", "ts_ms": T0 + 6 * MIN + k * 4 * MIN, "host": "ws-it-003",
+                    "tactic": NOISE_TACTICS[(k - 1) % len(NOISE_TACTICS)], "technique_id": "T1082",
+                    "src_user": "kiyer", "severity": 80, "confidence": 17 + (35 * (k - 1)) // max(1, n - 1)})
+    chain = [(f"n{k:02d}", f"n{k + 1:02d}", "R2", 1.0) for k in range(1, n)]
+    weak = [("s2", "n01", "R1", 0.3), ("n0", "n01", "R2", 0.1)]
+    return eps, chain + weak
+
+
+def _stage4_with(tmp: Path, eps: list[dict], edge_rows: list[tuple[str, str, str, float]]) -> tuple:
+    ctx = make_events_parquet(tmp, REACH_EVENTS)
+    write_episodes(ctx, eps)
+    _write_edges(ctx, edge_rows)
+    try:
+        stats = incidents.run(ctx)
+        data = json.loads((ctx.work_dir / "incidents.json").read_text(encoding="utf-8"))
+        sup = json.loads((ctx.out_dir / "suppressed.json").read_text(encoding="utf-8"))
+    finally:
+        ctx.con.close()
+    return stats, data, sup
+
+
+SEED_EDGES = [("s1", "s2", "R2", 1.0), ("s2", "s3", "R3", 1.0), ("s3", "s4", "R2", 1.0)]
+
+
+@pytest.mark.parametrize("n_noise", [4, 12])
+def test_seed_chain_beats_high_severity_noise_chain(tmp_path: Path, n_noise: int) -> None:
+    noise, noise_edges = _noise(n_noise)
+    stats, data, sup = _stage4_with(tmp_path, SEEDS + noise, SEED_EDGES + noise_edges)
+    acc = stats["episode_accounting"]
+    assert acc["ok"] is True and acc["in_incidents"] + acc["in_suppressed"] == acc["episodes"] == 4 + 1 + n_noise
+    assert acc["missing"] == 0 and acc["duplicated"] == 0
+    s1_inc = [d for d in data if any(s["episode_id"] == "s1" for s in d["backbone"])]
+    assert len(s1_inc) == 1
+    inc = s1_inc[0]
+    assert inc["backbone"][0]["episode_id"] == "s1"                       # backbone starts with the brute force
+    assert [s["episode_id"] for s in inc["backbone"]] == ["s1", "s2", "s3", "s4"]
+    shown = {s["episode_id"] for d in data for s in d["backbone"] + [x for b in d["branches"] for x in b]}
+    sup_ids = {x for c in sup["components"] for x in c["episode_ids"]}
+    for seed in ("s1", "s2", "s3", "s4"):
+        assert seed in shown or seed in sup_ids, seed                    # a seed is never hidden
+
+
+def test_backbone_identical_across_noise_sizes(tmp_path: Path) -> None:
+    got = []
+    for n in (4, 12):
+        noise, noise_edges = _noise(n)
+        _, data, _ = _stage4_with(tmp_path / f"n{n}", SEEDS + noise, SEED_EDGES + noise_edges)
+        got.append(next([s["episode_id"] for s in d["backbone"]] for d in data
+                        if d["backbone"][0]["episode_id"] == "s1"))
+    assert got[0] == got[1] == ["s1", "s2", "s3", "s4"]
+
+
+def test_unlinked_seed_is_shown_or_suppressed_never_lost(tmp_path: Path) -> None:
+    lone = {"episode_id": "z9", "ts_ms": T0 + 5 * H, "host": "ws-hr-012", "tactic": "Persistence",
+            "technique_id": "T1547", "src_user": "pmehta", "severity": 75, "confidence": 70}
+    stats, data, sup = _stage4_with(tmp_path, SEEDS + [lone], SEED_EDGES)
+    shown = {s["episode_id"] for d in data for s in d["backbone"] + [x for b in d["branches"] for x in b]}
+    sup_ids = {x for c in sup["components"] for x in c["episode_ids"]}
+    assert "z9" in shown | sup_ids and stats["episode_accounting"]["ok"] is True
+
+
+def test_episode_accounting_invariant_on_s1_component(tmp_path: Path) -> None:
+    ctx, stats = _stage4(tmp_path)
+    ctx.con.close()
+    acc = stats["episode_accounting"]
+    assert acc == {"episodes": 6, "in_incidents": 5, "in_suppressed": 1, "missing": 0, "duplicated": 0, "ok": True}
+
+
+# ================================================================ text: 1-based step numbers, evidence clipping
+def test_r3_why_linked_uses_one_based_steps(tmp_path: Path) -> None:
+    eps = [SEEDS[0], {"episode_id": "x2", "ts_ms": T0 + 30 * MIN, "host": "ws-fin-010", "tactic": "Execution",
+                      "technique_id": "T1059", "src_user": "svc_backup", "severity": 80, "confidence": 80}]
+    ctx = make_events_parquet(tmp_path, REACH_EVENTS)
+    try:
+        write_episodes(ctx, eps)
+        link.run(ctx)
+        incidents.run(ctx)
+        data = json.loads((ctx.work_dir / "incidents.json").read_text(encoding="utf-8"))
+    finally:
+        ctx.con.close()
+    inc = Incident.model_validate(data[0])
+    assert [s.episode_id for s in inc.backbone] == ["s1", "x2"] and [s.step for s in inc.backbone] == [0, 1]
+    assert [(e.rule, e.why_linked) for e in inc.edges] == [("R3", "Account svc_backup from step 1 used in step 2")]
+
+
+def test_clip_evidence_exact() -> None:
+    n = int(config.load_config()["linking"]["path"]["max_evidence_chars"])
+    assert n == 300
+    cut = incidents.clip("x" * 400, n)
+    assert len(cut) == 300 and cut.endswith("…") and cut[:-1] == "x" * 299
+    assert incidents.clip("y" * 300, n) == "y" * 300 and incidents.clip("", n) == ""
+
+
+def test_evidence_clipped_in_published_steps(tmp_path: Path) -> None:
+    eps = [dict(SEEDS[0], evidence_lines=["a" * 400, "b" * 300]), SEEDS[1]]
+    ctx = make_events_parquet(tmp_path, REACH_EVENTS)
+    try:
+        write_episodes(ctx, eps)
+        link.run(ctx)
+        incidents.run(ctx)
+        data = json.loads((ctx.work_dir / "incidents.json").read_text(encoding="utf-8"))
+    finally:
+        ctx.con.close()
+    ev = next(s["evidence"] for d in data for s in d["backbone"] if s["episode_id"] == "s1")
+    assert ev == ["a" * 299 + "…", "b" * 300]

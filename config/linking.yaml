@@ -36,6 +36,9 @@ link:
   r2_ip_session_bar_hubs: false
   # R1 attacker-IP handoff on the same external (non-internal, non-hub) src_ip; window R1.ext_ip_tau_ms.
   r1_ext_ip: true
+  # R2 attacker-IP session: same subject + same external src_ip within R2 tau (user may differ / be NULL).
+  # Joins e.g. FortiGate IPS hit -> SSL-VPN login from the same remip, both logged on the devname.
+  r2_ext_ip_session: true
   internal_ip_regex: '^(10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.|127\.|169\.254\.|::1$|f[cd]|fe80:)'
 
 gate:
@@ -55,6 +58,9 @@ gate:
   multi_technique_window_ms: 7200000
   multi_technique_min_conf: 60
   multi_technique_min_seeds: 0
+  # Incidents kept only via the burst path get risk = max(risk, burst_risk_floor), so a confirmed single-tactic
+  # burst (e.g. C2 av -> beacon -> tor) never sorts below single-tactic noise. 0 = literal §6.4 risk.
+  burst_risk_floor: 50
   # Fallbacks; real values come from rules.yaml thresholds (seed_confidence, critical_confidence).
   seed_confidence: 65
   critical_confidence: 90

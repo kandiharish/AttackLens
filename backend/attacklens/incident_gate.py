@@ -22,6 +22,7 @@ def _params(cfg: dict[str, Any]) -> dict[str, Any]:
         "burst_window": int(gate.get("multi_technique_window_ms", 7_200_000)),
         "burst_conf": float(gate.get("multi_technique_min_conf", 60)),
         "burst_seeds": int(gate.get("multi_technique_min_seeds", 0)),
+        "burst_risk_floor": int(gate.get("burst_risk_floor", 0)),
         "peel_tails": bool(path.get("peel_standalone_branch_tails", False)),
         "node_score": str(path.get("dp_node_score", "severity")),
         "max_per_comp": int(gate.get("max_incidents_per_component", 20)),

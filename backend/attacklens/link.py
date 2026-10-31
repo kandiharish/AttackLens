@@ -40,6 +40,8 @@ DEFAULT_LINK: dict[str, Any] = {
     "r2_ip_session_bar_hubs": False,
     # R1 attacker-IP handoff: the same external src_ip acts on host a, then on host b (rules.R1.ext_ip_tau_ms).
     "r1_ext_ip": True,
+    # R2 attacker-IP session: same subject and same external src_ip (user may differ or be NULL), window R2 tau.
+    "r2_ext_ip_session": True,
     "internal_ip_regex": r"^(10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.|127\.|169\.254\.|::1$|f[cd]|fe80:)",
 }
 
@@ -193,6 +195,12 @@ def rule_variants(p: dict[str, Any]) -> list[tuple[str, str, str, str, str, str]
         # R2 session: same subject_host and user; hubs and devices barred as keys.
         ("R2", f"i.sh || '|' || {usr.format(a='i')}", r2_filter, f"j.sh || '|' || {usr.format(a='j')}", "TRUE",
          r2_why),
+    ]
+    if p.get("r2_ext_ip_session", True):
+        # Keyed by the external IP, so a device subject is fine here (e.g. IPS hit, then VPN login, same remip).
+        out.append(("R2", "i.sh || '|' || i.sip", "i.sip_ext", "j.sh || '|' || j.sip", "j.sip_ext",
+                    f"'Same session: ' || i.sip || ' on ' || i.sh || ', ' || {_dt_text(dt)} || ' apart'"))
+    out += [
         # R3 pivot: account acquired in i (target_user) then used in j; hub users barred.
         ("R3", "i.tu", r3_filter, "j.su", "TRUE", r3_why),
     ]
