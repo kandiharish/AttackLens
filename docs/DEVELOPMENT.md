@@ -433,3 +433,64 @@ attribution), MITRE ATT&CK v20 (MITRE ToU), mitreattack-python (Apache-2.0), Rea
 cytoscape-dagre (MIT), pytest (MIT); the provided `edr_log_generator.py` (organiser/team-provided test data tool).
 Ideas only (no code) from Zircolite, Chainsaw, Hayabusa, Elastic detection-rules, BloodHound, and the RapSheet,
 HOLMES, NoDoze, Hopper, SAGE papers.
+
+## 15. Interfaces pinned at kickoff (orchestrator, 31 Oct) — all agents code against these
+
+### 15.1 Shared modules (already written; extend, don't rename)
+- `attacklens/db.py`: `connect(memory_limit, threads, temp_directory)` (UTC, spill, no insertion order) and
+  `register_events(con, ctx.events_glob)` → view `events` (canonical §3.1 columns + hive partitions).
+- `attacklens/config.py`: `load_config()` → `{"sources","rules","pipeline","ioc","allowlist", "attack"}` (one key per
+  `config/<name>.yaml`; `attack` = `attack_v20.json`).
+- `attacklens/context.py`: `RunContext(set_name, raw_dir, parquet_dir, out_dir, con, cfg, ground_truth)`;
+  `ctx.work_dir` = `data/out/<set>/work/`; `ctx.events_glob`.
+- `attacklens/models.py`: the Incident contract (§7.1). `technique_name`, `rule_id` added to Step;
+  `IncidentSummary` = one row of `incidents_index.json`.
+
+### 15.2 Stage functions — every stage module exposes `run(ctx: RunContext) -> dict` (stats for run_metrics)
+| Module | Reads | Writes |
+|---|---|---|
+| profile | `ctx.raw_dir` | `out/source_profile.json` |
+| ingest | raw_dir + profile | `parquet/<set>/events/…`, `out/ingest_accounting.json` |
+| lookups | events | `work/host_ip_map.parquet`, `work/background_hubs.parquet` |
+| detect | events, lookups, config.rules | `work/raw_alerts.parquet`, `work/rule_host_baseline.parquet` |
+| episodes | raw_alerts, lookups | `work/episodes.parquet`, `work/episodes_spilled.parquet` |
+| link | episodes, hubs | `work/edges.parquet` |
+| incidents | episodes, edges, events (reach) | `work/incidents.json` (list of Incident dicts, narrative = template stub), `out/suppressed.json` |
+| publish | `work/incidents.json` | `out/incidents/{id}.json`, `out/incidents_index.json` (calls `narrative.generate`) |
+`run.py` (CLI `python -m attacklens.run --raw … --out … [--parquet …] [--ground-truth …] [--from-stage N]`) calls them
+in order, wraps each in telemetry, writes `out/run_metrics.json`, then if ground truth is given calls
+`eval.harness.evaluate(out_dir: Path, ground_truth: Path) -> dict` and writes `out/eval_scorecard.json`.
+`narrative.generate(incident: Incident, cfg: dict) -> Narrative`. Default parquet dir = `data/parquet/<basename of out>`.
+
+### 15.3 Raw directory layout (what `tools/gen_dataset.py` writes and ingest reads)
+`data/raw/<set>/part-<k>.jsonl` (noise, labels stripped) · `scenarios.jsonl` (planted attacks + decoys) ·
+`manifest.json` · `ground_truth/attacks.json` · `ground_truth/noise_alerts.jsonl`.
+**Ingest skips** any path with a `ground_truth` component, `manifest.json`, and `*.md`. Everything else is routed by content.
+
+### 15.4 Intermediate Parquet schemas (column names are binding)
+- `raw_alerts`: rule_id, technique_id, sub_technique_id, technique_name, tactic, tactic_idx INT, severity INT,
+  ts_ms, last_ts_ms, source_seq UBIGINT (min of the alert's rows), host, subject_host, src_host, dst_host,
+  src_user, target_user, src_ip, dst_ip, raw_alert_count BIGINT, evidence_lines VARCHAR[] (≤ 3, ≤ 300 chars),
+  source_keys UBIGINT[] (≤ 50).
+- `episodes`: episode_id VARCHAR (`'e' || substr(md5(key), 1, 10)`, key = rule_id|subject_host|src_user|target_user|
+  dst_host|bucket|technique_id), every raw_alerts column above (ts_ms = first, last_ts_ms = last,
+  raw_alert_count summed as `merged_alert_count`), plus `user` = coalesce(target_user, src_user), rarity DOUBLE,
+  confidence DOUBLE, is_seed BOOLEAN.
+- `edges`: i, j (episode_id), rule ('R1'..'R4'), weight DOUBLE, dt_ms BIGINT, why_linked VARCHAR.
+- `host_ip_map`: ip, host, first_ms, last_ms. `background_hubs`: entity (`user:x` / `host:x` / `ip:x`).
+- `rule_host_baseline`: rule_id, base_freq DOUBLE.
+
+### 15.5 Scenario event conventions (ECS JSON; `tools/scenarios.py` emits, `config/sources.yaml` maps)
+Built from the generator's `base_event()`; `host.name` upper-case as in the generator; `user.domain = "CORP"`.
+| Event | Fields |
+|---|---|
+| logon | `event.action=user_logon`, `event.outcome`, `winlog.event_id` 4624/4625, `winlog.logon.type` (`Network`/`RemoteInteractive`/`Interactive`), `winlog.logon.id` (hex, e.g. `0x8a3f21`), `source.ip`; `user.name` = the account logged on (→ `target_user`) |
+| special privileges | `event.action=special_privileges_assigned`, `winlog.event_id=4672`, same `winlog.logon.id`, `user.name` |
+| user created | `event.action=user_created`, 4720, `user.name` = actor (→ src_user), `user.target.name` = new account (→ target_user) |
+| group add | `event.action=group_member_added`, 4732 (4728/4756), `user.target.name` = member, `group.name` |
+| service | `event.action=service_installed`, 7045, `service.name`, `process.executable` |
+| log cleared | `event.action=log_cleared`, 1102 |
+| SSH logon (linux) | `event.action=user_logon`, `process.name=sshd`, `source.ip`, `destination.port=22`, no winlog → canonical `logon_type=10` |
+| process / network / file / registry | as the generator (`process_created`, `network_connection` with `network.bytes` + `network.direction=outbound`, `file_rename` with `file.extension`, `registry_value_set`) |
+Action map precedence: `winlog.event_id` (§3.3 table) → `event.action` → `other`. Logon types: names and numbers both map
+to the integers in §3.1. `bytes_out` = `network.bytes` when direction is outbound or absent.
