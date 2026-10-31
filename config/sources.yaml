@@ -202,7 +202,8 @@ kv_sources:
     # intermediate field -> keys (first non-null wins); {key, regex} = regex group 1 of that key's value
     fields:
       host:          [devname]
-      src_ip:        [srcip, {key: ui, regex: '\(([0-9A-Fa-f:.]+)\)'}]
+      # remip = remote peer of VPN logins (the attacker side); tunnelip (assigned inside address) is not the source
+      src_ip:        [remip, srcip, {key: ui, regex: '\(([0-9A-Fa-f:.]+)\)'}]
       src_port:      [srcport]
       dst_ip:        [dstip]
       dst_port:      [dstport]
