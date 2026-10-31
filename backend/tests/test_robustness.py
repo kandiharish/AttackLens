@@ -111,3 +111,184 @@ def test_homoglyph_users_distinct_and_nfc(tmp_path: Path) -> None:
     users = [r["target_user"] for r in query(ctx, "SELECT target_user FROM events ORDER BY ts_ms")]
     assert users == ["admin", "аdmin", "josé"]
     assert all(unicodedata.is_normalized("NFC", u) for u in users)
+
+
+# ---------------------------------------------------------------- whole pipeline: time zone + re-run (§7)
+REPO = Path(__file__).resolve().parents[2]
+PUBLISHED = ("incidents_index.json", "suppressed.json")
+
+
+def _published(out: Path) -> dict[str, bytes]:
+    files = {f"incidents/{p.name}": p.read_bytes() for p in sorted((out / "incidents").glob("*.json"))}
+    files.update({n: (out / n).read_bytes() for n in PUBLISHED})
+    return files
+
+
+def _pipeline(raw: Path, out: Path, pq: Path, tz: str) -> None:
+    import os
+    import subprocess
+    import sys
+    env = {**os.environ, "TZ": tz}
+    env.pop("ANTHROPIC_API_KEY", None)
+    p = subprocess.run([sys.executable, "-m", "attacklens.run", "--raw", str(raw), "--out", str(out),
+                        "--parquet", str(pq)], capture_output=True, text=True, env=env, timeout=300, cwd=REPO)
+    assert p.returncode == 0, p.stderr[-3000:]
+
+
+@pytest.fixture(scope="module")
+def g30(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    import subprocess
+    import sys
+    raw = tmp_path_factory.mktemp("g30") / "raw"
+    g = subprocess.run([sys.executable, str(REPO / "tools" / "gen_dataset.py"), "--size", "30M", "--workers", "1",
+                        "--seed", "42", "--out", str(raw)], capture_output=True, text=True, timeout=120)
+    assert g.returncode == 0, g.stderr[-2000:]
+    return raw
+
+
+@pytest.fixture(scope="module")
+def utc_run(g30: Path, tmp_path_factory: pytest.TempPathFactory) -> dict:
+    """One TZ=UTC pipeline run shared by the time-zone and re-run tests (keeps the fast suite in budget)."""
+    d = tmp_path_factory.mktemp("utc")
+    out, pq = d / "out", d / "pq"
+    _pipeline(g30, out, pq, "UTC")
+    return {"out": out, "pq": pq, "files": _published(out),
+            "acc": json.loads((out / "ingest_accounting.json").read_text(encoding="utf-8"))}
+
+
+@pytest.mark.slow
+def test_timezone_byte_identical_incidents(g30: Path, utc_run: dict, tmp_path: Path) -> None:
+    _pipeline(g30, tmp_path / "out", tmp_path / "pq", "Asia/Kolkata")
+    utc, ist = utc_run["files"], _published(tmp_path / "out")
+    assert len(utc) > len(PUBLISHED), "no incidents published"
+    assert utc.keys() == ist.keys()
+    diff = [k for k in utc if utc[k] != ist[k]]
+    assert diff == [], f"differs between TZ=UTC and TZ=Asia/Kolkata: {diff}"
+
+
+@pytest.mark.slow
+def test_rerun_same_dirs_idempotent(g30: Path, utc_run: dict) -> None:
+    out, pq = utc_run["out"], utc_run["pq"]
+    _pipeline(g30, out, pq, "UTC")  # same --out and --parquet: must not duplicate Parquet or keep stale files
+    acc2 = json.loads((out / "ingest_accounting.json").read_text(encoding="utf-8"))
+    assert acc2 == utc_run["acc"]
+    import duckdb
+    n = duckdb.connect().execute(
+        f"SELECT count(*) FROM read_parquet('{(pq / 'events').as_posix()}/**/*.parquet')").fetchone()[0]
+    assert n == sum(a["rows_in"] for a in acc2), "events duplicated on re-run"  # quarantined rows are kept too
+    second = _published(out)
+    assert second.keys() == utc_run["files"].keys()
+    assert [k for k in second if second[k] != utc_run["files"][k]] == []
+
+
+# ---------------------------------------------------------------- hostile bytes / layouts (code review, W3)
+def accounted(ctx, source_type: str, rows_in: int) -> dict[str, int]:
+    """The run completed and every line is accounted for: rows_in exact, ok + dropped = rows_in, reasons logged."""
+    acc = accounting(ctx)
+    assert source_type in acc, f"{source_type} missing from accounting: {acc}"
+    a = acc[source_type]
+    assert a["rows_in"] == rows_in, a
+    assert a["rows_ok"] + a["dropped"] == a["rows_in"], a
+    if a["dropped"]:
+        assert_drop_reason(ctx, source_type)
+    return a
+
+
+def good_ts(ctx) -> list[int]:
+    return [r["ts_ms"] for r in query(ctx, "SELECT ts_ms FROM events WHERE ts_ok ORDER BY ts_ms")]
+
+
+def test_invalid_utf8_byte_in_json_line(tmp_path: Path) -> None:
+    bad = line(ecs("2026-10-24T03:00:00.500Z", user="pméhta")).encode().replace("é".encode(), b"\xff")
+    body = (GOOD[0] + "\n").encode() + bad + b"\n" + ("\n".join(GOOD[1:]) + "\n").encode()
+    ctx = ingest_files(tmp_path, {"part-0.jsonl": body})
+    accounted(ctx, "ecs_json", 4)
+    assert set(GOOD_MS) <= set(good_ts(ctx))
+
+
+def test_nul_byte_in_json_line(tmp_path: Path) -> None:
+    bad = line(ecs("2026-10-24T03:00:00.500Z", user="pmehta")).encode().replace(b"pmehta", b"pm\x00ehta")
+    body = (GOOD[0] + "\n").encode() + bad + b"\n" + ("\n".join(GOOD[1:]) + "\n").encode()
+    ctx = ingest_files(tmp_path, {"part-0.jsonl": body})
+    accounted(ctx, "ecs_json", 4)
+    assert set(GOOD_MS) <= set(good_ts(ctx))
+
+
+@pytest.mark.xfail(strict=True, reason="BUG (BB-ingest): a lone CR (0x0D) is treated as a line break - rows_in 5 for 4 lines (2 half-lines dropped)")
+def test_lone_cr_inside_a_line(tmp_path: Path) -> None:
+    bad = line(ecs("2026-10-24T03:00:00.500Z", user="pmehta")).encode().replace(b"pmehta", b"pm\rehta")
+    body = (GOOD[0] + "\n").encode() + bad + b"\n" + ("\n".join(GOOD[1:]) + "\n").encode()
+    ctx = ingest_files(tmp_path, {"part-0.jsonl": body})
+    accounted(ctx, "ecs_json", 4)  # \n is the only line terminator
+    assert set(GOOD_MS) <= set(good_ts(ctx))
+
+
+def test_mixed_crlf_lf_inside_and_after_profile_sample(tmp_path: Path) -> None:
+    from attacklens import config
+    sample = int((config.load_config().get("pipeline") or {}).get("profile", {}).get("sample_lines", 20000))
+    n = sample + 10
+    base = 1792810800000
+    lines = [line(ecs(f"2026-10-24T03:00:00.000Z", user=f"u{i}")).replace("03:00:00.000Z", "03:00:00.000Z")
+             for i in range(n)]
+    ends = [b"\r\n" if (i % 2 or i >= sample) else b"\n" for i in range(n)]  # mixed in sample, CRLF after it
+    body = b"".join(l.encode() + e for l, e in zip(lines, ends))
+    ctx = ingest_files(tmp_path, {"part-0.jsonl": body})
+    a = accounted(ctx, "ecs_json", n)
+    assert a["rows_ok"] == n and a["dropped"] == 0
+    assert query(ctx, "SELECT count(*) n FROM events WHERE contains(raw_line, chr(13))")[0]["n"] == 0
+    assert query(ctx, "SELECT count(DISTINCT target_user) n FROM events")[0]["n"] == n
+    assert {r["ts_ms"] for r in query(ctx, "SELECT DISTINCT ts_ms FROM events")} == {base}
+
+
+def test_csv_quoted_newline(tmp_path: Path) -> None:
+    body = ("timestamp,device,src,dst,dport,bytes_sent,action,note\n"
+            "2026-10-24T02:40:00Z,FW-EDGE-01,10.10.3.15,198.51.100.23,443,100,allow,plain\n"
+            '2026-10-24T02:41:00Z,FW-EDGE-01,10.10.3.15,198.51.100.24,443,200,allow,"two\nlines"\n'
+            "2026-10-24T02:42:00Z,FW-EDGE-01,10.10.3.15,198.51.100.25,443,300,deny,plain\n").encode()
+    ctx = ingest_files(tmp_path, {"fw.log": body})
+    a = accounted(ctx, "firewall_csv", 3)  # 3 records (4 physical data lines)
+    assert a["rows_ok"] == 3
+    rows = query(ctx, "SELECT ts_ms, dst_ip, bytes_out FROM events ORDER BY ts_ms")
+    assert rows == [{"ts_ms": 1792809600000, "dst_ip": "198.51.100.23", "bytes_out": 100},
+                    {"ts_ms": 1792809660000, "dst_ip": "198.51.100.24", "bytes_out": 200},
+                    {"ts_ms": 1792809720000, "dst_ip": "198.51.100.25", "bytes_out": 300}]
+
+
+def test_unrecognized_file_lines_counted(tmp_path: Path) -> None:
+    ctx = ingest_files(tmp_path, {"part-0.jsonl": ("\n".join(GOOD) + "\n").encode(),
+                                  "notes.dat": b"just some notes\nsecond line\nthird line\n"})
+    rows = json.loads((ctx.out_dir / "ingest_accounting.json").read_text(encoding="utf-8"))
+    un = [r for r in rows if r["source_type"] == "unrecognized"]
+    assert len(un) == 1 and (un[0]["rows_in"], un[0]["dropped"]) == (3, 3), un
+    assert accounting(ctx)["ecs_json"] == {"rows_in": 3, "rows_ok": 3, "dropped": 0}
+
+
+def test_cef_raw_line_has_no_header_labels(tmp_path: Path) -> None:
+    sig, name = "a1b2c3d4", "Office spawned script"
+    cef = (f"CEF:0|Mitigata|SimEDR|1.0|{sig}|{name}|8|rt=2026-10-24T02:50:00.000Z dvchost=WS-HR-012 "
+           "suser=pmehta act=process_created dproc=powershell.exe cs2Label=mitre cs2=T1059.001\n")
+    ctx = ingest_files(tmp_path, {"edr.cef": cef.encode()})
+    accounted(ctx, "cef", 1)
+    raw = query(ctx, "SELECT raw_line FROM events")[0]["raw_line"]
+    for leak in (sig, name, "T1059.001", "cs2Label=mitre"):
+        assert leak not in raw, f"generator label {leak!r} in raw_line: {raw}"
+
+
+@pytest.mark.xfail(strict=True, reason="BUG (BB-ingest): identical lines in one file share source_seq (hash(filename, raw_line)) - 3 rows, 2 distinct")
+def test_duplicate_identical_lines_distinct_source_seq(tmp_path: Path) -> None:
+    ctx = ingest_files(tmp_path, {"part-0.jsonl": (GOOD[0] + "\n" + GOOD[0] + "\n" + GOOD[1] + "\n").encode()})
+    accounted(ctx, "ecs_json", 3)
+    r = query(ctx, "SELECT count(*) n, count(DISTINCT source_seq) d FROM events")[0]
+    assert r == {"n": 3, "d": 3}
+
+
+def test_quote_in_directories_full_pipeline(tmp_path: Path) -> None:
+    from attacklens.run import run_pipeline
+    base = tmp_path / "o'brien"
+    raw = base / "r'aw"
+    shutil.copytree(FIXTURES / "ingest", raw)
+    m = run_pipeline(raw, base / "o'ut", parquet=base / "p'q")
+    assert m.get("error") is None
+    acc = json.loads((base / "o'ut" / "ingest_accounting.json").read_text(encoding="utf-8"))
+    assert sum(a["rows_in"] for a in acc) == 17
+    assert (base / "o'ut" / "incidents_index.json").exists()

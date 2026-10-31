@@ -2,7 +2,8 @@
 
 Every event is an inert ECS JSON log record built with the provided generator's base_event()/proc_block(),
 so its schema matches benign traffic. Command lines are short descriptive placeholders in the generator's
-own style. IPs: RFC 5737 + the generator's 10.10.x.x hosts; domains: .invalid only.
+own style. IPs: RFC 5737 + the generator's 10.10.x.x hosts; domains: .invalid only. Attacker addresses
+are IOC-free by default (not in config/ioc.yaml); ioc_free=False restores the legacy IOC addresses.
 Offsets are from --start (d1 = the start date when --start is midnight).
 
 Decoys (must NOT become incidents):
@@ -36,12 +37,21 @@ SCENARIO_NAMES = {
 ENC_PS = "powershell.exe -nop -w hidden -enc <REDACTED_BASE64>"
 PS_PATH = r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe"
 RUN_KEY = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run\<SUSPECT_ENTRY>"
-C2_DOMAIN = "suspicious-example-c2.invalid"
-C2_IP = "198.51.100.77"
-S1_BRUTE_IP = "203.0.113.57"
-S1_EXFIL_IP = "198.51.100.23"
-S4_SPRAY_IP = "192.0.2.88"
-S4_EXFIL_IP = "203.0.113.57"
+# Attacker infrastructure. Two variants (both RFC 5737 / reserved TLDs):
+#  "ioc_free" (default): addresses and domain that are NOT in config/ioc.yaml, so ioc_destination cannot help link
+#                        the planted chains (honest numbers; code review finding 6).
+#  "ioc" (legacy):       the generator's SUSPECT_IPS / SUSPECT_DOMAINS, which are exactly config/ioc.yaml's lists.
+ADDRS: dict[str, dict[str, str]] = {
+    "ioc": {"C2_DOMAIN": "suspicious-example-c2.invalid", "C2_IP": "198.51.100.77",
+            "S1_BRUTE_IP": "203.0.113.57", "S1_EXFIL_IP": "198.51.100.23",
+            "S4_SPRAY_IP": "192.0.2.88", "S4_EXFIL_IP": "203.0.113.57"},
+    "ioc_free": {"C2_DOMAIN": "cdn-telemetry-sync.invalid", "C2_IP": "198.51.100.77",
+                 "S1_BRUTE_IP": "203.0.113.141", "S1_EXFIL_IP": "198.51.100.142",
+                 "S4_SPRAY_IP": "192.0.2.143", "S4_EXFIL_IP": "203.0.113.144"},
+}
+C2_DOMAIN, C2_IP = ADDRS["ioc"]["C2_DOMAIN"], ADDRS["ioc"]["C2_IP"]          # legacy names (ioc variant)
+S1_BRUTE_IP, S1_EXFIL_IP = ADDRS["ioc"]["S1_BRUTE_IP"], ADDRS["ioc"]["S1_EXFIL_IP"]
+S4_SPRAY_IP, S4_EXFIL_IP = ADDRS["ioc"]["S4_SPRAY_IP"], ADDRS["ioc"]["S4_EXFIL_IP"]
 S5_SRC_IP = "10.10.4.13"           # WS-SALES-013
 # generic account names a spray tries besides the real directory users (USERS has only 12)
 SPRAY_EXTRA = ["root", "admin", "test", "guest", "ubuntu", "oracle", "deploy", "backup"]
@@ -57,6 +67,7 @@ class _Builder:
         gd.install_patches(gen, self.clock, self.rng)
         self.hosts = {h["name"]: h for h in gen.HOSTS}
         self.events: list[tuple[int, int, dict]] = []
+        self.ip: dict[str, str] = ADDRS["ioc_free"]  # set per call by scenario_events
 
     def logon_id(self) -> str:
         return f"0x{self.rng.randrange(0x100000, 0xFFFFFF):x}"
@@ -162,9 +173,9 @@ def _step(n: int, ts: int, tid: str, tactic: str, host: str, user: str | None,
 def _s1(b: _Builder, t: int) -> list[dict]:
     dc, ws, u = "SRV-DC-01", "WS-FIN-010", "svc_backup"
     for i in range(60):                                    # 60 x 4625 within 5 min
-        b.logon(t + i * 4900 + (b.rng.randint(0, 400) if i else 0), dc, u, False, "Network", S1_BRUTE_IP)
+        b.logon(t + i * 4900 + (b.rng.randint(0, 400) if i else 0), dc, u, False, "Network", b.ip["S1_BRUTE_IP"])
     t2 = t + 6 * MIN
-    b.logon(t2, dc, u, True, "Network", S1_BRUTE_IP, b.logon_id())
+    b.logon(t2, dc, u, True, "Network", b.ip["S1_BRUTE_IP"], b.logon_id())
     t3 = t + 20 * MIN
     b.admin_logon(t3, ws, u, b.hosts[dc]["ip"])
     t4 = t + 25 * MIN
@@ -177,18 +188,34 @@ def _s1(b: _Builder, t: int) -> list[dict]:
            "powershell.exe")
     t7 = t + 45 * MIN
     for i in range(4):                                     # 4 x 25 MB within 10 min
-        b.conn(t7 + i * 3 * MIN, ws, u, "powershell.exe", S1_EXFIL_IP, 443, 25 * MB)
+        b.conn(t7 + i * 3 * MIN, ws, u, "powershell.exe", b.ip["S1_EXFIL_IP"], 443, 25 * MB)
     # decoy: legitimate admin logon on the DC in business hours
     b.admin_logon(t - 2 * HOUR + 10 * HOUR + 15 * MIN, dc, "rkumar", b.hosts["WS-ENG-010"]["ip"])
+    _s1_history(b, t)
     return [
-        _step(1, t, "T1110", "Credential Access", dc, u, S1_BRUTE_IP),
-        _step(2, t2, "T1078", "Initial Access", dc, u, S1_BRUTE_IP),
+        _step(1, t, "T1110", "Credential Access", dc, u, b.ip["S1_BRUTE_IP"]),
+        _step(2, t2, "T1078", "Initial Access", dc, u, b.ip["S1_BRUTE_IP"]),
         _step(3, t3, "T1021", "Lateral Movement", ws, u, b.hosts[dc]["ip"]),
         _step(4, t4, "T1059.001", "Execution", ws, u),
         _step(5, t5, "T1087", "Discovery", ws, u),
         _step(6, t6, "T1560.001", "Collection", ws, u),
-        _step(7, t7, "T1048", "Exfiltration", ws, u, b.hosts[ws]["ip"], S1_EXFIL_IP),
+        _step(7, t7, "T1048", "Exfiltration", ws, u, b.hosts[ws]["ip"], b.ip["S1_EXFIL_IP"]),
     ]
+
+
+def _s1_history(b: _Builder, t: int) -> None:
+    """Benign context 2-3 days before S1 (not ground truth): svc_backup is a backup job with admin rights on
+    SRV-FILE-01, which talks SSH to SRV-DB-01 -> reach-next shows srv-file-01 (hop 1) and srv-db-01 (hop 2).
+    Must not trigger any rule: the pair is routine (>= new_admin_routine_min_logons non-privileged logons) and both
+    privileged logons are in business hours, 2 flows < beacon_min_conns, internal destination (no exfil)."""
+    fs, db, u, src = "SRV-FILE-01", "SRV-DB-01", "svc_backup", b.hosts["SRV-DC-01"]["ip"]   # 10.10.0.10
+    day0 = t - 2 * HOUR                                     # midnight of S1's day
+    for d, hh, mm in ((3, 9, 40), (3, 13, 5), (2, 9, 35)):   # routine non-privileged job logons (no 4672)
+        b.logon(day0 - d * DAY + hh * HOUR + mm * MIN, fs, u, True, "Network", src, b.logon_id())
+    for d, hh, mm in ((3, 10, 5), (2, 14, 20)):               # 4624 type 3 + 4672 (same logon id), twice
+        b.admin_logon(day0 - d * DAY + hh * HOUR + mm * MIN, fs, u, src)
+    for d, hh, mm in ((3, 10, 12), (2, 14, 31)):              # allowed SSH flows file server -> DB server
+        b.conn(day0 - d * DAY + hh * HOUR + mm * MIN, fs, u, "ssh", b.hosts[db]["ip"], 22, 18_000)
 
 
 def _s2(b: _Builder, t: int) -> list[dict]:
@@ -223,15 +250,15 @@ def _s3(b: _Builder, t: int) -> list[dict]:
     t3 = t + 5 * MIN
     for i in range(10):                                    # every 60 s +/- 3 s
         jitter = b.rng.randint(-3000, 3000) if i else 0
-        b.conn(t3 + i * MIN + jitter, ws, u, "powershell.exe", C2_IP, 443, b.rng.randint(1000, 5000),
-               C2_DOMAIN)
+        b.conn(t3 + i * MIN + jitter, ws, u, "powershell.exe", b.ip["C2_IP"], 443, b.rng.randint(1000, 5000),
+               b.ip["C2_DOMAIN"])
     # decoy: Office spawning a non-script helper (printing)
     b.proc(t + 1 * HOUR + 50 * MIN, "WS-HR-013", "kiyer", "splwow64.exe",
            r"C:\Windows\splwow64.exe", r"C:\Windows\splwow64.exe 12288", "winword.exe")
     return [
         _step(1, t, "T1059.001", "Execution", ws, u),
         _step(2, t2, "T1547.001", "Persistence", ws, u),
-        _step(3, t3, "T1071.001", "Command and Control", ws, u, b.hosts[ws]["ip"], C2_IP),
+        _step(3, t3, "T1071.001", "Command and Control", ws, u, b.hosts[ws]["ip"], b.ip["C2_IP"]),
     ]
 
 
@@ -240,24 +267,24 @@ def _s4(b: _Builder, t: int, users: list[str]) -> list[dict]:
     sprayed = users[:10] + SPRAY_EXTRA + ["svc_sql", "svc_backup"]
     assert len(set(sprayed)) == 20 and u in sprayed
     for i, name in enumerate(sprayed):                     # 20 users within 10 min
-        b.ssh_logon(t + i * 25_000, web, name, False, S4_SPRAY_IP)
+        b.ssh_logon(t + i * 25_000, web, name, False, b.ip["S4_SPRAY_IP"])
     t2 = t + 10 * MIN
-    b.ssh_logon(t2, web, u, True, S4_SPRAY_IP)
+    b.ssh_logon(t2, web, u, True, b.ip["S4_SPRAY_IP"])
     t3 = t + 18 * MIN
     b.conn(t3 - 400, web, u, "ssh", b.hosts[db]["ip"], 22, 4200)                    # context
     b.ssh_logon(t3, db, u, True, b.hosts[web]["ip"])
     t4 = t + 30 * MIN
-    b.conn(t4, db, u, "curl", S4_EXFIL_IP, 443, 60 * MB)
+    b.conn(t4, db, u, "curl", b.ip["S4_EXFIL_IP"], 443, 60 * MB)
     # decoy: 30 benign failures for one user spread over the day
     day0 = t - 22 * HOUR
     for i in range(30):
         b.logon(day0 + i * 47 * MIN + b.rng.randint(0, 60_000), "SRV-FILE-01", "kiyer", False,
                 "Network", b.hosts["WS-HR-011"]["ip"])
     return [
-        _step(1, t, "T1110.003", "Credential Access", web, None, S4_SPRAY_IP),
-        _step(2, t2, "T1078", "Initial Access", web, u, S4_SPRAY_IP),
+        _step(1, t, "T1110.003", "Credential Access", web, None, b.ip["S4_SPRAY_IP"]),
+        _step(2, t2, "T1078", "Initial Access", web, u, b.ip["S4_SPRAY_IP"]),
         _step(3, t3, "T1021.004", "Lateral Movement", db, u, b.hosts[web]["ip"]),
-        _step(4, t4, "T1048", "Exfiltration", db, u, b.hosts[db]["ip"], S4_EXFIL_IP),
+        _step(4, t4, "T1048", "Exfiltration", db, u, b.hosts[db]["ip"], b.ip["S4_EXFIL_IP"]),
     ]
 
 
@@ -280,14 +307,17 @@ OFFSETS = {"S1": 2 * HOUR, "S2": DAY + 14 * HOUR + 30 * MIN, "S3": 2 * DAY + 9 *
 
 
 def scenario_events(start_ms: int, ids: list[str] | None = None, generator: str | Path | None = None,
-                    seed: int = 42) -> tuple[list[dict], dict]:
-    """Return (events sorted by time, attacks.json dict) for the requested scenario ids (default all)."""
+                    seed: int = 42, ioc_free: bool = True) -> tuple[list[dict], dict]:
+    """Return (events sorted by time, attacks.json dict) for the requested scenario ids (default all).
+
+    ioc_free=True (default) plants attacker addresses that are not in config/ioc.yaml; False = legacy addresses."""
     ids = list(SCENARIO_NAMES) if ids is None else [i.upper() for i in ids]
     gen = gd.load_generator(generator or gd.DEFAULT_GENERATOR, "edr_log_generator_scenarios")
     saved = random.getstate()                              # proc_block/rand_pid use the global random
     random.seed(f"scenarios-pids:{seed}")
     try:
         b = _Builder(gen, seed)
+        b.ip = ADDRS["ioc_free" if ioc_free else "ioc"]
         attacks = []
         for sid in SCENARIO_NAMES:
             if sid not in ids:

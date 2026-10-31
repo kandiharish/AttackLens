@@ -232,12 +232,13 @@ def _scenario_ids(text: str) -> list[str]:
     return ids
 
 
-def write_scenarios(out: Path, start_ms: int, ids: list[str], generator: str, seed: int) -> int:
+def write_scenarios(out: Path, start_ms: int, ids: list[str], generator: str, seed: int,
+                    ioc_free: bool = True) -> int:
     """scenarios.jsonl + ground_truth/attacks.json. Returns the scenario event count."""
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     import scenarios  # noqa: PLC0415  (tools/scenarios.py)
 
-    events, attacks = scenarios.scenario_events(start_ms, ids=ids, generator=generator, seed=seed)
+    events, attacks = scenarios.scenario_events(start_ms, ids=ids, generator=generator, seed=seed, ioc_free=ioc_free)
     with open(out / "scenarios.jsonl", "wb") as f:
         for ev in events:
             f.write(json.dumps(ev, separators=(",", ":")).encode("utf-8") + b"\n")
@@ -279,13 +280,16 @@ def build(args: argparse.Namespace) -> dict:
                 shutil.copyfileobj(src, dst)
             tmp.unlink()
 
-    n_scen = write_scenarios(out, start_ms, ids, gen_path, args.seed) if ids else 0
+    ioc_free = not getattr(args, "ioc_scenarios", False)
+    n_scen = write_scenarios(out, start_ms, ids, gen_path, args.seed, ioc_free) if ids else 0
     wall = time.perf_counter() - t0
     total = sum(p["bytes"] for p in parts)
     manifest = {
         "args": {"size": args.size, "out": str(args.out), "seed": args.seed, "workers": workers,
                  "start": args.start, "days": args.days, "alert_ratio": args.alert_ratio,
-                 "format": args.format, "scenarios": args.scenarios, "generator": args.generator},
+                 "format": args.format, "scenarios": args.scenarios, "generator": args.generator,
+                 "ioc_scenarios": bool(getattr(args, "ioc_scenarios", False))},
+        "scenario_ioc_free": ioc_free,
         "target_bytes": target,
         "start_ms": start_ms,
         "end_ms": start_ms + span_ms,
@@ -317,6 +321,8 @@ def make_parser() -> argparse.ArgumentParser:
     p.add_argument("--scenarios", default="all", help="all | none | S1,S3,...")
     p.add_argument("--generator", default=str(DEFAULT_GENERATOR))
     p.add_argument("--force", action="store_true", help="delete a non-empty --out first")
+    p.add_argument("--ioc-scenarios", action="store_true",
+                   help="legacy: plant attacks on the config/ioc.yaml addresses (default: IOC-free addresses)")
     return p
 
 

@@ -271,13 +271,22 @@ def test_exfil_51mb_spread_beyond_window_silent(ev) -> None:
     assert run_template(ev(rows), "exfil_volume") == []
 
 
-@pytest.mark.xfail(strict=True, reason="BUG (BB-detect): exfil baseline includes the window under test, so a host "
-                   "with no other external traffic has threshold 5 x its own exfil and can never fire (300 MB -> 0 "
-                   "alerts). Remove this marker when fixed.")
 def test_exfil_without_history_fires(ev) -> None:
+    # regression (fixed by BB-detect, W3): the baseline used to include the window under test -> never fired
     rows = [conn(T0 + i * 5 * MIN, "198.51.100.23", 100 * MB) for i in range(3)]  # 300 MB, first external traffic
     rows = run_template(ev(rows), "exfil_volume")
     assert [(r["raw_alert_count"], r["dst_ip"]) for r in rows] == [(3, "198.51.100.23")]
+
+
+def test_exfil_daily_backup_to_same_external_dst_documented(ev) -> None:
+    """Documented behaviour (BB-detect open issue): a 60 MB backup to the same external destination every day of a
+    7-day set is routine, so its baseline (60 MB/day) x 5 = 300 MB keeps it silent on every day."""
+    rows = [conn(T0 + d * DAY, "198.51.100.200", 60 * MB, host="srv-file-01", src="10.10.0.20") for d in range(7)]
+    got = run_template(ev(rows), "exfil_volume")
+    if got:
+        pytest.xfail(f"daily 60 MB backup fires {len(got)} exfil alert(s) on days "
+                     f"{sorted((r['ts_ms'] - T0) // DAY for r in got)} (open issue, not routed as a bug yet)")
+    assert got == []
 
 
 def test_exfil_below_host_baseline_multiple_silent(ev) -> None:

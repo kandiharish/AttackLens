@@ -1,8 +1,7 @@
 """L3 small pipeline (TESTING.md §1): ~30 MB synthetic set with S1-S5 planted, end to end, metrics asserted.
 
 Generation (~1 s) + pipeline (~4 s) run once per module. Targets are the §6.3 pass criteria; asserts that depend on
-Stage 3/4 (link, gate, path) and still fail are xfail(strict=False) while BB-graph builds them — never loosened.
-Labels / rebuilt already pass on this set, so they are plain asserts (a regression must go red).
+All §6.3 accuracy criteria are plain asserts (Stage 3/4 landed in 347355c); a regression must go red.
 """
 
 from __future__ import annotations
@@ -19,7 +18,6 @@ from attacklens.models import Incident
 REPO = Path(__file__).resolve().parents[2]
 SIX = ("detection_pct", "labels_pct", "rebuilt_pct", "false_alarms_strict_pct", "false_alarms_lenient_pct",
        "singleton_recall_pct")
-STAGE3_4 = "Stage 3/4 (link/incidents/gate) still in progress by BB-graph"
 
 
 @pytest.fixture(scope="module")
@@ -84,7 +82,6 @@ def test_all_attacks_rebuilt(run: dict) -> None:
     assert run["card"]["rebuilt_pct"] == 100.0, [(a["id"], a["lcs_ratio"]) for a in run["card"]["per_attack"]]
 
 
-@pytest.mark.xfail(strict=False, reason=STAGE3_4 + "; 30M run: 6 noise-only single-episode T1486 incidents")
 def test_strict_false_alarms_below_10(run: dict) -> None:
     card = run["card"]
     assert card["false_alarms_strict_pct"] < 10.0, card["unmatched_incidents"]

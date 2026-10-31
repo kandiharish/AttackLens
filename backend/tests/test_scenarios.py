@@ -19,6 +19,7 @@ START_MS = 1_792_800_000_000          # 2026-10-24T00:00:00Z
 MIN, HOUR, DAY, MB = 60_000, 3_600_000, 86_400_000, 1 << 20
 LABEL_KEYS = {"threat", "rule", "labels", "labels_extra"}
 HEX_ID = re.compile(r"^0x[0-9a-f]{6}$")
+A = sc.ADDRS["ioc_free"]  # default variant
 EXPECTED = {
     "S1": [("T1110", "Credential Access"), ("T1078", "Initial Access"), ("T1021", "Lateral Movement"),
            ("T1059.001", "Execution"), ("T1087", "Discovery"), ("T1560.001", "Collection"),
@@ -108,10 +109,10 @@ def test_gt_ts_is_first_event_of_each_step(built) -> None:
     first = lambda xs: min(ts(e) for e in xs)  # noqa: E731
     assert s1[0]["ts_ms"] == first(sel(ev, **{"host.name": "SRV-DC-01", "user.name": "svc_backup",
                                               "winlog.event_id": 4625}))
-    assert s1[6]["ts_ms"] == first(sel(ev, **{"destination.ip": "198.51.100.23"}))
+    assert s1[6]["ts_ms"] == first(sel(ev, **{"destination.ip": A["S1_EXFIL_IP"]}))
     assert s2[0]["ts_ms"] == first(sel(ev, **{"winlog.event_id": 4720}))
-    assert s3[2]["ts_ms"] == first(sel(ev, **{"destination.domain": "suspicious-example-c2.invalid"}))
-    assert s4[0]["ts_ms"] == first(sel(ev, **{"source.ip": "192.0.2.88", "event.outcome": "failure"}))
+    assert s3[2]["ts_ms"] == first(sel(ev, **{"destination.domain": A["C2_DOMAIN"]}))
+    assert s4[0]["ts_ms"] == first(sel(ev, **{"source.ip": A["S4_SPRAY_IP"], "event.outcome": "failure"}))
     assert s5[1]["ts_ms"] == first(sel(ev, **{"event.action": "file_rename"}))
 
 
@@ -119,12 +120,12 @@ def test_gt_ts_is_first_event_of_each_step(built) -> None:
 def test_s1_bruteforce_success_and_lateral(built) -> None:
     ev, at = built
     s = steps(at, "S1")
-    fails = sel(ev, **{"host.name": "SRV-DC-01", "winlog.event_id": 4625, "source.ip": "203.0.113.57"})
+    fails = sel(ev, **{"host.name": "SRV-DC-01", "winlog.event_id": 4625, "source.ip": A["S1_BRUTE_IP"]})
     assert len(fails) == 60
     assert {f["user"]["name"] for f in fails} == {"svc_backup"}
     assert {f["winlog"]["logon"]["type"] for f in fails} == {"Network"}
     assert max(map(ts, fails)) - min(map(ts, fails)) < 5 * MIN
-    ok = sel(ev, **{"host.name": "SRV-DC-01", "winlog.event_id": 4624, "source.ip": "203.0.113.57"})
+    ok = sel(ev, **{"host.name": "SRV-DC-01", "winlog.event_id": 4624, "source.ip": A["S1_BRUTE_IP"]})
     assert len(ok) == 1 and ts(ok[0]) == s[1]["ts_ms"] and ts(ok[0]) > max(map(ts, fails))
     assert ok[0]["event"]["outcome"] == "success" and HEX_ID.match(ok[0]["winlog"]["logon"]["id"])
     lat = sel(ev, **{"host.name": "WS-FIN-010", "winlog.event_id": 4624})
@@ -148,7 +149,7 @@ def test_s1_execution_discovery_collection_exfil(built) -> None:
     assert 'net group "domain admins"' in procs[1]["process"]["command_line"]
     assert procs[2]["process"]["command_line"].startswith("7z a ")
     assert [ts(p) for p in procs] == [s[3]["ts_ms"], s[4]["ts_ms"], s[5]["ts_ms"]]
-    ex = sel(ev, **{"destination.ip": "198.51.100.23"})
+    ex = sel(ev, **{"destination.ip": A["S1_EXFIL_IP"]})
     assert len(ex) == 4 and [e["network"]["bytes"] for e in ex] == [25 * MB] * 4
     assert {e["network"]["direction"] for e in ex} == {"outbound"}
     assert {e["host"]["name"] for e in ex} == {"WS-FIN-010"}
@@ -186,7 +187,7 @@ def test_s3_office_runkey_beacons(built) -> None:
     assert ts(ps) == s[0]["ts_ms"]
     (rk,) = sel(ev, **{"host.name": "WS-HR-012", "event.action": "registry_value_set"})
     assert "\\CurrentVersion\\Run" in rk["registry"]["path"] and rk["process"]["name"] == "powershell.exe"
-    bc = sel(ev, **{"destination.domain": "suspicious-example-c2.invalid"})
+    bc = sel(ev, **{"destination.domain": A["C2_DOMAIN"]})
     assert len(bc) == 10 and {b["host"]["name"] for b in bc} == {"WS-HR-012"}
     t = [ts(b) for b in bc]
     gaps = [b - a for a, b in zip(t, t[1:])]
@@ -199,18 +200,18 @@ def test_s3_office_runkey_beacons(built) -> None:
 def test_s4_spray_ssh_pivot_exfil(built) -> None:
     ev, at = built
     s = steps(at, "S4")
-    sp = sel(ev, **{"source.ip": "192.0.2.88", "event.outcome": "failure"})
+    sp = sel(ev, **{"source.ip": A["S4_SPRAY_IP"], "event.outcome": "failure"})
     assert len(sp) == 20 and len({e["user"]["name"] for e in sp}) == 20
     assert {e["host"]["name"] for e in sp} == {"SRV-WEB-01"}
     assert max(map(ts, sp)) - min(map(ts, sp)) < 10 * MIN
     for e in sp + sel(ev, **{"process.name": "sshd"}):
         assert e["process"]["name"] == "sshd" and e["destination"]["port"] == 22 and "winlog" not in e
-    (ok,) = sel(ev, **{"source.ip": "192.0.2.88", "event.outcome": "success"})
+    (ok,) = sel(ev, **{"source.ip": A["S4_SPRAY_IP"], "event.outcome": "success"})
     assert ok["user"]["name"] == "vreddy" and ts(ok) == s[1]["ts_ms"] and ts(ok) > max(map(ts, sp))
     (piv,) = sel(ev, **{"host.name": "SRV-DB-01", "process.name": "sshd"})
     assert piv["source"]["ip"] == "10.10.0.30" and piv["user"]["name"] == "vreddy"
     assert ts(piv) == s[2]["ts_ms"]
-    (ex,) = sel(ev, **{"host.name": "SRV-DB-01", "destination.ip": "203.0.113.57"})
+    (ex,) = sel(ev, **{"host.name": "SRV-DB-01", "destination.ip": A["S4_EXFIL_IP"]})
     assert ex["network"]["bytes"] == 60 * MB and ex["network"]["direction"] == "outbound"
 
 
@@ -329,3 +330,94 @@ def test_gen_dataset_writes_identical_scenarios_for_every_size(tmp_path) -> None
     assert m["scenario_events"] == a.count(b"\n") == len(sc.scenario_events(START_MS)[0])
     for tok in (b'"threat"', b'"labels"', b'"labels_extra"', b'"rule"'):
         assert tok not in a
+
+
+
+# ----------------------------------------------------------------------------- IOC-free variant (review finding 6)
+def _ioc_values() -> set[str]:
+    import yaml
+    ioc = yaml.safe_load((REPO / "config" / "ioc.yaml").read_text(encoding="utf-8"))
+    return {str(v).lower() for k in ("ips", "domains") for v in ioc.get(k) or []}
+
+
+def _addresses(ev: list[dict], at: dict) -> set[str]:
+    out = set()
+    for e in ev:
+        for k in ("source", "destination"):
+            for f in ("ip", "domain"):
+                if e.get(k, {}).get(f):
+                    out.add(str(e[k][f]).lower())
+    for a in at["attacks"]:
+        for s in a["steps"]:
+            out |= {str(x).lower() for x in (s["src_ip"], s["dst_ip"]) if x}
+    return out
+
+
+def test_default_scenarios_are_ioc_free(built) -> None:
+    ev, at = built
+    hit = _addresses(ev, at) & _ioc_values()
+    assert hit == set(), f"planted attack uses config/ioc.yaml values: {sorted(hit)}"
+    assert set(sc.ADDRS["ioc_free"].values()) <= _addresses(ev, at)  # every attacker address is actually used
+
+
+def test_ioc_free_addresses_are_documentation_ranges() -> None:
+    doc = [ipaddress.ip_network(n) for n in ("192.0.2.0/24", "198.51.100.0/24", "203.0.113.0/24")]
+    for k, v in sc.ADDRS["ioc_free"].items():
+        if k.endswith("_IP"):
+            assert any(ipaddress.ip_address(v) in n for n in doc), (k, v)
+        else:
+            assert v.endswith((".invalid", ".test")), (k, v)
+
+
+def test_legacy_ioc_variant_unchanged(built) -> None:
+    ev, at = sc.scenario_events(START_MS, ioc_free=False)
+    assert {"203.0.113.57", "198.51.100.23", "192.0.2.88", "suspicious-example-c2.invalid"} <= _addresses(ev, at)
+    # same events except the attacker addresses, same steps/timestamps
+    ev0, at0 = built
+    assert len(ev) == len(ev0) and [ts(e) for e in ev] == [ts(e) for e in ev0]
+    strip = lambda a: [[{k: v for k, v in s.items() if k not in ("src_ip", "dst_ip")} for s in x["steps"]]
+                       for x in a["attacks"]]
+    assert strip(at) == strip(at0)
+
+
+def test_gen_dataset_default_ioc_free_and_legacy_flag(tmp_path) -> None:
+    out = {}
+    for flag in ([], ["--ioc-scenarios"]):
+        o = tmp_path / ("legacy" if flag else "default")
+        m = gd.build(gd.make_parser().parse_args(["--size", "32K", "--out", str(o), "--alert-ratio", "0", *flag]))
+        out[bool(flag)] = (m, json.loads((o / "ground_truth" / "attacks.json").read_text()))
+    assert out[False][0]["scenario_ioc_free"] is True and out[True][0]["scenario_ioc_free"] is False
+    assert out[False][1] == sc.scenario_events(START_MS)[1]
+    assert out[True][1] == sc.scenario_events(START_MS, ioc_free=False)[1]
+
+
+# ----------------------------------------------------------------------------- S1 benign admin history (reach-next)
+def test_s1_history_is_context_only_and_gives_reach(tmp_path) -> None:
+    from attacklens import detect, lookups, reach
+    from tests.conftest import query, run_ingest
+
+    ev, at = sc.scenario_events(START_MS, ids=["S1", "S4"])  # S4 runs on SRV-DB-01 -> its IP is in host_ip_map
+    s1_start = steps(at, "S1")[0]["ts_ms"]
+    hist = [e for e in ev if ts(e) < s1_start - DAY]
+    assert len(hist) == 3 + 2 * 2 + 2                     # 3 plain logons, 2 x (4624 + 4672), 2 SSH flows
+    assert all(s1_start - 3 * DAY - 2 * HOUR <= ts(e) for e in hist)
+    assert all(8 <= (ts(e) // HOUR) % 24 < 19 for e in hist)   # business hours
+    assert all(e["host"]["name"] == "SRV-FILE-01" and e["user"]["name"] == "svc_backup" for e in hist)
+    assert min(s["ts_ms"] for s in steps(at, "S1")) == s1_start   # history is not ground truth
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    (raw / "scenarios.jsonl").write_bytes(b"".join(json.dumps(e).encode() + b"\n" for e in ev))
+    ctx = run_ingest(raw, tmp_path)
+    try:
+        lookups.run(ctx)
+        detect.run(ctx)
+        early = query(ctx, f"SELECT rule_id, ts_ms FROM read_parquet('"
+                           f"{(ctx.work_dir / 'raw_alerts.parquet').as_posix()}') WHERE ts_ms < {s1_start - DAY}")
+        reach.prepare(ctx)
+        got = reach.compute(ctx, reach.Frontier(users=["svc_backup"], hosts=["ws-fin-010"],
+                                                touched={"srv-dc-01", "ws-fin-010"}))
+    finally:
+        ctx.con.close()
+    assert early == [], f"benign history fired detection rules: {early}"
+    assert [(r.host, r.hops, r.via_user) for r in got][:2] == [("srv-file-01", 1, "svc_backup"),
+                                                                ("srv-db-01", 2, "svc_backup")]

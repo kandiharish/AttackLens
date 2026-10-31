@@ -362,3 +362,19 @@ def test_scorecard_top_level_keys_pinned(tmp_path: Path) -> None:
     assert card["singleton_recall_pct"] is None  # no noise GT given
     assert set(card["targets"]) == {"detection_pct", "labels_pct", "rebuilt_pct", "false_alarms_strict_pct"}
     assert all(set(v) == {"good", "great"} for v in card["targets"].values())
+
+
+def test_quote_in_out_dir_path(tmp_path: Path) -> None:
+    """A `'` in the out dir must not break (or inject into) the raw_alerts SQL."""
+    out, gt = write(tmp_path / "it's", [incident("inc-perfect1", perfect_steps())])
+    (out / "work").mkdir()
+    con = duckdb.connect()
+    con.execute("CREATE TABLE ra AS SELECT 'r1' rule_id, 'T1059' technique_id, 'T1059.001' sub_technique_id, "
+                "'Execution' tactic, 1792807200000::BIGINT ts_ms, 'h' host, 'h' subject_host, NULL::VARCHAR src_user, "
+                "NULL::VARCHAR target_user, NULL::VARCHAR src_ip, NULL::VARCHAR dst_ip, 1::BIGINT raw_alert_count")
+    con.execute("COPY ra TO '" + (out / "work" / "raw_alerts.parquet").as_posix().replace("'", "''") +
+                "' (FORMAT PARQUET)")
+    con.close()
+    card = evaluate(out, gt)
+    assert card["rebuilt_pct"] == 100.0
+    assert card["per_rule_alerts"] == [{"rule_id": "r1", "alerts": 1, "raw_alert_count": 1}]

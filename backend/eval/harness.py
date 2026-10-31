@@ -112,7 +112,7 @@ def load_raw_alerts(path: Path) -> tuple[list[PredStep], list[dict]] | None:
     con = duckdb.connect()
     try:
         con.execute("SET TimeZone='UTC'")
-        src = f"read_parquet('{path.as_posix()}')"
+        src = "read_parquet('" + path.as_posix().replace("'", "''") + "')"  # quote-safe SQL literal
         per_rule = [
             {"rule_id": r, "alerts": int(n), "raw_alert_count": int(c or 0)}
             for r, n, c in con.execute(
