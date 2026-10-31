@@ -16,7 +16,7 @@ import logging
 from typing import Any
 
 from attacklens.context import RunContext
-from attacklens.detect_sql import LOGON_ACTIONS, NET_ACTIONS, OK, ensure_events, register_macros, sql_list
+from attacklens.detect_sql import LOGON_ACTIONS, NET_ACTIONS, OK, ensure_events, register_macros, sql_list, sql_path
 
 log = logging.getLogger(__name__)
 
@@ -70,12 +70,12 @@ def run(ctx: RunContext) -> dict[str, Any]:
     th = (ctx.cfg.get("rules") or {}).get("thresholds") or {}
     min_peers = float(th.get("hub_min_median_daily_peers", 20))
     work = ctx.work_dir
-    hip = (work / "host_ip_map.parquet").as_posix()
-    hubs = (work / "background_hubs.parquet").as_posix()
-    con.execute(f"COPY ({host_ip_map_sql()}) TO '{hip}' (FORMAT PARQUET)")
-    con.execute(f"COPY ({background_hubs_sql(min_peers)}) TO '{hubs}' (FORMAT PARQUET)")
-    n_map = con.execute(f"SELECT count(*) FROM read_parquet('{hip}')").fetchone()[0]
-    n_hubs = con.execute(f"SELECT count(*) FROM read_parquet('{hubs}')").fetchone()[0]
+    hip = sql_path(work / "host_ip_map.parquet")
+    hubs = sql_path(work / "background_hubs.parquet")
+    con.execute(f"COPY ({host_ip_map_sql()}) TO {hip} (FORMAT PARQUET)")
+    con.execute(f"COPY ({background_hubs_sql(min_peers)}) TO {hubs} (FORMAT PARQUET)")
+    n_map = con.execute(f"SELECT count(*) FROM read_parquet({hip})").fetchone()[0]
+    n_hubs = con.execute(f"SELECT count(*) FROM read_parquet({hubs})").fetchone()[0]
     log.info("lookups: host_ip_map=%d rows, background_hubs=%d (min median daily peers > %s)",
              n_map, n_hubs, min_peers)
     return {"host_ip_map": int(n_map), "background_hubs": int(n_hubs)}

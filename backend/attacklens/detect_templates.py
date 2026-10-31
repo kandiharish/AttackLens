@@ -55,7 +55,7 @@ def brute_force_then_success(con: duckdb.DuckDBPyConnection, rule: dict[str, Any
     fc AS (SELECT f.* FROM f SEMI JOIN cand USING (host, target_user)),
     {_gap_sessions('fc', 'host, target_user', gap)},
     b AS (SELECT host, target_user, sid, min(ts_ms) AS ts_ms, max(ts_ms) AS last_ts_ms,
-                 min(source_seq) AS source_seq, count(*) AS n, mode(src_ip) AS src_ip,
+                 min(source_seq) AS source_seq, count(*) AS n, al_mode(list(src_ip)) AS src_ip,
                  {ev_lines(th)} AS ev, {ev_keys(th)} AS keys
           FROM ss GROUP BY host, target_user, sid HAVING count(*) >= {n}),
     sc AS (SELECT e.ts_ms, e.source_seq, e.host, e.target_user, e.src_ip, e.raw_line FROM events e
@@ -90,7 +90,7 @@ def password_spray(con: duckdb.DuckDBPyConnection, rule: dict[str, Any], th: dic
     r AS (SELECT f.* FROM f SEMI JOIN cand USING (src_ip)),
     {_window_bursts('src_ip', win, 'count(DISTINCT target_user)', f'wv >= {n}')},
     b AS (SELECT src_ip, bid, min(ts_ms) AS ts_ms, max(ts_ms) AS last_ts_ms, min(source_seq) AS source_seq,
-                 count(*) AS n, mode(host) AS host, {ev_lines(th)} AS ev, {ev_keys(th)} AS keys
+                 count(*) AS n, al_mode(list(host)) AS host, {ev_lines(th)} AS ev, {ev_keys(th)} AS keys
           FROM mb GROUP BY src_ip, bid HAVING count(DISTINCT target_user) >= {n}),
     sc AS (SELECT e.ts_ms, e.source_seq, e.host, e.target_user, e.src_ip, e.raw_line FROM events e
            SEMI JOIN cand c ON e.src_ip = c.src_ip WHERE {OK} AND e.action = 'login_success'),
@@ -154,8 +154,9 @@ def beaconing(con: duckdb.DuckDBPyConnection, rule: dict[str, Any], th: dict[str
            LEFT JOIN al_ip_host m ON m.ip = c.src_ip),
     {_gap_sessions('cc', 'sh, dk', gap)},
     a AS (SELECT sh, dk, sid, min(ts_ms) AS ts_ms, max(ts_ms) AS last_ts_ms, min(source_seq) AS source_seq,
-                 count(*) AS n, avg(dt) AS mu, stddev_pop(dt) AS sd, mode(host) AS host, mode(src_ip) AS src_ip,
-                 mode(dst_ip) AS dst_ip, mode(coalesce(src_user, target_user)) AS u,
+                 count(*) AS n, avg(dt) AS mu, stddev_pop(dt) AS sd, al_mode(list(host)) AS host,
+                 al_mode(list(src_ip)) AS src_ip,
+                 al_mode(list(dst_ip)) AS dst_ip, al_mode(list(coalesce(src_user, target_user))) AS u,
                  {ev_lines(th)} AS ev, {ev_keys(th)} AS keys
           FROM ss GROUP BY sh, dk, sid HAVING count(*) >= {n})
     SELECT 'primary' AS label, NULL AS sub_technique_id, ts_ms, last_ts_ms, source_seq, host, sh AS subject_host,
@@ -176,7 +177,7 @@ def ransom_rename(con: duckdb.DuckDBPyConnection, rule: dict[str, Any], th: dict
     r AS (SELECT f.* FROM f SEMI JOIN cand USING (host)),
     {_window_bursts('host', win, 'count(*)', f'wv >= {n}')},
     b AS (SELECT host, bid, min(ts_ms) AS ts_ms, max(ts_ms) AS last_ts_ms, min(source_seq) AS source_seq,
-                 count(*) AS n, mode(coalesce(src_user, target_user)) AS u, {ev_lines(th)} AS ev,
+                 count(*) AS n, al_mode(list(coalesce(src_user, target_user))) AS u, {ev_lines(th)} AS ev,
                  {ev_keys(th)} AS keys
           FROM mb GROUP BY host, bid HAVING count(*) >= {n})
     SELECT 'primary' AS label, NULL AS sub_technique_id, ts_ms, last_ts_ms, source_seq, host, host AS subject_host,
@@ -221,8 +222,8 @@ def exfil_volume(con: duckdb.DuckDBPyConnection, rule: dict[str, Any], th: dict[
                                   AND b.dst_ip = cs.dst_ip),
     {_window_bursts('sh, dst_ip', win, 'sum(bytes_out)', 'wv > thr')},
     b AS (SELECT sh, dst_ip, bid, min(ts_ms) AS ts_ms, max(ts_ms) AS last_ts_ms, min(source_seq) AS source_seq,
-                 count(*) AS n, mode(host) AS host, mode(src_ip) AS src_ip,
-                 mode(coalesce(src_user, target_user)) AS u, {ev_lines(th)} AS ev, {ev_keys(th)} AS keys
+                 count(*) AS n, al_mode(list(host)) AS host, al_mode(list(src_ip)) AS src_ip,
+                 al_mode(list(coalesce(src_user, target_user))) AS u, {ev_lines(th)} AS ev, {ev_keys(th)} AS keys
           FROM mb GROUP BY sh, dst_ip, bid)
     SELECT 'primary' AS label, NULL AS sub_technique_id, ts_ms, last_ts_ms, source_seq, host, sh AS subject_host,
            u AS src_user, NULL AS target_user, src_ip, dst_ip, n AS raw_alert_count, ev AS evidence_lines,
@@ -249,7 +250,8 @@ def new_admin_logon(con: duckdb.DuckDBPyConnection, rule: dict[str, Any], th: di
                 WHERE {OK} AND action = 'login_success' AND host IS NOT NULL AND target_user IS NOT NULL
                   AND NOT coalesce(is_machine, FALSE) AND NOT ends_with(target_user, '$')
                   AND (logon_type IN (3, 10) OR lower(process_name) = 'sshd')),
-    pa AS (SELECT host, lower(logon_id) AS lid, min(source_seq) AS p_seq, min_by(raw_line, ts_ms) AS p_line
+    pa AS (SELECT host, lower(logon_id) AS lid, min(source_seq) AS p_seq,
+                  min_by(raw_line, {{'t': ts_ms, 's': source_seq}}) AS p_line
            FROM events WHERE {OK} AND action = 'priv_assigned' AND logon_id IS NOT NULL
                          AND lower(logon_id) NOT IN {excl}
            GROUP BY ALL),

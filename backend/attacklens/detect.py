@@ -8,15 +8,18 @@ work/rule_host_baseline.parquet.
 
 from __future__ import annotations
 
+import functools
+import json
 import logging
 import re
+import time
 from typing import Any
 
 import duckdb
 
 from attacklens.context import RunContext
 from attacklens.detect_sql import (OK, RAW_ALERT_COLUMNS, create_empty_events, ensure_events, finish, prepare, q,
-                                   sql_list, subject_host_expr)
+                                   sql_list, sql_path, subject_host_expr)
 from attacklens.detect_templates import TEMPLATES
 from attacklens.schemas import TACTIC_IDX
 
@@ -99,13 +102,27 @@ def build_match_hits(con: duckdb.DuckDBPyConnection, rules: list[dict[str, Any]]
 
 def validate(cfg: dict[str, Any]) -> None:
     """Rule ids unique, labels exist in ATT&CK v20 data, templates exist, every rule's SQL compiles (EXPLAIN
-    against an empty events view). Raises RuleError naming the rule."""
+    against an empty events view). Raises RuleError naming the rule. Cached per content of rules/ioc/attack, so
+    repeated detect.run calls (live mode) pay for it once."""
+    key = json.dumps({k: cfg.get(k) for k in ("rules", "ioc", "attack")}, sort_keys=True, default=str)
+    _validate_cached(key)
+
+
+@functools.lru_cache(maxsize=8)
+def _validate_cached(cfg_json: str) -> None:
+    """Pure function of the config content (exceptions are not cached, so a bad config fails every time)."""
+    _validate_uncached(json.loads(cfg_json))
+
+
+def _validate_uncached(cfg: dict[str, Any]) -> None:
     rules, th = rules_and_thresholds(cfg)
     attack, ioc = cfg.get("attack") or {}, cfg.get("ioc") or {}
     seen: set[str] = set()
     con = duckdb.connect()
     try:
         con.execute("SET TimeZone='UTC'")
+        con.execute("SET threads=1")
+        con.execute("SET memory_limit='256MB'")
         create_empty_events(con)
         prepare(con, cfg)
         for r in rules:
@@ -176,20 +193,26 @@ def relabel_without_context(con: duckdb.DuckDBPyConnection, rule: dict[str, Any]
 
 def run(ctx: RunContext) -> dict[str, Any]:
     con, cfg = ctx.con, ctx.cfg
+    t_val = time.perf_counter()
     validate(cfg)
+    t_val = time.perf_counter() - t_val
     ensure_events(con, ctx.events_glob)
     prepare(con, cfg, ctx.work_dir)
     rules, th = rules_and_thresholds(cfg)
     cols = ", ".join(f"{c} {t}" for c, t in RAW_ALERT_COLUMNS.items())
     con.execute(f"CREATE OR REPLACE TEMP TABLE al_raw ({cols})")
+    t_scan = time.perf_counter()
     build_match_hits(con, rules, cfg.get("ioc") or {}, th)
     per_rule: dict[str, int] = {}
+    secs: dict[str, float] = {"validate": round(t_val, 3), "match_scan": round(time.perf_counter() - t_scan, 3)}
     for r in rules:
         rid = str(r["id"])
+        t0 = time.perf_counter()
         try:
             con.execute(f"INSERT INTO al_raw BY NAME {rule_sql(con, r, th)}")
         except duckdb.Error as exc:
             raise RuleError(f"{rid}: execution failed: {exc}") from exc
+        secs[rid] = round(time.perf_counter() - t0, 3)
     ctx_ms = int(th.get("lateral_context_window_ms", 86400000))
     relabelled = {str(r["id"]): relabel_without_context(con, r, ctx_ms)
                   for r in rules if r.get("relabel_without_context")}
@@ -199,11 +222,13 @@ def run(ctx: RunContext) -> dict[str, Any]:
         per_rule.setdefault(str(r["id"]), 0)
     work = ctx.work_dir
     con.execute(f"COPY (SELECT {', '.join(RAW_ALERT_COLUMNS)} FROM al_raw) TO "
-                f"'{(work / 'raw_alerts.parquet').as_posix()}' (FORMAT PARQUET)")
+                f"{sql_path(work / 'raw_alerts.parquet')} (FORMAT PARQUET)")
     base_sql = baseline_sql(int(th.get("baseline_max_other_rules", 0)))
-    con.execute(f"COPY ({base_sql}) TO '{(work / 'rule_host_baseline.parquet').as_posix()}' (FORMAT PARQUET)")
+    con.execute(f"COPY ({base_sql}) TO {sql_path(work / 'rule_host_baseline.parquet')} (FORMAT PARQUET)")
     total = sum(per_rule.values())
     hits = con.execute("SELECT count(*) FROM al_match_hits").fetchone()[0]
     log.info("detect: %d raw alerts (%d match hits); per rule %s; relabelled %s",
              total, hits, per_rule, relabelled)
-    return {"alerts_per_rule": per_rule, "raw_alerts": total, "match_hits": int(hits), "relabelled": relabelled}
+    log.debug("detect: seconds per rule %s", secs)
+    return {"alerts_per_rule": per_rule, "raw_alerts": total, "match_hits": int(hits), "relabelled": relabelled,
+            "rule_seconds": secs}

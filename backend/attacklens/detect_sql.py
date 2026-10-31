@@ -2,6 +2,7 @@
 
 Temp objects created on the connection (all prefixed `al_`):
   macro  al_is_internal_ip(ip)   RFC1918 / loopback / link-local / ULA / NULL-safe
+  macro  al_mode(list(x))        deterministic mode (highest count, then smallest value)
   table  al_attack(technique_id, name, tactic)            from config/attack_v20.json
   table  al_ip_host(ip, host)                              latest owner of each IP (from host_ip_map)
 """
@@ -36,6 +37,16 @@ CORE_COLUMNS = ("label", "sub_technique_id", "ts_ms", "last_ts_ms", "source_seq"
 OK = "CAST(ts_ok AS BOOLEAN)"
 
 
+def sql_path(p: Path | str) -> str:
+    """Path as a complete quoted SQL string literal ('...' with ' doubled) - same contract as db.sql_path."""
+    from attacklens import db
+
+    fn = getattr(db, "sql_path", None)
+    if fn is not None:
+        return str(fn(p))
+    return "'" + Path(p).as_posix().replace("'", "''") + "'"
+
+
 def q(value: Any) -> str:
     """SQL literal for a trusted config value."""
     if value is None:
@@ -52,12 +63,15 @@ def sql_list(values: list[Any]) -> str:
     return "(" + ", ".join(q(v) for v in values) + ")" if values else "(NULL)"
 
 
-def ev_lines(th: dict[str, Any], col: str = "raw_line", order: str = "ts_ms") -> str:
+TIE_ORDER = "{'t': ts_ms, 's': source_seq}"   # deterministic ordering key: time, then source_seq
+
+
+def ev_lines(th: dict[str, Any], col: str = "raw_line", order: str = TIE_ORDER) -> str:
     return (f"min_by(left({col}, {int(th.get('evidence_max_chars', 300))}), {order}, "
             f"{int(th.get('evidence_max_lines', 3))})")
 
 
-def ev_keys(th: dict[str, Any], col: str = "source_seq", order: str = "ts_ms") -> str:
+def ev_keys(th: dict[str, Any], col: str = "source_seq", order: str = TIE_ORDER) -> str:
     return f"min_by({col}, {order}, {int(th.get('source_keys_max', 50))})"
 
 
@@ -73,7 +87,7 @@ def ensure_events(con: duckdb.DuckDBPyConnection, events_glob: str) -> None:
 
     root = Path(events_glob.split("**")[0])
     if root.exists() and any(root.rglob("*.parquet")):
-        db.register_events(con, events_glob)
+        db.register_events(con, events_glob)  # db.py owns quoting of the glob
         return
     log.warning("no event parquet under %s; using an empty events view", root)
     create_empty_events(con)
@@ -92,6 +106,13 @@ def register_macros(con: duckdb.DuckDBPyConnection) -> None:
             OR regexp_matches(ip, '^172\\.(1[6-9]|2[0-9]|3[01])\\.')
             OR lower(ip) = '::1' OR regexp_matches(lower(ip), '^(fc|fd|fe80)')
         )""")
+    # deterministic mode over list(x): highest count, then smallest value; NULLs ignored (DuckDB mode() breaks ties
+    # in arrival order, which varies with threads and would change subject_host / episode_id)
+    con.execute("""
+        CREATE OR REPLACE TEMP MACRO al_mode(l) AS (
+            list_min(list_transform(map_entries(list_histogram(list_filter(l, lambda v: v IS NOT NULL))),
+                                    lambda e: {'c': -(e.value::BIGINT), 'k': e.key})).k
+        )""")
     con.execute("""
         CREATE OR REPLACE TEMP MACRO al_is_loopback(ip) AS (
             ip IS NULL OR ip IN ('-', '', '::1') OR starts_with(ip, '127.')
@@ -108,11 +129,12 @@ def create_attack_table(con: duckdb.DuckDBPyConnection, attack: dict[str, Any]) 
 def create_ip_host_table(con: duckdb.DuckDBPyConnection, host_ip_map: Path | None) -> None:
     """al_ip_host(ip, host): the most recent owner per IP. Built from host_ip_map.parquet when present."""
     if host_ip_map is not None and host_ip_map.exists():
-        src = f"read_parquet('{host_ip_map.as_posix()}')"
+        src = f"read_parquet({sql_path(host_ip_map)})"
     else:
         src = ("(SELECT host_ip AS ip, host, max(ts_ms) AS last_ms FROM events "
                f"WHERE {OK} AND host IS NOT NULL AND NOT al_is_loopback(host_ip) GROUP BY ALL)")
-    con.execute(f"CREATE OR REPLACE TEMP TABLE al_ip_host AS SELECT ip, arg_max(host, last_ms) AS host "
+    con.execute("CREATE OR REPLACE TEMP TABLE al_ip_host AS "
+                "SELECT ip, arg_max(host, {'l': last_ms, 'h': host}) AS host "
                 f"FROM {src} GROUP BY ip")
 
 

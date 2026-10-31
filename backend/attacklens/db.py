@@ -18,7 +18,7 @@ def connect(memory_limit: str = "5GB", threads: int | None = None,
     con = duckdb.connect(database)
     con.execute("SET TimeZone='UTC'")
     con.execute(f"SET memory_limit='{memory_limit}'")
-    con.execute(f"SET temp_directory='{Path(temp_directory).as_posix()}'")
+    con.execute(f"SET temp_directory={sql_path(temp_directory)}")
     con.execute("SET preserve_insertion_order=false")
     con.execute(f"SET threads={int(threads or os.cpu_count() or 4)}")
     return con
@@ -26,7 +26,7 @@ def connect(memory_limit: str = "5GB", threads: int | None = None,
 
 def register_events(con: duckdb.DuckDBPyConnection, events_glob: str) -> None:
     """(Re)create the `events` view over the partitioned Parquet written by Stage 1."""
-    con.execute(f"CREATE OR REPLACE VIEW events AS SELECT * FROM read_parquet('{events_glob}', "
+    con.execute(f"CREATE OR REPLACE VIEW events AS SELECT * FROM read_parquet({sql_path(events_glob)}, "
                 f"hive_partitioning=true, union_by_name=true, hive_types={HIVE_TYPES})")
 
 
@@ -39,12 +39,41 @@ def sql_list(values: Sequence[str]) -> str:
     return "[" + ", ".join(sql_str(v) for v in values) + "]"
 
 
-def line_reader(files: Sequence[str], filename: bool = True) -> str:
+def sql_path(path: str | Path) -> str:
+    """A filesystem path (or glob) as a quoted SQL string literal: forward slashes, `'` doubled.
+
+    Use for every path interpolated into SQL: f"read_parquet({sql_path(p)})".
+    """
+    return sql_str(Path(path).as_posix() if isinstance(path, Path) else str(path).replace("\\", "/"))
+
+
+def line_reader(files: Sequence[str], filename: bool = True, rejects: str | None = None) -> str:
     """Table function reading files as one VARCHAR column `line` per physical line (no quoting, no parsing).
 
-    Empty lines come back as NULL; a UTF-8 BOM and CRLF endings are stripped by the reader.
-    Delimiter NUL never occurs in text logs, so the whole line lands in one column.
+    - Empty lines come back as NULL; a UTF-8 BOM and CR/LF/CRLF endings (also mixed) are stripped.
+    - Delimiter NUL: the whole line lands in one column. A NUL byte inside a line truncates it there
+      (strict_mode=false); the truncated JSON then counts as malformed, so it is still counted.
+    - Lines that cannot be read (invalid UTF-8) are skipped by the reader; pass `rejects=<name>` to record
+      them in temp tables <name>_err / <name>_scan (see count_rejects) so they are counted, never lost.
     """
     fn = ", filename=true" if filename else ""
-    return (f"read_csv({sql_list(files)}, columns={{'line': 'VARCHAR'}}, header=false, delim='\0', "
-            f"quote='', escape='', auto_detect=false, max_line_size=16777216{fn})")
+    rj = (f", store_rejects=true, rejects_table={sql_str(rejects + '_err')}, "
+          f"rejects_scan={sql_str(rejects + '_scan')}") if rejects else ""
+    return (f"read_csv({sql_list([str(f).replace(chr(92), '/') for f in files])}, columns={{'line': 'VARCHAR'}}, "
+            f"header=false, delim='\\0', quote='', escape='', auto_detect=false, max_line_size=16777216, "
+            f"strict_mode=false, ignore_errors=true{fn}{rj})")
+
+
+def count_rejects(con: duckdb.DuckDBPyConnection, rejects: str) -> list[tuple[str, str, int]]:
+    """[(file_path, error_type, distinct rejected lines)] recorded by a reader created with rejects=<name>."""
+    try:
+        return [(str(f).replace("\\", "/"), str(e), int(n)) for f, e, n in con.execute(
+            f"SELECT s.file_path, e.error_type, count(DISTINCT (e.scan_id, e.file_id, e.line)) "
+            f"FROM {rejects}_err e JOIN {rejects}_scan s USING (scan_id, file_id) GROUP BY ALL").fetchall()]
+    except duckdb.CatalogException:
+        return []
+
+
+def drop_rejects(con: duckdb.DuckDBPyConnection, rejects: str) -> None:
+    con.execute(f"DROP TABLE IF EXISTS {rejects}_err")
+    con.execute(f"DROP TABLE IF EXISTS {rejects}_scan")

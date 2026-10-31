@@ -46,7 +46,7 @@ def _fcols(values: dict[str, str]) -> str:
 
 
 def json_select(stype: str, files: list[str], root: str, scfg: dict[str, Any], sources: dict[str, Any],
-                formats: list[str]) -> str:
+                formats: list[str], rejects: str | None = None) -> str:
     fields: dict[str, list[str]] = scfg.get("fields") or {}
     paths: list[str] = []
     index: dict[str, list[int]] = {}
@@ -62,7 +62,7 @@ def json_select(stype: str, files: list[str], root: str, scfg: dict[str, Any], s
             f"{ts_expr('f_ts0', formats)} AS ts_ms, * EXCLUDE (v, line, rel, f_ts0) FROM ("
             f"SELECT rel, line, v, {vals.get('ts', 'CAST(NULL AS VARCHAR)')} AS f_ts0, {_fcols(vals)} FROM ("
             f"SELECT {_rel(root)} AS rel, line, try(json_extract_string(line, {sql_list(paths)})) AS v "
-            f"FROM {line_reader(files)} WHERE {NONEMPTY}))")
+            f"FROM {line_reader(files, rejects=rejects)} WHERE {NONEMPTY}))")
 
 
 def json_raw_line(top: dict[str, None], nested: dict[str, dict[str, None]]) -> str:
@@ -93,24 +93,31 @@ def _cef_key(key: str) -> str:
     return f"replace(replace({v}, '\\=', '='), '\\\\', '\\')"
 
 
-def cef_select(files: list[str], root: str, ccfg: dict[str, Any], formats: list[str]) -> str:
+def cef_select(files: list[str], root: str, ccfg: dict[str, Any], formats: list[str],
+               rejects: str | None = None) -> str:
     fields: dict[str, list[str]] = ccfg.get("fields") or {}
     vals = {f: "coalesce(" + ", ".join(_clean(_cef_key(k)) for k in keys) + ")"
             for f, keys in fields.items() if keys}
     pfx_host = ("nullif(regexp_extract(line, '^(?:<\\d+>)?(?:[A-Z][a-z]{2}\\s+\\d+\\s+\\d\\d:\\d\\d:\\d\\d|"
                 "\\d{4}-\\d\\d-\\d\\dT\\S+)\\s+(\\S+)\\s+.*?CEF:\\d+\\|', 1), '')")
     vals["host"] = f"coalesce({vals['host']}, {pfx_host})" if "host" in vals else pfx_host
-    raw = "regexp_replace(line, '\\s*cs\\d+Label=mitre\\s+cs\\d+=\\S*', '', 'g')"
+    # raw_line: header signature id / name / severity blanked (the generator puts rule labels there),
+    # and the cs<N>Label=mitre technique field removed.
+    hdr = ("regexp_replace(line, 'CEF:(\\d+)\\|([^|]*)\\|([^|]*)\\|([^|]*)\\|[^|]*\\|[^|]*\\|[^|]*\\|', "
+           "'CEF:\\1|\\2|\\3|\\4|-|-|-|')")
+    raw = f"regexp_replace({hdr}, '\\s*cs\\d+Label=mitre\\s+cs\\d+=\\S*', '', 'g')"
     return (f"SELECT 'cef' AS source_type, rel, line, {raw} AS raw_line, "
             f"ext IS NULL AS malformed, {ts_expr('f_ts', formats)} AS ts_ms, * EXCLUDE (ext, line, rel) FROM ("
             f"SELECT rel, line, ext, {_fcols(vals)} FROM ("
             f"SELECT {_rel(root)} AS rel, line, "
             f"nullif(regexp_extract(line, 'CEF:\\d+\\|(?:[^|]*\\|){{6}}(.*)$', 1), '') AS ext "
-            f"FROM {line_reader(files)} WHERE {NONEMPTY}))")
+            f"FROM {line_reader(files, rejects=rejects)} WHERE {NONEMPTY}))")
 
 
 def syslog_select(files: list[str], root: str, scfg: dict[str, Any], year: int, syslog_fmt: str,
-                  formats: list[str]) -> str:
+                  formats: list[str], rejects: str | None = None) -> str:
+    """RFC 3164 lines carry no year: `year` (pipeline.yaml baseline_year) is used for every line. A Dec -> Jan
+    rollover inside one file is NOT corrected (that needs a window over the whole input)."""
     msgs: list[dict[str, Any]] = scfg.get("messages") or []
     conds = []
     for m in msgs:
@@ -146,11 +153,15 @@ def syslog_select(files: list[str], root: str, scfg: dict[str, Any], year: int, 
     return (f"SELECT 'syslog' AS source_type, rel, line, line AS raw_line, false AS malformed, {ts} AS ts_ms, "
             f"{_fcols(vals)} FROM (SELECT *, nullif(lower(p.proc), '') AS proc, p.msg AS msg FROM ("
             f"SELECT {_rel(root)} AS rel, line, regexp_extract(line, {sql_str(scfg['line_regex'])}, "
-            f"['ts_bsd', 'ts_iso', 'host', 'proc', 'pid', 'msg']) AS p FROM {line_reader(files)} WHERE {NONEMPTY}))")
+            f"['ts_bsd', 'ts_iso', 'host', 'proc', 'pid', 'msg']) AS p FROM {line_reader(files, rejects=rejects)} WHERE {NONEMPTY}))")
 
 
 def csv_select(stype: str, files: list[str], root: str, delim: str, columns: list[str],
-               ccfg: dict[str, Any], formats: list[str]) -> str:
+               ccfg: dict[str, Any], formats: list[str], rejects: str | None = None) -> str:
+    """Quote-aware CSV read: strict_mode=false (mixed CRLF/LF, quoted newlines), no null_padding (the parallel
+    scanner refuses it with quoted newlines). Missing-column / bad-encoding rows go to the rejects tables and
+    are counted; extra trailing fields are dropped by the reader (ingest flags them as truncated_columns).
+    raw_line is rebuilt from the parsed fields."""
     by_lower = {c.lower(): c for c in columns}
 
     def q(c: str) -> str:
@@ -162,8 +173,10 @@ def csv_select(stype: str, files: list[str], root: str, delim: str, columns: lis
         if hit:
             vals[f] = "coalesce(" + ", ".join(_clean(q(h)) for h in hit) + ")"
     raw = f"concat_ws({sql_str(delim)}, " + ", ".join(f"coalesce({q(c)}, '')" for c in columns) + ")"
+    rj = (f", store_rejects=true, rejects_table={sql_str(rejects + '_err')}, "
+          f"rejects_scan={sql_str(rejects + '_scan')}") if rejects else ""
     reader = (f"read_csv({sql_list(files)}, header=true, delim={sql_str(delim)}, all_varchar=true, "
-              f"filename=true, null_padding=true, ignore_errors=true)")
+              f"filename=true, strict_mode=false, ignore_errors=true{rj})")
     return (f"SELECT {sql_str(stype)} AS source_type, rel, raw AS line, raw AS raw_line, false AS malformed, "
             f"{ts_expr('f_ts', formats)} AS ts_ms, * EXCLUDE (rel, raw) FROM ("
             f"SELECT {_rel(root)} AS rel, {raw} AS raw, {_fcols(vals)} FROM {reader})")

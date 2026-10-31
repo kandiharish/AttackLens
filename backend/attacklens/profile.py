@@ -46,8 +46,9 @@ def first_line(path: Path, nbytes: int = 65536) -> str | None:
     """First non-empty line (BOM and CR stripped), or None if the file has none / is binary."""
     with path.open("rb") as fh:
         chunk = fh.read(nbytes)
-    if b"\x00" in chunk[:4096]:
+    if chunk[:4096].count(b"\x00") * 20 > len(chunk[:4096]):  # >5 % NUL: binary / UTF-16, not a text log
         return None
+    chunk = chunk.replace(b"\x00", b"")
     text = chunk.decode("utf-8", errors="replace")
     if text.startswith(BOM):
         text = text[1:]

@@ -17,14 +17,14 @@ from typing import Any
 import duckdb
 
 from attacklens.context import RunContext
-from attacklens.detect_sql import OK, RAW_ALERT_COLUMNS, ensure_events
+from attacklens.detect_sql import OK, RAW_ALERT_COLUMNS, ensure_events, register_macros, sql_path
 
 log = logging.getLogger(__name__)
 
 
 def _src(path: Path, empty_cols: dict[str, str]) -> str:
     if path.exists():
-        return f"read_parquet('{path.as_posix()}')"
+        return f"read_parquet({sql_path(path)})"
     return "(SELECT " + ", ".join(f"NULL::{t} AS {c}" for c, t in empty_cols.items()) + " WHERE false)"
 
 
@@ -45,7 +45,8 @@ def episodes_sql(work: Path, bucket_ms: int, seed_conf: float) -> str:
                min(sub_technique_id) AS sub_technique_id, min(technique_name) AS technique_name,
                min(tactic) AS tactic, min(tactic_idx) AS tactic_idx, max(severity) AS severity,
                min(ts_ms) AS ts_ms, max(last_ts_ms) AS last_ts_ms, min(source_seq) AS source_seq,
-               mode(host) AS host, mode(src_host) AS src_host, mode(src_ip) AS src_ip, mode(dst_ip) AS dst_ip,
+               al_mode(list(host)) AS host, al_mode(list(src_host)) AS src_host,
+               al_mode(list(src_ip)) AS src_ip, al_mode(list(dst_ip)) AS dst_ip,
                sum(raw_alert_count)::BIGINT AS merged_alert_count,
                list_slice(flatten(list(evidence_lines ORDER BY ts_ms, source_seq)), 1, 3) AS evidence_lines,
                list_slice(flatten(list(source_keys ORDER BY ts_ms, source_seq)), 1, 50) AS source_keys
@@ -77,7 +78,7 @@ def episodes_sql(work: Path, bucket_ms: int, seed_conf: float) -> str:
 def _spill(con: duckdb.DuckDBPyConnection, work: Path, cap: int, hops: int, win_ms: int) -> int:
     """Mark al_episodes.keep; returns the number of spilled episodes."""
     hubs = work / "background_hubs.parquet"
-    hub_src = f"(SELECT entity FROM read_parquet('{hubs.as_posix()}'))" if hubs.exists() else \
+    hub_src = f"(SELECT entity FROM read_parquet({sql_path(hubs)}))" if hubs.exists() else \
         "(SELECT NULL::VARCHAR AS entity WHERE false)"
     con.execute(f"""
         CREATE OR REPLACE TEMP TABLE al_ent AS
@@ -115,6 +116,7 @@ def _spill(con: duckdb.DuckDBPyConnection, work: Path, cap: int, hops: int, win_
 def run(ctx: RunContext) -> dict[str, Any]:
     con = ctx.con
     ensure_events(con, ctx.events_glob)
+    register_macros(con)
     th = (ctx.cfg.get("rules") or {}).get("thresholds") or {}
     work = ctx.work_dir
     cap = int(th.get("episode_cap", 25000))
@@ -126,9 +128,9 @@ def run(ctx: RunContext) -> dict[str, Any]:
     if total > cap:
         spilled = _spill(con, work, cap, int(th.get("spill_hops", 2)), int(th.get("spill_hop_window_ms", 86400000)))
     con.execute(f"COPY (SELECT * EXCLUDE (keep) FROM al_episodes WHERE keep) TO "
-                f"'{(work / 'episodes.parquet').as_posix()}' (FORMAT PARQUET)")
+                f"{sql_path(work / 'episodes.parquet')} (FORMAT PARQUET)")
     con.execute(f"COPY (SELECT * EXCLUDE (keep) FROM al_episodes WHERE NOT keep) TO "
-                f"'{(work / 'episodes_spilled.parquet').as_posix()}' (FORMAT PARQUET)")
+                f"{sql_path(work / 'episodes_spilled.parquet')} (FORMAT PARQUET)")
     seeds = int(con.execute("SELECT count(*) FROM al_episodes WHERE keep AND is_seed").fetchone()[0])
     log.info("episodes: %d total, %d kept, %d spilled, %d seeds", total, total - spilled, spilled, seeds)
     return {"episodes": total - spilled, "spilled": spilled, "episodes_total": total, "seeds": seeds}
