@@ -6,8 +6,12 @@ state_dir: null            # null -> <pipeline.parquet_root>/<basename of out_di
 poll_s: 2.0                # tail interval
 memory_limit: "1.5GB"      # DuckDB memory_limit for every live cycle
 threads: null              # null -> os.cpu_count()
-lookback_ms: null          # event-time window kept for re-detection; null -> longest *_window_ms in rules.yaml
+lookback_ms: null          # event-time window kept for re-detection; null -> max(rules.yaml *_window_ms,
+                           #   linking.yaml *tau_ms) (currently R3 72 h)
 extra_lookback_ms: 0       # added to lookback_ms
 max_read_bytes: 268435456  # max new bytes read per file per cycle (rest is read next cycle)
 status_stale_s: 10         # /api/live/status reports enabled=false if the heartbeat is older than this
 compact_max_files: 200      # window Parquet files before a rewrite into one file per partition
+max_future_skew_s: 300     # rows dated later than now + this are rejected (drop reason future_timestamp)
+watermark_min_rows: 100    # batches with >= this many rows use p99(ts) as watermark (one bad line can't move it)
+max_window_ms: 604800000   # hard cap: days kept for still-open incidents never exceed watermark - 7 d

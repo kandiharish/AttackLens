@@ -5,7 +5,8 @@ services:
     build: .
     image: attacklens:latest
     ports:
-      - "${ATTACKLENS_PORT:-8000}:8000"   # host port: ATTACKLENS_PORT=8001 docker compose up -d
+      # localhost only: POST /api/runs launches jobs and has no auth. Host port: ATTACKLENS_PORT=8001
+      - "127.0.0.1:${ATTACKLENS_PORT:-8000}:8000"
     volumes:
       - ./data:/app/data
     environment:

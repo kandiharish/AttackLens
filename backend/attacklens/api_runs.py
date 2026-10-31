@@ -81,9 +81,11 @@ def resolve_path(p: str) -> Path:
     return (path if path.is_absolute() else REPO_ROOT / path).resolve()
 
 
-def confined(p: str, root: Path, what: str) -> Path:
+def confined(p: str, root: Path, what: str, depth: int | None = None) -> Path:
     """Resolve p and require it strictly under root with plain name parts (paths end up in DuckDB SQL).
-    Errors never echo the submitted path."""
+    depth: exact number of path parts below root (out_dir = data/out/<one name>, because the default parquet dir
+    is data/parquet/<basename of out>: a nested out dir could map onto another run's events). Errors never echo
+    the submitted path."""
     try:
         path = resolve_path(p)
         rel = path.relative_to(root.resolve())
@@ -92,6 +94,8 @@ def confined(p: str, root: Path, what: str) -> Path:
     if not rel.parts or not all(_SAFE_PART.match(x) for x in rel.parts):
         raise ValueError(f"{what} must be a sub-directory of {root.relative_to(REPO_ROOT).as_posix()}/ "
                          f"with names of [A-Za-z0-9._-]")
+    if depth is not None and len(rel.parts) != depth:
+        raise ValueError(f"{what} must be exactly {root.relative_to(REPO_ROOT).as_posix()}/<name>")
     return path
 
 
@@ -103,7 +107,8 @@ class RunManager:
         self.raw_root = raw_root or REPO_ROOT / "data" / "raw"
         self.out_root = out_root or REPO_ROOT / "data" / "out"
         self._runs: dict[str, RunJob] = {}
-        self._lock = threading.Lock()
+        self._lock = threading.Lock()        # guards _runs
+        self._start_lock = threading.Lock()  # serializes start() end to end
         self._runs_dir = runs_dir or REPO_ROOT / "data" / "runs"
 
     def active(self) -> RunJob | None:
@@ -114,24 +119,25 @@ class RunManager:
         raw = confined(raw_dir, self.raw_root, "raw_dir")
         if not raw.is_dir():
             raise ValueError("raw_dir is not an existing directory")
-        out = confined(out_dir or str(self.out_root / raw.name), self.out_root, "out_dir")
+        out = confined(out_dir or str(self.out_root / raw.name), self.out_root, "out_dir", depth=1)
         cmd = [sys.executable, "-m", "attacklens.run", "--raw", str(raw), "--out", str(out)]
         if ground_truth:
             gt = confined(ground_truth, self.raw_root, "ground_truth")
             if not gt.is_file():
                 raise ValueError("ground_truth is not an existing file")
             cmd += ["--ground-truth", str(gt)]
-        if self.active() is not None:
-            raise RuntimeError("a run is already in progress")
-        run_id = uuid.uuid4().hex[:12]
-        self._runs_dir.mkdir(parents=True, exist_ok=True)
-        log_path = self._runs_dir / f"run-{run_id}.log"
-        with log_path.open("wb") as fh:
-            proc = subprocess.Popen(cmd, stdout=fh, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
-                                    cwd=str(REPO_ROOT))
-        job = RunJob(run_id, raw, out, log_path, cmd, proc)
-        with self._lock:
-            self._runs[run_id] = job
+        with self._start_lock:  # check + spawn + register atomically: two concurrent POSTs cannot both start
+            if self.active() is not None:
+                raise RuntimeError("a run is already in progress")
+            run_id = uuid.uuid4().hex[:12]
+            self._runs_dir.mkdir(parents=True, exist_ok=True)
+            log_path = self._runs_dir / f"run-{run_id}.log"
+            with log_path.open("wb") as fh:
+                proc = subprocess.Popen(cmd, stdout=fh, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
+                                        cwd=str(REPO_ROOT))
+            job = RunJob(run_id, raw, out, log_path, cmd, proc)
+            with self._lock:
+                self._runs[run_id] = job
         log.info("run %s started: %s (log %s)", run_id, " ".join(cmd), log_path)
         return job
 

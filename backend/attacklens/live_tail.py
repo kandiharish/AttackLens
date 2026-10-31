@@ -6,9 +6,11 @@ import json
 import logging
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 log = logging.getLogger("attacklens.live")
+
+NL = b"\n"
 
 
 def write_json(path: Path, obj: Any) -> None:
@@ -26,17 +28,28 @@ def read_json(path: Path, default: Any) -> Any:
         return default
 
 
-class Tailer:
-    """Byte-offset tail of every file under watch_dir; returns only complete ('\\n'-terminated) lines.
+def _first_line(chunk: bytes) -> str:
+    line = chunk.split(NL, 1)[0].decode("utf-8", errors="replace")
+    return line.lstrip("﻿").rstrip("\r")
 
-    poll() stages new offsets; commit() makes them durable only after the batch was processed, so a failed
-    cycle re-reads the same bytes. Files that shrink are re-read from 0. Skip rules = profile skip rules.
+
+class Tailer:
+    """Byte-offset tail of every file under watch_dir; returns only complete (newline-terminated) lines.
+
+    poll() stages new offsets; commit() applies them only after the batch was processed (the engine persists
+    state() atomically together with its own state), so a failed cycle re-reads the same bytes. Files that
+    shrink are re-read from 0. CSV: the header line seen at offset 0 is remembered and prepended to every later
+    chunk, so each chunk is a self-describing CSV file for Stage 0/1. Skip rules = profile skip rules.
     """
 
-    def __init__(self, watch: Path, state_file: Path, pcfg: dict[str, Any], max_read: int) -> None:
-        self.watch, self.state_file, self.max_read = watch, state_file, max_read
-        self.offsets: dict[str, int] = read_json(state_file, {})
+    def __init__(self, watch: Path, pcfg: dict[str, Any], max_read: int,
+                 is_csv_header: Callable[[str], bool], state: dict[str, Any] | None = None) -> None:
+        self.watch, self.max_read, self.is_csv_header = watch, max_read, is_csv_header
+        state = state or {}
+        self.offsets: dict[str, int] = dict(state.get("offsets") or {})
+        self.headers: dict[str, str] = dict(state.get("headers") or {})
         self._pending: dict[str, int] = {}
+        self._pending_headers: dict[str, str | None] = {}
         self.skip_names = set(pcfg.get("skip_names") or ["manifest.json"])
         self.skip_suffixes = tuple(pcfg.get("skip_suffixes") or [".md"])
         self.skip_dirs = set(pcfg.get("skip_dir_components") or ["ground_truth"])
@@ -48,7 +61,7 @@ class Tailer:
 
     def poll(self) -> dict[str, bytes]:
         out: dict[str, bytes] = {}
-        self._pending = {}
+        self._pending, self._pending_headers = {}, {}
         if not self.watch.is_dir():
             return out
         for p in sorted(x for x in self.watch.rglob("*") if x.is_file()):
@@ -65,14 +78,29 @@ class Tailer:
             with p.open("rb") as fh:
                 fh.seek(off)
                 data = fh.read(min(size - off, self.max_read))
-            cut = data.rfind(b"\n")
+            cut = data.rfind(NL)
             if cut < 0:
                 continue  # no complete line yet
-            out[rel] = data[: cut + 1]
+            chunk = data[: cut + 1]
+            header = self.headers.get(rel)
+            if off == 0:
+                first = _first_line(chunk)
+                header = first if self.is_csv_header(first) else None
+                self._pending_headers[rel] = header
+            elif header is not None:
+                chunk = header.encode("utf-8") + NL + chunk
+            out[rel] = chunk
             self._pending[rel] = off + cut + 1
         return out
 
     def commit(self) -> None:
         self.offsets.update(self._pending)
-        self._pending = {}
-        write_json(self.state_file, self.offsets)
+        for rel, h in self._pending_headers.items():
+            if h is None:
+                self.headers.pop(rel, None)
+            else:
+                self.headers[rel] = h
+        self._pending, self._pending_headers = {}, {}
+
+    def state(self) -> dict[str, Any]:
+        return {"offsets": dict(self.offsets), "headers": dict(self.headers)}

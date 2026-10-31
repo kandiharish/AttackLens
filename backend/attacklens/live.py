@@ -2,18 +2,20 @@
 
     python -m attacklens.live --watch data/raw/live --out data/out/live [--once] [--reset] [--config DIR]
 
-Per cycle with new data:
-1. Tail every file by byte offset; only complete lines ('\\n'-terminated) are taken (offsets in tail_state.json).
-2. Delta lines -> batch raw dir -> Stage 0 profile + Stage 1 ingest (the batch code, unchanged) -> batch Parquet.
-3. Window Parquet: the batch's ts_ok files are moved in (no rewrite); whole event days older than
-   watermark - lookback are deleted; > compact_max_files triggers one rewrite. lookback = longest *_window_ms
-   in rules.yaml (configurable), so every rule sees its full window.
-State lives in <parquet_root>/<out name>; it is discarded automatically if it belongs to another watch/out dir.
---reset also clears this out dir's published incidents.
-4. Stages 2-7 (lookups ... publish) over the window into out_dir. Alerts are recomputed from the window each
-   cycle, so an alert exists once per (rule, key, window) - no duplicates across cycles.
-5. Incidents that ended before the window start are kept from the previous index (frozen), not dropped.
-6. live_status.json heartbeat (read by GET /api/live/status).
+Per cycle with new data (one transaction: nothing is committed unless the stages succeed):
+1. Tail every file by byte offset (live_tail.py); only complete lines; CSV chunks get their file's header.
+2. Delta -> pending batch dir -> Stage 0 profile + Stage 1 ingest (batch code, unchanged) -> batch Parquet.
+3. Robust watermark: rows with ts > now + max_future_skew_s are rejected (drop reason future_timestamp);
+   batch watermark = p99 of the rest (max for small batches). lookback = max(rule *_window_ms, link *tau_ms).
+4. Window (live_window.py): batch rows in [cutoff, now + skew] are added; whole event days before the cutoff
+   are moved to trash (rows counted as pruned_outside_window), except days still holding the first step of an
+   incident that is still open (last_ts >= cutoff), bounded by max_window_ms.
+5. Stages 2-7 (lookups ... publish) over the window. Alerts are recomputed from the window every cycle, so an
+   alert exists once per (rule, key, window). Success -> commit (window, accounting, offsets, watermark in one
+   atomic live_state.json); failure -> rollback, and the same bytes are re-read next cycle (no double ingest).
+6. Incidents entirely before the window start are kept from the previous index (frozen).
+State lives in <parquet_root>/<out name>; it is discarded if it belongs to another watch/out dir. --reset also
+clears this out dir's published incidents. live_status.json is the heartbeat (GET /api/live/status).
 """
 
 from __future__ import annotations
@@ -29,10 +31,11 @@ from pathlib import Path
 from typing import Any
 
 from attacklens import ingest, profile
+from attacklens import live_window as lw
 from attacklens import run as batch
 from attacklens.config import REPO_ROOT, load_config
 from attacklens.context import RunContext
-from attacklens.db import HIVE_TYPES, connect, register_events, sql_path
+from attacklens.db import connect, register_events
 from attacklens.live_tail import Tailer
 from attacklens.live_tail import read_json as _read_json
 from attacklens.live_tail import write_json as _write_json
@@ -43,6 +46,8 @@ STATUS_FILE = "live_status.json"
 PUBLISHED_FILES = (STATUS_FILE, "incidents_index.json", "ingest_accounting.json", "suppressed.json",
                    "run_metrics.json", "eval_scorecard.json", "source_profile.json")
 LIVE_STAGES = batch.STAGES[2:]  # lookups, detect, episodes, link, incidents, publish
+FUTURE_REASON = "future_timestamp (ts > now + max_future_skew_s; not used)"
+DAY_MS = 86_400_000
 
 
 def _repo_path(p: str | Path) -> Path:
@@ -60,26 +65,22 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")[:-4] + "Z"
 
 
-def longest_window_ms(rules: Any) -> int:
-    """Max of every numeric *_window_ms value anywhere in rules.yaml."""
-    best = 0
-    stack = [rules]
-    while stack:
-        node = stack.pop()
-        if isinstance(node, dict):
-            for k, v in node.items():
-                if isinstance(v, (int, float)) and not isinstance(v, bool) and str(k).endswith("_window_ms"):
-                    best = max(best, int(v))
-                else:
-                    stack.append(v)
-        elif isinstance(node, list):
-            stack.extend(node)
-    return best
+def lookback_ms(cfg: dict[str, Any]) -> int:
+    """Longest rule window or link window, so every rule and every link rule sees its full span."""
+    lcfg = cfg.get("live") or {}
+    base = lcfg.get("lookback_ms") or max(lw.longest_ms(cfg.get("rules"), ("_window_ms",)),
+                                          lw.longest_ms(cfg.get("linking"), ("tau_ms",)))
+    return int(base) + int(lcfg.get("extra_lookback_ms") or 0)
 
 
-def _parquet_glob(d: Path) -> str | None:
-    ev = d / "events"
-    return (ev / "**" / "*.parquet").as_posix() if ev.exists() and any(ev.rglob("*.parquet")) else None
+def _merge_acc(total: dict[str, dict[str, Any]], part: dict[str, dict[str, Any]]) -> None:
+    for st, a in part.items():
+        acc = total.setdefault(st, {"source_type": st, "rows_in": 0, "rows_ok": 0, "dropped": 0,
+                                    "drop_reasons": {}, "pruned_outside_window": 0})
+        for k in ("rows_in", "rows_ok", "dropped", "pruned_outside_window"):
+            acc[k] = acc.get(k, 0) + int(a.get(k) or 0)
+        for r, n in (a.get("drop_reasons") or {}).items():
+            acc["drop_reasons"][r] = acc["drop_reasons"].get(r, 0) + int(n)
 
 
 class LiveEngine:
@@ -90,22 +91,22 @@ class LiveEngine:
         self.watch, self.out = watch, out
         state = self.lcfg.get("state_dir")
         self.state = _repo_path(state) if state else _repo_path(pipe.get("parquet_root", "data/parquet")) / out.name
+        self.window = self.state / "window"
         self.temp = _repo_path(pipe.get("temp_directory", "data/spill"))
-        self.lookback = int(self.lcfg.get("lookback_ms") or longest_window_ms(cfg.get("rules")))
-        self.lookback += int(self.lcfg.get("extra_lookback_ms") or 0)
+        self.lookback = lookback_ms(cfg)
         saved = _read_json(self.state / "live_state.json", {})
         if saved and (saved.get("watch_dir"), saved.get("out_dir")) != (watch.as_posix(), out.as_posix()):
             log.warning("live: state in %s belongs to another watch/out dir; starting fresh", self.state)
             reset(self.state, out)  # its published incidents came from the other watch dir too
             saved = {}
-        elif not saved:  # no committed batch: any tail offsets / window files are leftovers
+        elif not saved:  # no committed batch: any window files are leftovers
             shutil.rmtree(self.state, ignore_errors=True)
-        shutil.rmtree(self.state / "batches", ignore_errors=True)  # transient; leftovers of a killed cycle
-        # built after the state check so stale offsets are never used
-        self.tailer = Tailer(watch, self.state / "tail_state.json", pipe.get("profile") or {},
-                             int(self.lcfg.get("max_read_bytes", 256 * 2**20)))
+        for leftover in ("batches", "trash"):  # transient dirs of a killed cycle
+            shutil.rmtree(self.state / leftover, ignore_errors=True)
+        sources = cfg.get("sources") or {}
+        self.tailer = Tailer(watch, pipe.get("profile") or {}, int(self.lcfg.get("max_read_bytes", 256 * 2**20)),
+                             lambda line: profile.sniff(line, sources).get("format") == "csv", saved.get("tail"))
         self.batch_no = int(saved.get("batch_no", 0))
-        self.window_name: str | None = saved.get("window")
         self.watermark: int | None = saved.get("watermark_ms")
         self.accounting: dict[str, dict[str, Any]] = saved.get("accounting", {})
         self.status: dict[str, Any] = {"enabled": True, "running": True, "pid": os.getpid(),
@@ -116,94 +117,39 @@ class LiveEngine:
                                        "incidents": len(_read_json(out / "incidents_index.json", [])),
                                        "last_error": None}
 
-    # ---- helpers -------------------------------------------------------------------------------------------
     def _con(self) -> Any:
         con = connect(memory_limit=str(self.lcfg.get("memory_limit", "1.5GB")), threads=self.lcfg.get("threads"),
                       temp_directory=self.temp)
         con.execute("SET enable_progress_bar=false")
         return con
 
-    def _ingest_batch(self, con: Any, chunks: dict[str, bytes]) -> Path:
-        self.batch_no += 1
-        bdir = self.state / "batches" / f"b{self.batch_no:06d}"
-        if bdir.exists():
-            shutil.rmtree(bdir)
+    def _ingest(self, con: Any, bdir: Path, chunks: dict[str, bytes], tag: str) -> dict[str, dict[str, Any]]:
+        """Pending batch: raw chunks -> profile + ingest -> bdir/pq. Returns its accounting (not yet applied)."""
         raw = bdir / "raw"
         raw.mkdir(parents=True)
         for rel, data in chunks.items():
             (raw / rel.replace("/", "__")).write_bytes(data)
-        bctx = RunContext(set_name=f"live-b{self.batch_no}", raw_dir=raw, parquet_dir=bdir / "pq",
-                          out_dir=bdir / "meta", con=con, cfg=self.cfg)
+        bctx = RunContext(set_name=f"live-{tag}", raw_dir=raw, parquet_dir=bdir / "pq", out_dir=bdir / "meta",
+                          con=con, cfg=self.cfg)
         profile.run(bctx)
         ingest.run(bctx)
-        for a in _read_json(bdir / "meta" / "ingest_accounting.json", []):
-            acc = self.accounting.setdefault(a["source_type"], {"source_type": a["source_type"], "rows_in": 0,
-                                                                 "rows_ok": 0, "dropped": 0, "drop_reasons": {}})
-            for k in ("rows_in", "rows_ok", "dropped"):
-                acc[k] += int(a.get(k) or 0)
-            for r, n in (a.get("drop_reasons") or {}).items():
-                acc["drop_reasons"][r] = acc["drop_reasons"].get(r, 0) + int(n)
-        return bdir
+        acc: dict[str, dict[str, Any]] = {}
+        _merge_acc(acc, {a["source_type"]: a for a in _read_json(bdir / "meta" / "ingest_accounting.json", [])})
+        return acc
 
-    def _rebuild_window(self, con: Any, bdir: Path) -> tuple[Path, int | None, int, str | None]:
-        """Add the batch to the window by moving its Parquet files (no rewrite), then drop whole event days that
-        end before watermark - lookback. Returns (window dir, watermark ms, window rows, window start ISO)."""
-        win = self.state / "window"
-        ev = win / "events"
-        ev.mkdir(parents=True, exist_ok=True)
-        bglob = _parquet_glob(bdir / "pq")
-        if bglob:
-            bwm = con.execute(f"SELECT max(ts_ms) FROM read_parquet({sql_path(bglob)}, hive_partitioning=true, "
-                              f"hive_types={HIVE_TYPES}) WHERE ts_ok").fetchone()[0]
-            if bwm is not None:
-                self.watermark = max(int(bwm), self.watermark or 0)
-            src = bdir / "pq" / "events"
-            for f in src.rglob("*.parquet"):
-                rel = f.relative_to(src)
-                if "ts_ok=true" not in rel.parts:  # unusable rows stay out (already counted in accounting)
-                    continue
-                dst = ev / rel.parent / f"b{self.batch_no:06d}_{f.name}"
-                dst.parent.mkdir(parents=True, exist_ok=True)
-                os.replace(f, dst)
-        shutil.rmtree(bdir, ignore_errors=True)
-        start_iso: str | None = None
-        if self.watermark is not None:
-            cutoff_day = _iso_ms(self.watermark - self.lookback)[:10]  # type: ignore[index]
-            days = sorted({d.name.split("=", 1)[1] for d in ev.glob("*/*/event_day=*")})
-            for d in ev.glob("*/*/event_day=*"):
-                if d.name.split("=", 1)[1] < cutoff_day:
-                    shutil.rmtree(d, ignore_errors=True)
-            kept = [d for d in days if d >= cutoff_day]
-            start_iso = f"{kept[0]}T00:00:00Z" if kept else None
-        if sum(1 for _ in ev.rglob("*.parquet")) > int(self.lcfg.get("compact_max_files", 200)):
-            self._compact(con, win)
-        glob = _parquet_glob(win)
-        rows = int(con.execute(f"SELECT count(*) FROM read_parquet({sql_path(glob)})").fetchone()[0]) if glob else 0
-        self.window_name = "window"
-        return win, self.watermark, rows, start_iso
+    def _open_incident_day(self, cutoff_iso: str) -> str | None:
+        """Earliest first_ts day of a published incident that is still open (last_ts >= cutoff)."""
+        days = [str(r.get("first_ts", ""))[:10] for r in _read_json(self.out / "incidents_index.json", [])
+                if isinstance(r, dict) and str(r.get("last_ts", "")) >= cutoff_iso and r.get("first_ts")]
+        return min(days) if days else None
 
-    def _compact(self, con: Any, win: Path) -> None:
-        """Rewrite the window into one file per partition (bounded file count)."""
-        glob = _parquet_glob(win)
-        if not glob:
-            return
-        tmp = self.state / "window.compact"
-        shutil.rmtree(tmp, ignore_errors=True)
-        con.execute(f"COPY (SELECT * FROM read_parquet({sql_path(glob)}, hive_partitioning=true, union_by_name=true, "
-                    f"hive_types={HIVE_TYPES})) TO {sql_path(tmp / 'events')} "
-                    f"(FORMAT PARQUET, PARTITION_BY (source_type, ts_ok, event_day))")
-        shutil.rmtree(win / "events")
-        os.replace(tmp / "events", win / "events")
-        shutil.rmtree(tmp, ignore_errors=True)
-        log.info("live: window compacted")
-
-    def _frozen(self, cutoff_iso: str | None) -> list[tuple[dict[str, Any], dict[str, Any]]]:
+    def _frozen(self, start_iso: str | None) -> list[tuple[dict[str, Any], dict[str, Any]]]:
         """Previously published incidents that ended before the window start (kept as-is)."""
-        if cutoff_iso is None:
+        if start_iso is None or self.batch_no == 0:  # first batch: an existing index is not ours
             return []
         keep = []
         for row in _read_json(self.out / "incidents_index.json", []):
-            if isinstance(row, dict) and str(row.get("last_ts", "")) < cutoff_iso:
+            if isinstance(row, dict) and str(row.get("last_ts", "")) < start_iso:
                 inc = _read_json(self.out / "incidents" / f"{row['id']}.json", None)
                 if isinstance(inc, dict):
                     keep.append((row, inc))
@@ -221,10 +167,10 @@ class LiveEngine:
             _write_json(self.out / "incidents_index.json", index)
         return len(index)
 
-    def _run_stages(self, con: Any, window: Path) -> dict[str, float]:
-        ctx = RunContext(set_name=self.out.name, raw_dir=self.watch, parquet_dir=window, out_dir=self.out,
+    def _run_stages(self, con: Any) -> dict[str, float]:
+        ctx = RunContext(set_name=self.out.name, raw_dir=self.watch, parquet_dir=self.window, out_dir=self.out,
                          con=con, cfg=self.cfg)
-        if _parquet_glob(window):
+        if lw.parquet_glob(self.window):
             register_events(con, ctx.events_glob)
         walls: dict[str, float] = {}
         for name in LIVE_STAGES:
@@ -237,47 +183,83 @@ class LiveEngine:
         return walls
 
     def _save(self) -> None:
-        _write_json(self.state / "live_state.json", {"batch_no": self.batch_no, "window": self.window_name,
-                                                      "watch_dir": self.watch.as_posix(),
-                                                      "out_dir": self.out.as_posix(),
-                                                      "watermark_ms": self.watermark,
-                                                      "accounting": self.accounting,
-                                                      "last_batch_ts": self.status.get("last_batch_ts")})
+        _write_json(self.state / "live_state.json", {
+            "batch_no": self.batch_no, "watch_dir": self.watch.as_posix(), "out_dir": self.out.as_posix(),
+            "watermark_ms": self.watermark, "accounting": self.accounting, "tail": self.tailer.state(),
+            "last_batch_ts": self.status.get("last_batch_ts")})
 
     def write_status(self, **extra: Any) -> None:
         self.status.update(extra, updated_at=_now_iso())
         _write_json(self.out / STATUS_FILE, self.status)
 
-    # ---- one cycle -------------------------------------------------------------------------------------------
     def cycle(self) -> bool:
-        """Process whatever is new. Returns True if a batch was processed."""
+        """Process whatever is new as one transaction. Returns True if a batch was committed."""
         self.status["cycles"] += 1
         chunks = self.tailer.poll()
         if not chunks:
             self.write_status()
             return False
         t0 = time.perf_counter()
+        tag = f"b{self.batch_no + 1:06d}"
+        bdir = self.state / "batches" / tag
+        shutil.rmtree(bdir, ignore_errors=True)
+        txn = lw.WindowTxn(self.window, self.state / "trash")
         con = self._con()
         try:
-            bdir = self._ingest_batch(con, chunks)
+            acc = self._ingest(con, bdir, chunks, tag)
             t_ing = time.perf_counter() - t0
-            window, wm, wrows, cutoff_iso = self._rebuild_window(con, bdir)
+            skew_ms = int(float(self.lcfg.get("max_future_skew_s", 300)) * 1000)
+            limit = int(time.time() * 1000) + skew_ms
+            bs = lw.batch_stats(con, bdir / "pq", limit, int(self.lcfg.get("watermark_min_rows", 100)))
+            wm = max(w for w in (self.watermark, bs.watermark) if w is not None) \
+                if (self.watermark is not None or bs.watermark is not None) else None
+            for st, n in bs.future.items():
+                a = acc[st]
+                a["rows_ok"] -= n
+                a["dropped"] += n
+                a["drop_reasons"][FUTURE_REASON] = a["drop_reasons"].get(FUTURE_REASON, 0) + n
+                log.warning("live: %d %s rows dated beyond now + %d s rejected", n, st, skew_ms // 1000)
+            cutoff = (wm - self.lookback) if wm is not None else None
+            late = txn.add_batch(con, bdir / "pq", tag, cutoff if cutoff is not None else 0, limit)
+            if cutoff is not None:
+                cutoff_iso = str(_iso_ms(cutoff))
+                prune_day = cutoff_iso[:10]
+                open_day = self._open_incident_day(cutoff_iso)
+                floor_day = str(_iso_ms(wm - int(self.lcfg.get("max_window_ms", 7 * DAY_MS))))[:10]
+                if open_day and open_day < prune_day:  # keep the early steps of incidents still open
+                    prune_day = max(open_day, floor_day)
+                txn.prune_before(con, prune_day)
+            for st, n in [*late.items(), *txn.pruned.items()]:
+                _merge_acc(acc, {st: {"pruned_outside_window": n}})
+            start_iso = lw.kept_start_iso(self.window)
             t_win = time.perf_counter() - t0 - t_ing
-            frozen = self._frozen(cutoff_iso) if self.batch_no > 1 else []  # first batch: old index is not ours
-            walls = self._run_stages(con, window)
+            frozen = self._frozen(start_iso)
+            walls = self._run_stages(con)
             n_inc = self._merge_frozen(frozen)
         except Exception as exc:
-            log.exception("live: cycle failed")
+            log.exception("live: cycle failed; rolling back batch %s", tag)
+            txn.rollback()
             self.write_status(last_error=f"{type(exc).__name__}: {exc}")
+            con.close()
+            shutil.rmtree(bdir, ignore_errors=True)
             raise
+        # ---- commit: window, accounting, watermark, offsets (one atomic live_state.json) ----
+        txn.commit()
+        shutil.rmtree(bdir, ignore_errors=True)
+        self.batch_no += 1
+        self.watermark = wm
+        _merge_acc(self.accounting, acc)
+        self.tailer.commit()
+        try:
+            lw.compact(con, self.window, int(self.lcfg.get("compact_max_files", 200)))
+            wrows = lw.count_rows(con, self.window)
         finally:
             con.close()
-        self.tailer.commit()
         dt = round(time.perf_counter() - t0, 3)
         self.write_status(last_batch_ts=_now_iso(), batches=self.batch_no, last_cycle_s=dt,
-                          ingest_s=round(t_ing, 3), window_s=round(t_win, 3), stage_wall_s=walls, watermark_ts=_iso_ms(wm),
-                          window_start_ts=cutoff_iso, window_rows=wrows, incidents=n_inc, frozen=len(frozen),
-                          rows=sum(a["rows_in"] for a in self.accounting.values()),
+                          ingest_s=round(t_ing, 3), window_s=round(t_win, 3), stage_wall_s=walls,
+                          watermark_ts=_iso_ms(wm), window_start_ts=start_iso, window_rows=wrows, incidents=n_inc,
+                          frozen=len(frozen), rows=sum(a["rows_in"] for a in self.accounting.values()),
                           new_bytes=sum(len(b) for b in chunks.values()), last_error=None)
         self._save()
         _write_json(self.out / "ingest_accounting.json", sorted(self.accounting.values(),
