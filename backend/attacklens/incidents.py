@@ -5,7 +5,6 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-import math
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -15,6 +14,8 @@ import networkx as nx
 
 from attacklens import reach
 from attacklens.context import RunContext
+from attacklens.incident_gate import (_params, _round, allowlist_entities, burst, entities, gate,  # noqa: F401
+                                      risk_score, tactic_idx)
 from attacklens.link import episode_select, sql_path
 from attacklens.models import (EntryPoint, Graph, GraphEdge, GraphNode, Incident, Narrative, PathEdge, Step,
                                dump)
@@ -36,93 +37,8 @@ class Comp:
     back: dict[str, str | None]
 
 
-def _params(cfg: dict[str, Any]) -> dict[str, Any]:
-    lk = cfg.get("linking") or {}
-    th = (cfg.get("rules") or {}).get("thresholds") or {}
-    gate, risk, path = lk.get("gate") or {}, lk.get("risk") or {}, lk.get("path") or {}
-    return {
-        "min_tactics": int(gate.get("min_tactics", 2)),
-        "tactic_conf": float(gate.get("min_tactic_confidence", 0)),
-        "critical_min_merged": int(gate.get("critical_min_merged_alerts", 5)),
-        "peel_tails": bool(path.get("peel_standalone_branch_tails", False)),
-        "node_score": str(path.get("dp_node_score", "severity")),
-        "max_per_comp": int(gate.get("max_incidents_per_component", 20)),
-        "seed": float(th.get("seed_confidence", gate.get("seed_confidence", 65))),
-        "critical": float(th.get("critical_confidence", gate.get("critical_confidence", 90))),
-        "sup_max": int(gate.get("suppressed_max_entries", 5000)), "sup_ids": int(gate.get("suppressed_max_ids", 20)),
-        # linking.yaml risk.raw_ref_score wins; rules.yaml thresholds.raw_ref_score is the fallback (§6.4 B-1).
-        "raw_ref": float(risk.get("raw_ref_score") or th.get("raw_ref_score") or 15.0),
-        "base_points": float(risk.get("base_points", 90)), "bonus_cap": float(risk.get("bonus_cap", 10)),
-        "exempt": list(path.get("floor_exempt_tactics", ["Initial Access", "Credential Access", "Lateral Movement"])),
-        "branch_ratio": float(path.get("branch_min_ratio", 0.5)), "max_branches": int(path.get("max_branches", 5)),
-        "ev_lines": int(path.get("max_evidence_lines", 3)), "ev_chars": int(path.get("max_evidence_chars", 300)),
-        "elevated": set((lk.get("reach") or {}).get("elevated_tactics", ["Privilege Escalation"])),
-    }
-
-
-def _round(x: float) -> int:
-    return int(math.floor(x + 0.5))
-
-
 def iso(ms: int | None) -> str:
     return reach.iso_ms(int(ms or 0))
-
-
-def tactic_idx(e: dict[str, Any]) -> int:
-    return int(e.get("tactic_idx") or TACTIC_IDX.get(e.get("tactic") or "", 0))
-
-
-def entities(e: dict[str, Any]) -> set[str]:
-    out = set()
-    for typ, cols in (("host", ("subject_host", "src_host", "dst_host")), ("user", ("src_user", "target_user")),
-                      ("ip", ("src_ip", "dst_ip"))):
-        out |= {f"{typ}:{str(e[c]).lower()}" for c in cols if e.get(c)}
-    return out
-
-
-def allowlist_entities(cfg: dict[str, Any]) -> set[str]:
-    al = cfg.get("allowlist") or {}
-    if isinstance(al, list):
-        return {str(x).lower() for x in al}
-    out = {str(x).lower() for x in al.get("entities", []) or []}
-    for key, typ in (("hosts", "host"), ("users", "user"), ("ips", "ip")):
-        out |= {f"{typ}:{str(x).lower()}" for x in al.get(key, []) or []}
-    return out
-
-
-def gate(tactics: set[str], max_conf: float, allowlisted: bool, p: dict[str, Any],
-         top_merged: int | None = None) -> str | None:
-    """None = keep. Otherwise the suppression reason.
-
-    A component with fewer than min_tactics counted tactics passes only via the critical path, and then only if its
-    top-confidence episode merged at least critical_min_merged_alerts alerts (one stray .locked file is not ransomware).
-    top_merged=None skips that check.
-    """
-    if allowlisted:
-        return "allowlisted: every entity is on the allowlist"
-    if len(tactics) >= p["min_tactics"] and max_conf >= p["seed"]:
-        return None
-    if max_conf >= p["critical"]:
-        need = int(p.get("critical_min_merged", 1))
-        if len(tactics) >= p["min_tactics"] or top_merged is None or top_merged >= need:
-            return None
-        return (f"critical single-tactic component: top episode has {top_merged} merged alert(s) < {need}")
-    if len(tactics) < p["min_tactics"]:
-        return f"fewer than {p['min_tactics']} tactics and max confidence {max_conf:.0f} < {p['critical']:.0f}"
-    return f"max confidence {max_conf:.0f} < {p['seed']:.0f}"
-
-
-def risk_score(path_eps: list[dict[str, Any]], p: dict[str, Any]) -> tuple[int, float]:
-    """B-1: raw = sum_t w_t ln(S_t), S_t = max severity at tactic t on 1-10, w_t = (10 + t) / 10."""
-    s_t: dict[int, float] = {}
-    for e in path_eps:
-        t = tactic_idx(e)
-        s_t[t] = max(s_t.get(t, 1.0), min(10.0, max(1.0, float(e.get("severity") or 0) / 10.0)))
-    raw = sum((10 + t) / 10 * math.log(s) for t, s in s_t.items())
-    hosts = {e.get("subject_host") or e.get("host") for e in path_eps} - {None}
-    merged = sum(int(e.get("merged_alert_count") or 0) for e in path_eps)
-    bonus = min(p["bonus_cap"], _round(2 * math.log(1 + len(hosts)) + math.log(1 + merged)))
-    return int(min(100, _round(p["base_points"] * raw / p["raw_ref"]) + bonus)), raw
 
 
 def _load(ctx: RunContext) -> tuple[dict[str, dict[str, Any]], list[tuple[str, str, str, float, int, str]]]:
@@ -285,7 +201,7 @@ def _gate_ids(ids: list[str], eps: dict[str, dict[str, Any]], allow: set[str],
     top = max(ce, key=lambda e: (float(e.get("confidence") or 0), int(e.get("merged_alert_count") or 0)))
     max_conf = float(top.get("confidence") or 0)
     allowlisted = bool(allow) and all(entities(e) <= allow for e in ce)
-    reason = gate(tactics, max_conf, allowlisted, p, int(top.get("merged_alert_count") or 0))
+    reason = gate(tactics, max_conf, allowlisted, p, int(top.get("merged_alert_count") or 0), burst(ce, p))
     return reason, tactics, max_conf
 
 
@@ -375,6 +291,8 @@ def run(ctx: RunContext) -> dict[str, Any]:
                 peeled += len(subs)
                 queue.extend(subs)
     accounting = episode_accounting(eps, [c.ids for c in kept], sup_all)
+    no_burst = {**p, "burst_techniques": 0}
+    via_burst = sum(_gate_ids(c.ids, eps, allow, no_burst)[0] is not None for c in kept)
     ev = _evidence(ctx, {x for c in kept for x in c.backbone + [y for b in c.branches for y in b]}, p)
     reach_stats = reach.prepare(ctx)
     rg = reach.load_graph(ctx)
@@ -388,8 +306,10 @@ def run(ctx: RunContext) -> dict[str, Any]:
     suppressed.sort(key=lambda s: (-s["max_confidence"], s["episode_ids"][0]))
     _write_json(ctx.out_dir / "suppressed.json", {"total": len(suppressed), "by_reason": dict(sorted(reasons.items())),
                                                   "components": suppressed[: p["sup_max"]]})
-    stats = {"episode_accounting": accounting, "components": len(comps), "peeled_subcomponents": peeled, "kept": len(kept), "suppressed": len(suppressed), "incidents": len(incidents),
-             "suppressed_by_reason": dict(sorted(reasons.items())), "largest_component": max(map(len, comps), default=0),
-             "raw_risk": raws, "reach": reach_stats, "seconds": round(time.perf_counter() - t0, 3)}
+    stats = {"episode_accounting": accounting, "kept_via_burst": via_burst, "components": len(comps),
+             "peeled_subcomponents": peeled, "kept": len(kept), "suppressed": len(suppressed),
+             "incidents": len(incidents), "suppressed_by_reason": dict(sorted(reasons.items())),
+             "largest_component": max(map(len, comps), default=0), "raw_risk": raws, "reach": reach_stats,
+             "seconds": round(time.perf_counter() - t0, 3)}
     log.info("incidents: %s", {k: v for k, v in stats.items() if k != "raw_risk"})
     return stats

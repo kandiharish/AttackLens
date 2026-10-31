@@ -46,6 +46,15 @@ gate:
   # top-confidence episode has merged_alert_count >= this (e.g. one stray .locked file = 1 alert -> suppressed;
   # S5 ransom_rename = 300 -> kept). 1 = literal §6.3 behaviour. Components with >= min_tactics tactics unchanged.
   critical_min_merged_alerts: 5
+  # Hands-on-keyboard burst path: a component also passes if ONE subject shows >= min_distinct_techniques distinct
+  # parent techniques from >= multi_technique_min_rules distinct rules within multi_technique_window_ms, with max
+  # confidence >= multi_technique_min_conf and >= multi_technique_min_seeds seeds (e.g. av download -> beacon ->
+  # tor proxy on 10.10.2.37: 3 techniques, 3 rules, single tactic C2). min_distinct_techniques: 0 = literal §6.3.
+  min_distinct_techniques: 3
+  multi_technique_min_rules: 2
+  multi_technique_window_ms: 7200000
+  multi_technique_min_conf: 60
+  multi_technique_min_seeds: 0
   # Fallbacks; real values come from rules.yaml thresholds (seed_confidence, critical_confidence).
   seed_confidence: 65
   critical_confidence: 90
