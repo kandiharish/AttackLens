@@ -190,7 +190,8 @@ def ransom_rename(con: duckdb.DuckDBPyConnection, rule: dict[str, Any], th: dict
 def exfil_volume(con: duckdb.DuckDBPyConnection, rule: dict[str, Any], th: dict[str, Any]) -> str:
     """T1048: sum(bytes_out) per (subject_host, dst_ip) to an external dst within exfil_window_ms exceeds
     max(exfil_min_bytes, exfil_baseline_mult x host baseline); baseline = median over days of the host's daily
-    external bytes per distinct external destination."""
+    external bytes per distinct external destination, EXCLUDING the days on which the candidate (host, dst) pair
+    itself has traffic (the window under test never raises its own threshold; no history -> exfil_min_bytes)."""
     mn, win, mult = int(th["exfil_min_bytes"]), int(th["exfil_window_ms"]), float(th["exfil_baseline_mult"])
     core = f"""
     WITH c0 AS (SELECT host, src_ip, dst_ip, bytes_out FROM events
@@ -209,9 +210,15 @@ def exfil_volume(con: duckdb.DuckDBPyConnection, rule: dict[str, Any], th: dict[
               WHERE {OK} AND e.action IN ('conn_out', 'conn_allowed') AND e.bytes_out > 0 AND e.dst_ip IS NOT NULL
                 AND NOT al_is_internal_ip(e.dst_ip)
               GROUP BY ALL),
-    base AS (SELECT host, median(per_dst) AS base FROM daily GROUP BY host),
-    r AS (SELECT cs.*, greatest({mn}::DOUBLE, {mult} * coalesce(base.base, 0)) AS thr
-          FROM cs LEFT JOIN base ON base.host = cs.host),
+    pday AS (SELECT DISTINCT host, src_ip, dst_ip, ts_ms // 86400000 AS d FROM c),
+    base AS (SELECT p.host, p.src_ip, p.dst_ip, median(dl.per_dst) AS base
+             FROM cand p JOIN daily dl ON dl.host = p.host
+             WHERE NOT EXISTS (SELECT 1 FROM pday x WHERE x.host = p.host AND x.src_ip IS NOT DISTINCT FROM p.src_ip
+                               AND x.dst_ip = p.dst_ip AND x.d = dl.d)
+             GROUP BY ALL),
+    r AS (SELECT cs.*, greatest({mn}::DOUBLE, {mult} * coalesce(b.base, 0)) AS thr
+          FROM cs LEFT JOIN base b ON b.host = cs.host AND b.src_ip IS NOT DISTINCT FROM cs.src_ip
+                                  AND b.dst_ip = cs.dst_ip),
     {_window_bursts('sh, dst_ip', win, 'sum(bytes_out)', 'wv > thr')},
     b AS (SELECT sh, dst_ip, bid, min(ts_ms) AS ts_ms, max(ts_ms) AS last_ts_ms, min(source_seq) AS source_seq,
                  count(*) AS n, mode(host) AS host, mode(src_ip) AS src_ip,

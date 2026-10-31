@@ -511,3 +511,7 @@ to the integers in §3.1. `bytes_out` = `network.bytes` when direction is outbou
 | §4 Stage 4 | incidents are peeled from big components (DP path + directly linked episodes; rest re-gated, ≤ 20 per component) | one noise chain can't hide a second attack | `max_incidents_per_component: 1` |
 | §4 Stage 1b hubs | `hub_min_median_daily_peers: 40`, `baseline_max_other_rules: 99` | g1 sweep (§5.3): generator users touch all 28 hosts daily | 20 / 0 |
 | §5.2 new_admin_logon | skipped for routine pairs (≥ 3 prior non-priv logons) during 08–19 UTC | separates the admin decoy without labels | `new_admin_routine_min_logons` very high |
+| §6.3 gate critical path | single-tactic component passes the ≥ 90 path only if top episode merged_alert_count ≥ 5 (`gate.critical_min_merged_alerts`) | 30M: lone `.locked` noise singletons were 54.5 % strict FA | `1` |
+| §4 R1 | source-host variant (`i.subject_host = j.src_host`) window 6 h (`R1.src_tau_ms`); dst variant stays 24 h | 20-seed sweep: noise in backbones 13 → 7, bridge failures 1 → 0 | `86400000` |
+| §4 Stage 4 branches | branch tails that pass the gate on their own are peeled into their own incident (`path.peel_standalone_branch_tails`) | seed-6 S2 glued onto S1 | `false` |
+| §6.4 risk | `raw_ref_score: 30.8` = S1 raw on g1 (`linking.yaml risk`) | default 15 saturated S1/S4 at 100 | `15` |

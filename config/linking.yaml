@@ -1,10 +1,12 @@
 # Stage 3 link / Stage 4 incidents / reach-next parameters (DEVELOPMENT.md §4, §6).
-# Owned by backend-builder. Thresholds seed/critical confidence and raw_ref_score live in rules.yaml `thresholds`.
+# Owned by backend-builder. seed/critical confidence live in rules.yaml `thresholds`; raw_ref_score lives here (risk).
 
 link:
   # Link windows tau_R (ms) and multipliers M_R. weight = M_R * rarity_j * exp(-dt / tau_R)
   rules:
-    R1: {tau_ms: 86400000, mult: 1.5}    # handoff host -> host, 24 h
+    R1: {tau_ms: 86400000, mult: 1.5, src_tau_ms: 21600000}  # handoff host -> host, 24 h
+    # src_tau_ms: window for the i.subject_host = j.src_host variant only (6 h); weight decay still uses tau_ms.
+    # Omit (or set = tau_ms) for the literal 24 h.
     R2: {tau_ms: 7200000, mult: 1.0}     # same session (subject_host + user), 2 h
     R3: {tau_ms: 259200000, mult: 1.3}   # account pivot (target_user -> later user), 72 h
     R4: {tau_ms: 86400000, mult: 1.2}    # Collection -> Exfiltration on same host, 24 h
@@ -25,6 +27,10 @@ gate:
   min_tactics: 2
   # Episodes below this confidence do not count toward |tactics(C)| (they still join the component). 0 = literal.
   min_tactic_confidence: 40
+  # A component with < min_tactics counted tactics may pass the "max Confidence >= critical" path only if its
+  # top-confidence episode has merged_alert_count >= this (e.g. one stray .locked file = 1 alert -> suppressed;
+  # S5 ransom_rename = 300 -> kept). 1 = literal §6.3 behaviour. Components with >= min_tactics tactics unchanged.
+  critical_min_merged_alerts: 5
   # Fallbacks; real values come from rules.yaml thresholds (seed_confidence, critical_confidence).
   seed_confidence: 65
   critical_confidence: 90
@@ -35,7 +41,8 @@ gate:
   suppressed_max_ids: 20
 
 risk:
-  raw_ref_score: 15.0          # fallback; rules.yaml thresholds.raw_ref_score wins
+  # Highest planted attack's raw on g1 (S1 = 30.784, incidents stats raw_risk, 31 Oct). Wins over rules.yaml thresholds.
+  raw_ref_score: 30.8
   base_points: 90
   bonus_cap: 10
 
@@ -45,6 +52,9 @@ path:
   # Set to [] for the literal rule ok(i,j) <=> tactic_idx(j) >= tactic_idx(i) or rule = R1.
   floor_exempt_tactics: ["Initial Access", "Credential Access", "Lateral Movement"]
   branch_min_ratio: 0.5
+  # true: a branch tail with >= min_tactics tactics that passes the gate alone is not attached as a branch;
+  # if it is not directly linked to the backbone it is peeled into its own incident.
+  peel_standalone_branch_tails: true
   max_branches: 5
   max_evidence_lines: 3
   max_evidence_chars: 300

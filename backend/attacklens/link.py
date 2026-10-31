@@ -166,9 +166,11 @@ def _rule_queries(p: dict[str, Any]) -> list[str]:
     r, k = p["rules"], int(p.get("max_preds_per_rule", 5))
     out = []
     for rule, ik, ifl, jk, jfl, why in rule_variants(p):
+        # R1 source variant (activity on j's source host before j) may use a shorter window: rules.R1.src_tau_ms.
+        tau = (r[rule].get("src_tau_ms") or r[rule]["tau_ms"]) if (rule, jk) == ("R1", "j.srch") else r[rule]["tau_ms"]
         out.append(f"SELECT i.id AS i, j.id AS j, '{rule}' AS rule, (j.ts_ms - i.ts_ms) AS dt_ms, j.rar AS rar, "
                    f"{why} AS why_linked FROM ({_nearest(ik, ifl, jk, jfl, k)}) np "
-                   f"JOIN _lep_h i ON i.id = np.i JOIN _lep_h j ON j.id = np.j WHERE {_order(r[rule]['tau_ms'])}")
+                   f"JOIN _lep_h i ON i.id = np.i JOIN _lep_h j ON j.id = np.j WHERE {_order(tau)}")
     return out
 
 

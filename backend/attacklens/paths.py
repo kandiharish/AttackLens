@@ -8,7 +8,7 @@ Nodes are processed in (ts_ms, source_seq, episode_id) order, so every edge poin
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Iterable
+from typing import Callable, Iterable
 
 
 @dataclass(frozen=True)
@@ -46,7 +46,10 @@ def ok(i: Node, j: Node, rule: str, exempt: frozenset[str]) -> bool:
 
 
 def best_path(nodes: Iterable[Node], edges: Iterable[Edge], exempt: Iterable[str] = (),
-              branch_min_ratio: float = 0.5, max_branches: int = 5) -> PathResult:
+              branch_min_ratio: float = 0.5, max_branches: int = 5,
+              standalone: Callable[[list[str]], bool] | None = None) -> PathResult:
+    """standalone(tail) -> True means the tail is an incident on its own: it is not attached as a branch
+    (incidents.py then peels it if it is not directly linked to the path)."""
     by_id = {n.id: n for n in nodes}
     if not by_id:
         return PathResult(backbone=[])
@@ -91,7 +94,7 @@ def best_path(nodes: Iterable[Node], edges: Iterable[Edge], exempt: Iterable[str
         tail = [x for x in path if x not in covered]
         # A branch must diverge from the backbone (or an earlier branch): it shares a prefix with what is shown.
         # Disjoint chains are not branches; incidents.py peels them into their own sub-component.
-        if tail and len(tail) < len(path):
+        if tail and len(tail) < len(path) and not (standalone and standalone(tail)):
             branches.append(tail)
             covered.update(tail)
     return PathResult(backbone=backbone, branches=branches, scores=score, back=back)

@@ -43,11 +43,14 @@ def _params(cfg: dict[str, Any]) -> dict[str, Any]:
     return {
         "min_tactics": int(gate.get("min_tactics", 2)),
         "tactic_conf": float(gate.get("min_tactic_confidence", 0)),
+        "critical_min_merged": int(gate.get("critical_min_merged_alerts", 5)),
+        "peel_tails": bool(path.get("peel_standalone_branch_tails", False)),
         "max_per_comp": int(gate.get("max_incidents_per_component", 20)),
         "seed": float(th.get("seed_confidence", gate.get("seed_confidence", 65))),
         "critical": float(th.get("critical_confidence", gate.get("critical_confidence", 90))),
         "sup_max": int(gate.get("suppressed_max_entries", 5000)), "sup_ids": int(gate.get("suppressed_max_ids", 20)),
-        "raw_ref": float(th.get("raw_ref_score", risk.get("raw_ref_score", 15.0))) or 15.0,
+        # linking.yaml risk.raw_ref_score wins; rules.yaml thresholds.raw_ref_score is the fallback (§6.4 B-1).
+        "raw_ref": float(risk.get("raw_ref_score") or th.get("raw_ref_score") or 15.0),
         "base_points": float(risk.get("base_points", 90)), "bonus_cap": float(risk.get("bonus_cap", 10)),
         "exempt": list(path.get("floor_exempt_tactics", ["Initial Access", "Credential Access", "Lateral Movement"])),
         "branch_ratio": float(path.get("branch_min_ratio", 0.5)), "max_branches": int(path.get("max_branches", 5)),
@@ -86,12 +89,23 @@ def allowlist_entities(cfg: dict[str, Any]) -> set[str]:
     return out
 
 
-def gate(tactics: set[str], max_conf: float, allowlisted: bool, p: dict[str, Any]) -> str | None:
-    """None = keep. Otherwise the suppression reason."""
+def gate(tactics: set[str], max_conf: float, allowlisted: bool, p: dict[str, Any],
+         top_merged: int | None = None) -> str | None:
+    """None = keep. Otherwise the suppression reason.
+
+    A component with fewer than min_tactics counted tactics passes only via the critical path, and then only if its
+    top-confidence episode merged at least critical_min_merged_alerts alerts (one stray .locked file is not ransomware).
+    top_merged=None skips that check.
+    """
     if allowlisted:
         return "allowlisted: every entity is on the allowlist"
-    if (len(tactics) >= p["min_tactics"] and max_conf >= p["seed"]) or max_conf >= p["critical"]:
+    if len(tactics) >= p["min_tactics"] and max_conf >= p["seed"]:
         return None
+    if max_conf >= p["critical"]:
+        need = int(p.get("critical_min_merged", 1))
+        if len(tactics) >= p["min_tactics"] or top_merged is None or top_merged >= need:
+            return None
+        return (f"critical single-tactic component: top episode has {top_merged} merged alert(s) < {need}")
     if len(tactics) < p["min_tactics"]:
         return f"fewer than {p['min_tactics']} tactics and max confidence {max_conf:.0f} < {p['critical']:.0f}"
     return f"max confidence {max_conf:.0f} < {p['seed']:.0f}"
@@ -261,9 +275,11 @@ def _gate_ids(ids: list[str], eps: dict[str, dict[str, Any]], allow: set[str],
     ce = [eps[x] for x in ids]
     # Tactic diversity counts only episodes with at least min_tactic_confidence (0 = literal §6.3 gate).
     tactics = {e["tactic"] for e in ce if e.get("tactic") and float(e.get("confidence") or 0) >= p["tactic_conf"]}
-    max_conf = max(float(e.get("confidence") or 0) for e in ce)
+    top = max(ce, key=lambda e: (float(e.get("confidence") or 0), int(e.get("merged_alert_count") or 0)))
+    max_conf = float(top.get("confidence") or 0)
     allowlisted = bool(allow) and all(entities(e) <= allow for e in ce)
-    return gate(tactics, max_conf, allowlisted, p), tactics, max_conf
+    reason = gate(tactics, max_conf, allowlisted, p, int(top.get("merged_alert_count") or 0))
+    return reason, tactics, max_conf
 
 
 def _extract(ids: list[str], eps: dict[str, dict[str, Any]], by_j: dict[str, list[Edge]], g: nx.Graph,
@@ -273,7 +289,12 @@ def _extract(ids: list[str], eps: dict[str, dict[str, Any]], by_j: dict[str, lis
     nodes = [Node(x, int(eps[x]["ts_ms"]), int(eps[x].get("source_seq") or 0), float(eps[x].get("severity") or 0),
                   eps[x].get("tactic") or "", tactic_idx(eps[x])) for x in ids]
     cedges = [e for x in ids for e in by_j.get(x, []) if e.i in sid]
-    res = best_path(nodes, cedges, p["exempt"], p["branch_ratio"], p["max_branches"])
+    standalone = None
+    if p["peel_tails"]:
+        def standalone(tail: list[str]) -> bool:  # multi-tactic tail that passes the gate by itself
+            reason, tactics, _ = _gate_ids(tail, eps, set(), p)
+            return reason is None and len(tactics) >= p["min_tactics"]
+    res = best_path(nodes, cedges, p["exempt"], p["branch_ratio"], p["max_branches"], standalone)
     path = set(res.backbone) | {x for b in res.branches for x in b}
     members = path | {n for x in path for n in g.neighbors(x) if n in sid}
     return Comp(ids=sorted(members), backbone=res.backbone, branches=res.branches, back=res.back), sid - members
@@ -304,7 +325,8 @@ def run(ctx: RunContext) -> dict[str, Any]:
             if reason is None and n_out >= p["max_per_comp"]:
                 reason = f"more than {p['max_per_comp']} incidents peeled from one component"
             if reason is not None:
-                key = reason.split(" and ")[0].split(":")[0] if reason.startswith(("allow", "fewer", "more"))                     else "low confidence"
+                named = reason.startswith(("allow", "fewer", "more", "critical"))
+                key = reason.split(" and ")[0].split(":")[0] if named else "low confidence"
                 reasons[key] = reasons.get(key, 0) + 1
                 suppressed.append({"episode_ids": ids[: p["sup_ids"]], "episode_count": len(ids),
                                    "tactics": sorted(tactics, key=lambda t: TACTIC_IDX.get(t, 99)),
