@@ -1,9 +1,0 @@
-pyproject.toml
-attacklens/__init__.py
-attacklens.egg-info/PKG-INFO
-attacklens.egg-info/SOURCES.txt
-attacklens.egg-info/dependency_links.txt
-attacklens.egg-info/requires.txt
-attacklens.egg-info/top_level.txt
-eval/__init__.py
-tests/test_smoke.py
