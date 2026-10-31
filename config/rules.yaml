@@ -9,6 +9,7 @@ thresholds:
   # brute force (T1110 + T1078)
   bf_min_failures: 50            # failures per (target_user, host) in one burst
   bf_gap_ms: 600000              # a gap > 10 min between failures starts a new burst
+  bf_key: [target_user, host]    # burst key (rules may override via params, e.g. add src_ip)
   bf_success_window_ms: 900000   # success must follow the last failure within 15 min (also for spray)
   bf_require_success: false      # false: T1110 fires on the burst alone; T1078 only with a success
   emit_t1078_on_bruteforce: true # emit the secondary T1078 Initial Access alert for the success (bf + spray)
@@ -352,6 +353,7 @@ rules:
   - id: fw_admin_bruteforce     # firewall admin login failures from an external IP, then success
     kind: template
     template: brute_force_then_success
+    params: {bf_key: [src_ip, target_user, host]}   # many internet IPs fail against admin
     filter: "source_type = 'fortigate_kv' AND coalesce(logon_type, 0) <> 10 AND src_ip IS NOT NULL AND NOT al_is_internal_ip(src_ip)"
     technique: T1110
     sub_technique: T1110.001

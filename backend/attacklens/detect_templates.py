@@ -28,29 +28,47 @@ def _gap_sessions(src: str, part: str, gap: int) -> str:
                   CASE WHEN nb = 0 THEN gap0 END AS dt FROM gn)"""
 
 
+BF_KEY_COLUMNS = ("host", "target_user", "src_ip")
+
+
+def _bf_key(th: dict[str, Any]) -> list[str]:
+    """thresholds/params bf_key: burst key columns, a subset of BF_KEY_COLUMNS (default target_user, host)."""
+    key = [str(k) for k in (th.get("bf_key") or ["target_user", "host"])]
+    bad = [k for k in key if k not in BF_KEY_COLUMNS]
+    if bad or not {"host", "target_user"} <= set(key):
+        raise ValueError(f"bf_key {key}: must contain host and target_user, columns from {BF_KEY_COLUMNS}")
+    return key
+
+
 def brute_force_then_success(con: duckdb.DuckDBPyConnection, rule: dict[str, Any], th: dict[str, Any]) -> str:
-    """T1110: >= bf_min_failures login_failed per (target_user, host) in a burst (gaps > bf_gap_ms split bursts).
-    T1078 (secondary): the first login_success for the same pair within bf_success_window_ms after the burst."""
+    """T1110: >= bf_min_failures login_failed per bf_key (default (target_user, host)) in a burst (gaps > bf_gap_ms
+    split bursts). T1078 (secondary): the first login_success for the same key within bf_success_window_ms after
+    the burst."""
     n, gap, sw = int(th["bf_min_failures"]), int(th["bf_gap_ms"]), int(th["bf_success_window_ms"])
     need_success = bool(th.get("bf_require_success", False))
     flt = rule_filter(rule)
     emit2 = bool(th.get("emit_t1078_on_bruteforce", True))
+    key = _bf_key(th)
+    kc = ", ".join(key)
+    nonnull = " AND ".join(f"{k} IS NOT NULL" for k in key)
+    on_c = " AND ".join(f"e.{k} = c.{k}" for k in key)
+    on_b = " AND ".join(f"b.{k} = sc.{k}" for k in key)
+    ip_agg = "" if "src_ip" in key else "al_mode(list(src_ip)) AS src_ip, "
     core = f"""
     WITH f AS (SELECT ts_ms, source_seq, host, target_user, src_ip, raw_line FROM events
-               WHERE {OK} AND action = 'login_failed' AND target_user IS NOT NULL AND host IS NOT NULL{flt}),
-    cand AS (SELECT host, target_user FROM f GROUP BY host, target_user HAVING count(*) >= {n}),
-    fc AS (SELECT f.* FROM f SEMI JOIN cand USING (host, target_user)),
-    {_gap_sessions('fc', 'host, target_user', gap)},
-    b AS (SELECT host, target_user, sid, min(ts_ms) AS ts_ms, max(ts_ms) AS last_ts_ms,
-                 min(source_seq) AS source_seq, count(*) AS n, al_mode(list(src_ip)) AS src_ip,
+               WHERE {OK} AND action = 'login_failed' AND {nonnull}{flt}),
+    cand AS (SELECT {kc} FROM f GROUP BY {kc} HAVING count(*) >= {n}),
+    fc AS (SELECT f.* FROM f SEMI JOIN cand USING ({kc})),
+    {_gap_sessions('fc', kc, gap)},
+    b AS (SELECT {kc}, sid, min(ts_ms) AS ts_ms, max(ts_ms) AS last_ts_ms,
+                 min(source_seq) AS source_seq, count(*) AS n, {ip_agg}
                  {ev_lines(th)} AS ev, {ev_keys(th)} AS keys
-          FROM ss GROUP BY host, target_user, sid HAVING count(*) >= {n}),
+          FROM ss GROUP BY {kc}, sid HAVING count(*) >= {n}),
     sc AS (SELECT e.ts_ms, e.source_seq, e.host, e.target_user, e.src_ip, e.raw_line
            FROM (SELECT * FROM events WHERE {OK} AND action = 'login_success'{flt}) e
-           SEMI JOIN cand c ON e.host = c.host AND e.target_user = c.target_user),
+           SEMI JOIN cand c ON {on_c}),
     bs AS (SELECT b.*, sc.ts_ms AS s_ts, sc.source_seq AS s_seq, sc.src_ip AS s_ip, sc.raw_line AS s_line
-           FROM b ASOF LEFT JOIN sc ON b.host = sc.host AND b.target_user = sc.target_user
-                                    AND sc.ts_ms >= b.last_ts_ms),
+           FROM b ASOF LEFT JOIN sc ON {on_b} AND sc.ts_ms >= b.last_ts_ms),
     ok AS (SELECT *, (s_ts IS NOT NULL AND s_ts - last_ts_ms <= {sw}) AS has_success FROM bs)
     SELECT 'primary' AS label, NULL AS sub_technique_id, ts_ms, last_ts_ms, source_seq, host, host AS subject_host,
            NULL AS src_user, target_user, src_ip, NULL AS dst_ip, n AS raw_alert_count, ev AS evidence_lines,
