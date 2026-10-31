@@ -1,0 +1,251 @@
+# Field aliases per source format (DEVELOPMENT.md §3.2, §3.3, §15.5).
+#
+# How ingest uses this file:
+# - Every source is mapped to the same intermediate fields (left column below), then one shared
+#   normalisation step turns them into the canonical columns of schemas.CANONICAL_COLUMNS.
+# - For each field the aliases are tried in order; the FIRST NON-NULL alias wins. An alias that is absent
+#   from a file yields NULL (never a binder error).
+# - JSON aliases are DuckDB JSONPath strings; CSV aliases are header names (case-insensitive);
+#   CEF aliases are extension keys.
+#
+# Intermediate fields:
+#   ts, event_id, event_action, outcome, logon_id, logon_type, host, host_ip,
+#   user          role-dependent account (logon actions -> target_user, else -> src_user)
+#   subject_user  explicit actor account                         -> src_user
+#   target_name   explicit target account (new user, logon target) -> target_user
+#   member_name   group member (Windows MemberName, may be a DN)  -> target_user for group adds
+#   group, src_ip, src_port, dst_ip, dst_port, dst_domain, process_name, process_path,
+#   parent_process, command_line, file_path, file_ext, registry_path, bytes, direction, service_name
+#
+# NEVER alias generator label fields: threat, rule, labels, labels_extra, event.kind, event.severity,
+# event.module, event.dataset (and the CEF header name/signature or cs2 "mitre", which carry rule labels).
+
+json_sources:
+  # ECS JSON lines: the provided generator (reports/edr_log_generator.py), tools/scenarios.py, winlogbeat.
+  ecs_json:
+    detect_any: ["@timestamp", "event.action", "ecs.version"]
+    fields:
+      ts:            ['$."@timestamp"', '$.timestamp', '$.event.created']
+      event_id:      ['$.winlog.event_id', '$.event.code']
+      event_action:  ['$.event.action']
+      outcome:       ['$.event.outcome']
+      logon_id:      ['$.winlog.logon.id', '$.winlog.event_data.TargetLogonId', '$.winlog.event_data.SubjectLogonId']
+      logon_type:    ['$.winlog.logon.type', '$.winlog.event_data.LogonType']
+      host:          ['$.host.name', '$.host.hostname', '$.agent.hostname']
+      host_ip:       ['$.host.ip[0]', '$.host.ip']
+      user:          ['$.user.name', '$.winlog.event_data.TargetUserName']
+      subject_user:  ['$.winlog.event_data.SubjectUserName']
+      target_name:   ['$.user.target.name']
+      member_name:   ['$.winlog.event_data.MemberName']
+      group:         ['$.group.name', '$.user.target.group.name']
+      src_ip:        ['$.source.ip', '$.winlog.event_data.IpAddress']
+      src_port:      ['$.source.port', '$.winlog.event_data.IpPort']
+      dst_ip:        ['$.destination.ip']
+      dst_port:      ['$.destination.port']
+      dst_domain:    ['$.destination.domain', '$.dns.question.name', '$.url.domain']
+      process_name:  ['$.process.name']
+      process_path:  ['$.process.executable']
+      parent_process: ['$.process.parent.name', '$.process.parent.executable']
+      command_line:  ['$.process.command_line']
+      file_path:     ['$.file.path']
+      file_ext:      ['$.file.extension']
+      registry_path: ['$.registry.path']
+      bytes:         ['$.network.bytes', '$.source.bytes']
+      direction:     ['$.network.direction']
+      service_name:  ['$.service.name', '$.winlog.event_data.ServiceName']
+
+  # Windows EVTX exported as JSON (flat, or nested Event.System / Event.EventData).
+  win_json:
+    detect_any: ["EventID", "TimeCreated", "Event.System.EventID", "System.EventID", "TimeCreated.SystemTime"]
+    fields:
+      ts:            ['$.TimeCreated.SystemTime', '$.TimeCreated', '$.Event.System.TimeCreated.SystemTime',
+                      '$.System.TimeCreated.SystemTime', '$.UtcTime', '$.Event.EventData.UtcTime']
+      event_id:      ['$.EventID', '$.Event.System.EventID', '$.System.EventID', '$.EventID.value']
+      event_action:  ['$.Action']
+      outcome:       ['$.Keywords']
+      logon_id:      ['$.TargetLogonId', '$.SubjectLogonId', '$.Event.EventData.TargetLogonId',
+                      '$.Event.EventData.SubjectLogonId', '$.EventData.TargetLogonId']
+      logon_type:    ['$.LogonType', '$.Event.EventData.LogonType', '$.EventData.LogonType']
+      host:          ['$.Computer', '$.Event.System.Computer', '$.System.Computer', '$.Hostname']
+      host_ip:       ['$.HostIp']
+      user:          ['$.User']
+      subject_user:  ['$.SubjectUserName', '$.Event.EventData.SubjectUserName', '$.EventData.SubjectUserName']
+      target_name:   ['$.TargetUserName', '$.Event.EventData.TargetUserName', '$.EventData.TargetUserName']
+      member_name:   ['$.MemberName', '$.Event.EventData.MemberName', '$.EventData.MemberName']
+      group:         ['$.GroupName', '$.TargetGroupName']
+      src_ip:        ['$.IpAddress', '$.SourceIp', '$.Event.EventData.IpAddress', '$.EventData.IpAddress']
+      src_port:      ['$.IpPort', '$.SourcePort', '$.Event.EventData.IpPort']
+      dst_ip:        ['$.DestinationIp', '$.Event.EventData.DestinationIp']
+      dst_port:      ['$.DestinationPort', '$.Event.EventData.DestinationPort']
+      dst_domain:    ['$.QueryName', '$.DestinationHostname', '$.Event.EventData.QueryName']
+      process_name:  ['$.ProcessName', '$.NewProcessName']
+      process_path:  ['$.Image', '$.NewProcessName', '$.Event.EventData.Image', '$.ImagePath']
+      parent_process: ['$.ParentImage', '$.ParentProcessName', '$.Event.EventData.ParentImage']
+      command_line:  ['$.CommandLine', '$.Event.EventData.CommandLine']
+      file_path:     ['$.TargetFilename', '$.Event.EventData.TargetFilename']
+      file_ext:      ['$.FileExtension']
+      registry_path: ['$.TargetObject', '$.Event.EventData.TargetObject']
+      bytes:         ['$.BytesSent']
+      direction:     ['$.Direction']
+      service_name:  ['$.ServiceName', '$.Event.EventData.ServiceName']
+
+csv_sources:
+  # Firewall exports (any extension). Detected when >= min_matches header names below are present.
+  firewall_csv:
+    detect_any: ["dport", "bytes_sent", "disposition", "src", "dst", "sport", "device"]
+    min_matches: 2
+    fields:
+      ts:            [timestamp, time, datetime, date]
+      host:          [device, host, hostname, devname]
+      src_ip:        [src, src_ip, srcip, source]
+      src_port:      [sport, src_port, srcport]
+      dst_ip:        [dst, dst_ip, dstip, destination]
+      dst_port:      [dport, dst_port, dstport]
+      bytes:         [bytes_sent, sentbyte, bytes_out]
+      event_action:  [action, disposition]
+      user:          [user, username]
+      dst_domain:    [domain, hostname_dst]
+
+cef:
+  # CEF extension keys. Header name / signature id are NOT read (generator puts rule labels there).
+  fields:
+    ts:            [rt, start, end]
+    host:          [dvchost, dvc]
+    event_action:  [act]
+    outcome:       [outcome]
+    user:          [suser]
+    target_name:   [duser]
+    src_ip:        [src]
+    src_port:      [spt]
+    dst_ip:        [dst]
+    dst_port:      [dpt]
+    dst_domain:    [destinationDnsDomain, dhost]
+    process_name:  [dproc, sproc]
+    process_path:  [filePath]
+    command_line:  [cs1]
+    file_path:     [fname]
+    bytes:         [out]
+
+syslog:
+  # RFC 3164 / ISO-prefixed syslog. Timestamp is optional so a line without one still yields host/process.
+  # Groups: 1 bsd ts, 2 iso ts, 3 host, 4 process, 5 pid, 6 message. The process is anchored after the host.
+  line_regex: '^(?:<\d+>)?(?:(?:([A-Z][a-z]{2}\s+\d{1,2}\s+\d\d:\d\d:\d\d)|(\d{4}-\d\d-\d\dT\S+))\s+)?(\S+)\s+([^\s\[:]+)(?:\[(\d+)\])?:\s*(.*)$'
+  # Message patterns (tried in order, first match wins). fields: intermediate field -> regex group.
+  messages:
+    - process: sshd
+      regex: '^Accepted (\S+) for (\S+) from (\S+) port (\d+)'
+      action: login_success
+      outcome: success
+      fields: {user: 2, src_ip: 3, src_port: 4}
+      const: {dst_port: "22", logon_type: "10"}
+    - process: sshd
+      regex: '^Failed (\S+) for (?:invalid user )?(\S+) from (\S+) port (\d+)'
+      action: login_failed
+      outcome: failure
+      fields: {user: 2, src_ip: 3, src_port: 4}
+      const: {dst_port: "22", logon_type: "10"}
+    - process: sshd
+      regex: '^Invalid user (\S*) from (\S+)(?: port (\d+))?'
+      action: login_failed
+      outcome: failure
+      fields: {user: 1, src_ip: 2, src_port: 3}
+      const: {dst_port: "22", logon_type: "10"}
+    - process: useradd
+      regex: 'new user: name=([^,\s]+)'
+      action: user_created
+      outcome: success
+      fields: {target_name: 1}
+    - process: usermod
+      regex: "add '([^']+)' to group '([^']+)'"
+      action: group_member_added
+      outcome: success
+      fields: {member_name: 1, group: 2}
+    - process: gpasswd
+      regex: "user (\\S+) added by (\\S+) to group (\\S+)"
+      action: group_member_added
+      outcome: success
+      fields: {member_name: 1, subject_user: 2, group: 3}
+    - process: sudo
+      regex: '^\s*(\S+) : .*USER=(\S+) ; COMMAND=(.*)$'
+      action: proc_start
+      outcome: success
+      fields: {user: 1, target_name: 2, command_line: 3}
+
+# Action normalisation (§3.3, §15.5). Precedence: event_id -> event_action -> "other".
+action_map:
+  event_ids:
+    4625: login_failed
+    4771: login_failed
+    4624: login_success
+    4672: priv_assigned
+    4720: user_created
+    4728: group_member_added
+    4732: group_member_added
+    4756: group_member_added
+    4688: proc_start
+    1: proc_start          # Sysmon process create
+    3: conn_out            # Sysmon network connection
+    22: dns_query          # Sysmon DNS
+    11: file_write         # Sysmon file create
+    13: reg_set            # Sysmon registry value set
+    4698: scheduled_task
+    7045: service_installed
+    4697: service_installed
+    1102: log_cleared
+    104: log_cleared
+  # event.action (lower-case) -> action, or {success, failure, default} split on the normalised outcome.
+  event_actions:
+    user_logon: {success: login_success, failure: login_failed, default: other}
+    logon: {success: login_success, failure: login_failed, default: other}
+    logged-in: login_success
+    logon-failed: login_failed
+    special_privileges_assigned: priv_assigned
+    user_created: user_created
+    added-user-account: user_created
+    group_member_added: group_member_added
+    added-member-to-group: group_member_added
+    process_created: proc_start
+    process_start: proc_start
+    network_connection: conn_out
+    dns_query: dns_query
+    file_modified: file_write
+    file_created: file_write
+    file_rename: file_rename
+    registry_value_set: reg_set
+    service_installed: service_installed
+    scheduled_task_created: scheduled_task
+    log_cleared: log_cleared
+    # firewall / CEF dispositions
+    allow: conn_allowed
+    allowed: conn_allowed
+    accept: conn_allowed
+    accepted: conn_allowed
+    permit: conn_allowed
+    pass: conn_allowed
+    deny: conn_denied
+    denied: conn_denied
+    drop: conn_denied
+    dropped: conn_denied
+    block: conn_denied
+    blocked: conn_denied
+    reject: conn_denied
+  outcomes:
+    success: [success, succeeded, ok, true, "audit success", allowed]
+    failure: [failure, failed, fail, false, "audit failure", denied]
+
+# Logon type names -> integers (numbers pass through).
+logon_types:
+  interactive: 2
+  network: 3
+  batch: 4
+  service: 5
+  unlock: 7
+  networkcleartext: 8
+  newcredentials: 9
+  remoteinteractive: 10
+  cachedinteractive: 11
+default_logon_type_ssh: 10   # sshd logons without a type
+
+# Removed from raw_line before it is stored (ground truth / generator hints).
+label_keys: [threat, rule, labels, labels_extra]
+label_nested_keys: {event: [kind, severity, module, dataset]}

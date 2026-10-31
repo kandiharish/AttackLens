@@ -1,0 +1,34 @@
+# Pipeline runtime settings (DEVELOPMENT.md §4, §12). Read by run.py, profile.py, ingest.py, telemetry.py.
+# Relative paths are resolved against the repo root.
+
+memory_limit: "5GB"          # DuckDB memory_limit for batch runs
+live_memory_limit: "1.5GB"   # DuckDB memory_limit for live mode (live.py)
+threads: null                # null -> os.cpu_count()
+temp_directory: "data/spill" # DuckDB spill directory
+parquet_root: "data/parquet" # default parquet dir = <parquet_root>/<basename of --out>
+
+# Syslog (RFC 3164) lines carry no year; this one is prefixed before parsing.
+baseline_year: 2026
+
+profile:
+  sample_lines: 20000        # lines per JSON file sampled for field paths / actions (bounded)
+  sniff_bytes: 65536         # bytes read to find the first non-empty line
+  skip_names: ["manifest.json"]
+  skip_suffixes: [".md"]
+  skip_dir_components: ["ground_truth"]
+
+ingest:
+  # Extra strptime formats tried after try_cast(x AS TIMESTAMPTZ) (all interpreted as UTC).
+  ts_formats:
+    - "%b %d %Y %H:%M:%S"
+    - "%b %d %Y %H:%M:%S.%g"
+    - "%d/%b/%Y:%H:%M:%S %z"
+    - "%m/%d/%Y %H:%M:%S"
+    - "%m/%d/%Y %I:%M:%S %p"
+    - "%Y/%m/%d %H:%M:%S"
+    - "%d.%m.%Y %H:%M:%S"
+  syslog_ts_format: "%Y %b %d %H:%M:%S"
+  compression: "ZSTD"
+
+telemetry:
+  interval_s: 0.5            # RSS sampling period
