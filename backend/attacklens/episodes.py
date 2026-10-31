@@ -28,7 +28,12 @@ def _src(path: Path, empty_cols: dict[str, str]) -> str:
     return "(SELECT " + ", ".join(f"NULL::{t} AS {c}" for c, t in empty_cols.items()) + " WHERE false)"
 
 
-def episodes_sql(work: Path, bucket_ms: int, seed_conf: float) -> str:
+def _ip_fb(col: str, fallback: bool) -> str:
+    """Entity fallback (thresholds.entity_fallback_ip): an internal IP with no host name stands for its host."""
+    return f"CASE WHEN {col} IS NOT NULL AND al_is_internal_ip({col}) THEN {col} END" if fallback else "NULL"
+
+
+def episodes_sql(work: Path, bucket_ms: int, seed_conf: float, fallback: bool = False) -> str:
     raw = _src(work / "raw_alerts.parquet", RAW_ALERT_COLUMNS)
     hip = _src(work / "host_ip_map.parquet", {"ip": "VARCHAR", "host": "VARCHAR", "first_ms": "BIGINT",
                                                 "last_ms": "BIGINT"})
@@ -36,9 +41,9 @@ def episodes_sql(work: Path, bucket_ms: int, seed_conf: float) -> str:
     return f"""
     WITH r AS (SELECT * FROM {raw}),
     hip AS (SELECT ip, host, first_ms FROM {hip}),
-    r1 AS (SELECT r.* REPLACE (coalesce(ms.host, r.src_host) AS src_host)
+    r1 AS (SELECT r.* REPLACE (coalesce(ms.host, r.src_host, {_ip_fb('r.src_ip', fallback)}) AS src_host)
            FROM r ASOF LEFT JOIN hip ms ON r.src_ip = ms.ip AND r.ts_ms >= ms.first_ms),
-    r2 AS (SELECT r1.* REPLACE (coalesce(md.host, r1.dst_host) AS dst_host)
+    r2 AS (SELECT r1.* REPLACE (coalesce(md.host, r1.dst_host, {_ip_fb('r1.dst_ip', fallback)}) AS dst_host)
            FROM r1 ASOF LEFT JOIN hip md ON r1.dst_ip = md.ip AND r1.ts_ms >= md.first_ms),
     g AS (
         SELECT rule_id, subject_host, src_user, target_user, dst_host, ts_ms // {bucket_ms} AS bucket, technique_id,
@@ -121,7 +126,8 @@ def run(ctx: RunContext) -> dict[str, Any]:
     work = ctx.work_dir
     cap = int(th.get("episode_cap", 25000))
     con.execute("CREATE OR REPLACE TEMP TABLE al_episodes AS SELECT *, TRUE AS keep FROM ("
-                + episodes_sql(work, int(th.get("episode_bucket_ms", 300000)), float(th.get("seed_confidence", 65)))
+                + episodes_sql(work, int(th.get("episode_bucket_ms", 300000)), float(th.get("seed_confidence", 65)),
+                               bool(th.get("entity_fallback_ip", False)))
                 + ")")
     total = int(con.execute("SELECT count(*) FROM al_episodes").fetchone()[0])
     spilled = 0

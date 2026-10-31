@@ -433,6 +433,91 @@
     "Stealth",
     "Lateral Movement"
    ]
+  },
+  "T1133": {
+   "name": "External Remote Services",
+   "tactic": "Initial Access",
+   "tactics": [
+    "Initial Access",
+    "Persistence"
+   ]
+  },
+  "T1190": {
+   "name": "Exploit Public-Facing Application",
+   "tactic": "Initial Access",
+   "tactics": [
+    "Initial Access"
+   ]
+  },
+  "T1590": {
+   "name": "Gather Victim Network Information",
+   "tactic": "Reconnaissance",
+   "tactics": [
+    "Reconnaissance"
+   ]
+  },
+  "T1590.002": {
+   "name": "DNS",
+   "tactic": "Reconnaissance",
+   "tactics": [
+    "Reconnaissance"
+   ]
+  },
+  "T1210": {
+   "name": "Exploitation of Remote Services",
+   "tactic": "Lateral Movement",
+   "tactics": [
+    "Lateral Movement"
+   ]
+  },
+  "T1105": {
+   "name": "Ingress Tool Transfer",
+   "tactic": "Command and Control",
+   "tactics": [
+    "Command and Control"
+   ]
+  },
+  "T1046": {
+   "name": "Network Service Discovery",
+   "tactic": "Discovery",
+   "tactics": [
+    "Discovery"
+   ]
+  },
+  "T1021.006": {
+   "name": "Windows Remote Management",
+   "tactic": "Lateral Movement",
+   "tactics": [
+    "Lateral Movement"
+   ]
+  },
+  "T1562.004": {
+   "name": "Disable or Modify System Firewall",
+   "tactic": "Defense Impairment",
+   "tactics": [
+    "Defense Impairment"
+   ]
+  },
+  "T1090": {
+   "name": "Proxy",
+   "tactic": "Command and Control",
+   "tactics": [
+    "Command and Control"
+   ]
+  },
+  "T1090.003": {
+   "name": "Multi-hop Proxy",
+   "tactic": "Command and Control",
+   "tactics": [
+    "Command and Control"
+   ]
+  },
+  "T1189": {
+   "name": "Drive-by Compromise",
+   "tactic": "Initial Access",
+   "tactics": [
+    "Initial Access"
+   ]
   }
  }
 }

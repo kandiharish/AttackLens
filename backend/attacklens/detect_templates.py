@@ -12,7 +12,7 @@ from typing import Any, Callable
 
 import duckdb
 
-from attacklens.detect_sql import OK, ev_keys, ev_lines, finish, sql_list, subject_host_expr
+from attacklens.detect_sql import OK, ev_keys, ev_lines, finish, rule_filter, sql_list, subject_host_expr
 from attacklens.detect_sql import window_bursts as _window_bursts
 
 Template = Callable[[duckdb.DuckDBPyConnection, dict[str, Any], dict[str, Any]], str]
@@ -33,10 +33,11 @@ def brute_force_then_success(con: duckdb.DuckDBPyConnection, rule: dict[str, Any
     T1078 (secondary): the first login_success for the same pair within bf_success_window_ms after the burst."""
     n, gap, sw = int(th["bf_min_failures"]), int(th["bf_gap_ms"]), int(th["bf_success_window_ms"])
     need_success = bool(th.get("bf_require_success", False))
+    flt = rule_filter(rule)
     emit2 = bool(th.get("emit_t1078_on_bruteforce", True))
     core = f"""
     WITH f AS (SELECT ts_ms, source_seq, host, target_user, src_ip, raw_line FROM events
-               WHERE {OK} AND action = 'login_failed' AND target_user IS NOT NULL AND host IS NOT NULL),
+               WHERE {OK} AND action = 'login_failed' AND target_user IS NOT NULL AND host IS NOT NULL{flt}),
     cand AS (SELECT host, target_user FROM f GROUP BY host, target_user HAVING count(*) >= {n}),
     fc AS (SELECT f.* FROM f SEMI JOIN cand USING (host, target_user)),
     {_gap_sessions('fc', 'host, target_user', gap)},
@@ -44,9 +45,9 @@ def brute_force_then_success(con: duckdb.DuckDBPyConnection, rule: dict[str, Any
                  min(source_seq) AS source_seq, count(*) AS n, al_mode(list(src_ip)) AS src_ip,
                  {ev_lines(th)} AS ev, {ev_keys(th)} AS keys
           FROM ss GROUP BY host, target_user, sid HAVING count(*) >= {n}),
-    sc AS (SELECT e.ts_ms, e.source_seq, e.host, e.target_user, e.src_ip, e.raw_line FROM events e
-           SEMI JOIN cand c ON e.host = c.host AND e.target_user = c.target_user
-           WHERE {OK} AND e.action = 'login_success'),
+    sc AS (SELECT e.ts_ms, e.source_seq, e.host, e.target_user, e.src_ip, e.raw_line
+           FROM (SELECT * FROM events WHERE {OK} AND action = 'login_success'{flt}) e
+           SEMI JOIN cand c ON e.host = c.host AND e.target_user = c.target_user),
     bs AS (SELECT b.*, sc.ts_ms AS s_ts, sc.source_seq AS s_seq, sc.src_ip AS s_ip, sc.raw_line AS s_line
            FROM b ASOF LEFT JOIN sc ON b.host = sc.host AND b.target_user = sc.target_user
                                     AND sc.ts_ms >= b.last_ts_ms),
@@ -68,18 +69,20 @@ def password_spray(con: duckdb.DuckDBPyConnection, rule: dict[str, Any], th: dic
     T1078 (secondary): first login_success from that src_ip within bf_success_window_ms after the spray.
     The spray alert's target_user = the account that then logged on (NULL when no success followed)."""
     n, win, sw = int(th["spray_min_users"]), int(th["spray_window_ms"]), int(th["bf_success_window_ms"])
+    flt = rule_filter(rule)
     emit2 = bool(th.get("emit_t1078_on_bruteforce", True))
     core = f"""
     WITH f AS (SELECT ts_ms, source_seq, host, target_user, src_ip, raw_line FROM events
-               WHERE {OK} AND action = 'login_failed' AND src_ip IS NOT NULL AND target_user IS NOT NULL),
+               WHERE {OK} AND action = 'login_failed' AND src_ip IS NOT NULL AND target_user IS NOT NULL{flt}),
     cand AS (SELECT src_ip FROM f GROUP BY src_ip HAVING count(DISTINCT target_user) >= {n}),
     r AS (SELECT f.* FROM f SEMI JOIN cand USING (src_ip)),
     {_window_bursts('src_ip', win, 'count(DISTINCT target_user)', f'wv >= {n}')},
     b AS (SELECT src_ip, bid, min(ts_ms) AS ts_ms, max(ts_ms) AS last_ts_ms, min(source_seq) AS source_seq,
                  count(*) AS n, al_mode(list(host)) AS host, {ev_lines(th)} AS ev, {ev_keys(th)} AS keys
           FROM mb GROUP BY src_ip, bid HAVING count(DISTINCT target_user) >= {n}),
-    sc AS (SELECT e.ts_ms, e.source_seq, e.host, e.target_user, e.src_ip, e.raw_line FROM events e
-           SEMI JOIN cand c ON e.src_ip = c.src_ip WHERE {OK} AND e.action = 'login_success'),
+    sc AS (SELECT e.ts_ms, e.source_seq, e.host, e.target_user, e.src_ip, e.raw_line
+           FROM (SELECT * FROM events WHERE {OK} AND action = 'login_success'{flt}) e
+           SEMI JOIN cand c ON e.src_ip = c.src_ip),
     bs AS (SELECT b.*, sc.ts_ms AS s_ts, sc.source_seq AS s_seq, sc.host AS s_host, sc.target_user AS s_user,
                   sc.raw_line AS s_line
            FROM b ASOF LEFT JOIN sc ON b.src_ip = sc.src_ip AND sc.ts_ms >= b.last_ts_ms)
@@ -132,10 +135,10 @@ def beaconing(con: duckdb.DuckDBPyConnection, rule: dict[str, Any], th: dict[str
                 WHERE {OK} AND action IN ('conn_out', 'conn_allowed') AND coalesce(dst_ip, dst_domain) IS NOT NULL),
     cand AS (SELECT host, src_ip, dk FROM c0 GROUP BY ALL HAVING count(*) >= {n}),
     c AS (SELECT e.ts_ms, e.source_seq, e.action, e.host, e.src_ip, e.dst_ip, e.src_user, e.target_user,
-                 e.raw_line, coalesce(e.dst_ip, lower(e.dst_domain)) AS dk
+                 e.src_zone, e.dst_zone, e.raw_line, coalesce(e.dst_ip, lower(e.dst_domain)) AS dk
           FROM events e WHERE {OK} AND e.action IN ('conn_out', 'conn_allowed')
                          AND coalesce(e.dst_ip, e.dst_domain) IS NOT NULL),
-    cc AS (SELECT c.*, {subject_host_expr('c', 'm')} AS sh FROM c
+    cc AS (SELECT c.*, {subject_host_expr('c', 'm', th)} AS sh FROM c
            SEMI JOIN cand ON c.host = cand.host AND c.src_ip IS NOT DISTINCT FROM cand.src_ip AND c.dk = cand.dk
            LEFT JOIN al_ip_host m ON m.ip = c.src_ip),
     {_gap_sessions('cc', 'sh, dk', gap)},
@@ -186,11 +189,11 @@ def exfil_volume(con: duckdb.DuckDBPyConnection, rule: dict[str, Any], th: dict[
                   AND NOT al_is_internal_ip(dst_ip)),
     cand AS (SELECT host, src_ip, dst_ip FROM c0 GROUP BY ALL HAVING sum(bytes_out) > {mn}),
     c AS (SELECT e.ts_ms, e.source_seq, e.action, e.host, e.src_ip, e.dst_ip, e.bytes_out, e.src_user,
-                 e.target_user, e.raw_line
+                 e.target_user, e.src_zone, e.dst_zone, e.raw_line
           FROM events e SEMI JOIN cand ON e.host = cand.host AND e.src_ip IS NOT DISTINCT FROM cand.src_ip
                                        AND e.dst_ip = cand.dst_ip
           WHERE {OK} AND e.action IN ('conn_out', 'conn_allowed') AND e.bytes_out > 0),
-    cs AS (SELECT c.*, {subject_host_expr('c', 'm')} AS sh FROM c LEFT JOIN al_ip_host m ON m.ip = c.src_ip),
+    cs AS (SELECT c.*, {subject_host_expr('c', 'm', th)} AS sh FROM c LEFT JOIN al_ip_host m ON m.ip = c.src_ip),
     daily AS (SELECT e.host, e.ts_ms // 86400000 AS d,
                      sum(e.bytes_out)::DOUBLE / greatest(approx_count_distinct(e.dst_ip), 1) AS per_dst
               FROM events e SEMI JOIN (SELECT DISTINCT host FROM cand) h ON e.host = h.host
@@ -286,3 +289,7 @@ TEMPLATES: dict[str, Template] = {
 from attacklens.detect_templates2 import TEMPLATES2  # noqa: E402  (coverage-round templates)
 
 TEMPLATES.update(TEMPLATES2)
+
+from attacklens.detect_templates3 import TEMPLATES3  # noqa: E402  (firewall pack)
+
+TEMPLATES.update(TEMPLATES3)

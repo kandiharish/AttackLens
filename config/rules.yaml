@@ -40,6 +40,22 @@ thresholds:
   pth_max_pair_seen: 2           # pass_the_hash: (user, host) pair with <= this many matching logons
   pth_logon_types: [9]
   pth_auth_packages: ["negotiate", "ntlm"]
+  entity_fallback_ip: true       # no host name for an internal endpoint -> its IP is the subject (firewall logs)
+  entity_internal_zones: [lan, dmz]
+  entity_fallback_actions: [conn_out, conn_allowed, conn_denied, dns_query, ips_alert, av_alert, web_blocked,
+                            web_access, app_ctrl]
+  vendor_severity_map: {critical: 90, high: 80, medium: 60, low: 40}   # signature_map row severity
+  vendor_severity_default: 40
+  blocked_outcomes: [failure, blocked, dropped, reset, deny]  # device stopped it -> severity - penalty
+  blocked_penalty: 20
+  blocked_floor: 30
+  scan_min_ports: 20             # port_scan: distinct dst_port on one dst_ip ...
+  scan_min_hosts: 20             # ... or distinct dst_ip on one dst_port ...
+  scan_window_ms: 60000          # ... within 60 s
+  scan_horizontal_internal_only: true   # count only internal dst_ip for the many-hosts variant
+  lateral_max_triple_seen: 2     # internal_lateral: (src_ip, dst_ip, dst_port) seen <= this many times
+  lateral_ports: {445: T1021.002, 3389: T1021.001, 5985: T1021.006, 5986: T1021.006, 22: T1021.004}
+  cfg_after_login_window_ms: 7200000  # fw_config_change_after_login: change within 2 h of external login
   lateral_context_window_ms: 86400000  # T1021 needs an earlier alert for the account on the source host, else T1078
   # lookups / scoring (§4 Stage 1b, §6)
   hub_min_median_daily_peers: 40  # was 20: generator users log onto all 28 hosts daily -> every user/IP a hub,
@@ -65,6 +81,7 @@ rules:
   - id: brute_force_then_success
     kind: template
     template: brute_force_then_success
+    filter: "source_type IS DISTINCT FROM 'fortigate_kv'"   # firewall logins: fw_admin_bruteforce / vpn_*
     technique: T1110
     sub_technique: T1110.001
     tactic: Credential Access
@@ -74,6 +91,7 @@ rules:
   - id: password_spray
     kind: template
     template: password_spray
+    filter: "source_type IS DISTINCT FROM 'fortigate_kv'"   # firewall logins: fw_admin_spray
     technique: T1110
     sub_technique: T1110.003
     tactic: Credential Access
@@ -329,3 +347,97 @@ rules:
     sub_technique: T1550.002
     tactic: Lateral Movement
     severity: 80
+
+  # ---------------- firewall pack A (FortiGate, DEVELOPMENT.md §15.9) ----------------
+  - id: fw_admin_bruteforce     # firewall admin login failures from an external IP, then success
+    kind: template
+    template: brute_force_then_success
+    filter: "source_type = 'fortigate_kv' AND coalesce(logon_type, 0) <> 10 AND src_ip IS NOT NULL AND NOT al_is_internal_ip(src_ip)"
+    technique: T1110
+    sub_technique: T1110.001
+    tactic: Credential Access
+    severity: 75
+    secondary: {technique: T1078, tactic: Initial Access, severity: 85}
+
+  - id: fw_admin_spray          # one external IP failing for many admin accounts
+    kind: template
+    template: password_spray
+    filter: "source_type = 'fortigate_kv' AND coalesce(logon_type, 0) <> 10 AND src_ip IS NOT NULL AND NOT al_is_internal_ip(src_ip)"
+    technique: T1110
+    sub_technique: T1110.003
+    tactic: Credential Access
+    severity: 75
+    secondary: {technique: T1078, tactic: Initial Access, severity: 85}
+
+  - id: vpn_bruteforce_success  # VPN (logon_type 10) failures then success for one user
+    kind: template
+    template: brute_force_then_success
+    filter: "source_type = 'fortigate_kv' AND logon_type = 10"
+    params: {bf_min_failures: 10, bf_require_success: true}
+    technique: T1110
+    sub_technique: T1110.001
+    tactic: Credential Access
+    severity: 75
+    secondary: {technique: T1133, tactic: Initial Access, severity: 85}
+
+  # ---------------- firewall pack B ----------------
+  - id: ips_signatures          # IPS signature -> technique map (first pattern wins)
+    kind: template
+    template: signature_map
+    action: ips_alert
+    technique: T1190
+    tactic: Initial Access
+    severity: 90
+    signatures:
+      - {pattern: 'SSLVPN.*Path.Traversal|Log4j|PHP.CGI|HTTP\.sys|Buffer.Overflow|Remote.Code.Execution',
+         technique: T1190, tactic: Initial Access}
+      - {pattern: 'SSH.*Brute.Force', technique: T1110, tactic: Credential Access}
+      - {pattern: 'Mirai|Botnet', technique: T1071, tactic: Command and Control}
+      - {pattern: 'DNS.Zone.Transfer', technique: T1590, sub_technique: T1590.002, tactic: Reconnaissance}
+      - {pattern: 'SMB.*Information.Disclosure', technique: T1210, tactic: Lateral Movement}
+
+  - id: av_malware_download     # antivirus detection on a transfer
+    kind: match
+    where: "action = 'av_alert'"
+    technique: T1105
+    tactic: Command and Control
+    severity: 80
+
+  # ---------------- firewall pack C ----------------
+  - id: port_scan               # one src to many ports on one dst, or many internal dsts on one port
+    kind: template
+    template: port_scan
+    technique: T1046
+    tactic: Discovery
+    severity: 55
+
+  - id: internal_lateral        # rare internal -> internal SMB/RDP/WinRM/SSH connection
+    kind: template
+    template: internal_lateral
+    technique: T1021
+    tactic: Lateral Movement
+    severity: 65
+
+  # ---------------- firewall pack D ----------------
+  - id: fw_config_change_after_login   # config change soon after the same user's external login
+    kind: template
+    template: config_change_after_login
+    technique: T1562
+    sub_technique: T1562.004
+    tactic: Defense Impairment
+    severity: 80
+
+  - id: tor_or_proxy_app        # application control: anonymising proxy apps
+    kind: match
+    where: "action IN ('app_ctrl', 'conn_allowed', 'conn_denied') AND lower(app) IN {ioc.proxy_apps}"
+    technique: T1090
+    sub_technique: T1090.003
+    tactic: Command and Control
+    severity: 70
+
+  - id: web_malicious_category  # web filter blocked a malicious / phishing category
+    kind: match
+    where: "action = 'web_blocked' AND lower(signature) IN {ioc.malicious_web_categories}"
+    technique: T1189
+    tactic: Initial Access
+    severity: 60

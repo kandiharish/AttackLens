@@ -75,10 +75,39 @@ def ev_keys(th: dict[str, Any], col: str = "source_seq", order: str = TIE_ORDER)
     return f"min_by({col}, {order}, {int(th.get('source_keys_max', 50))})"
 
 
-def subject_host_expr(e: str = "e", m: str = "m") -> str:
-    """Network rows: the host owning src_ip (al_ip_host joined as `m`), else the reporting host."""
+FALLBACK_ACTIONS = ("conn_out", "conn_allowed", "conn_denied", "dns_query", "ips_alert", "av_alert", "web_blocked",
+                    "web_access", "app_ctrl")
+
+
+def internal_ip_expr(e: str, th: dict[str, Any] | None = None) -> str:
+    """The row's internal endpoint IP: src_ip if internal (RFC1918 or src_zone in entity_internal_zones), else
+    dst_ip if internal, else NULL."""
+    zones = sql_list([str(z).lower() for z in (th or {}).get("entity_internal_zones", ["lan", "dmz"])])
+    return (f"CASE WHEN {e}.src_ip IS NOT NULL AND (al_is_internal_ip({e}.src_ip) OR lower({e}.src_zone) IN {zones}) "
+            f"THEN {e}.src_ip "
+            f"WHEN {e}.dst_ip IS NOT NULL AND (al_is_internal_ip({e}.dst_ip) OR lower({e}.dst_zone) IN {zones}) "
+            f"THEN {e}.dst_ip END")
+
+
+def subject_host_expr(e: str = "e", m: str = "m", th: dict[str, Any] | None = None) -> str:
+    """Network rows: the host owning src_ip (al_ip_host joined as `m`), else the reporting host. With
+    thresholds.entity_fallback_ip, rows of entity_fallback_actions whose src_ip has no host use the internal
+    endpoint IP (firewall logs: the reporting host is the firewall itself). Needs src_zone/dst_zone on `e`."""
+    th = th or {}
+    if th.get("entity_fallback_ip"):
+        acts = sql_list(list(th.get("entity_fallback_actions") or FALLBACK_ACTIONS))
+        return (f"CASE WHEN {e}.action IN {acts} THEN coalesce({m}.host, {internal_ip_expr(e, th)}, {e}.host) "
+                f"WHEN {e}.action IN {sql_list(list(NET_ACTIONS))} THEN coalesce({m}.host, {e}.host) "
+                f"ELSE {e}.host END")
     return (f"CASE WHEN {e}.action IN {sql_list(list(NET_ACTIONS))} THEN coalesce({m}.host, {e}.host) "
             f"ELSE {e}.host END")
+
+
+def rule_filter(rule: dict[str, Any]) -> str:
+    """`AND (<filter>)` for template rules with an optional `filter` predicate on candidate rows (bare column
+    names of `events`), else ''."""
+    f = rule.get("filter")
+    return f" AND ({f})" if f else ""
 
 
 def ensure_events(con: duckdb.DuckDBPyConnection, events_glob: str) -> None:
@@ -166,7 +195,9 @@ def prepare(con: duckdb.DuckDBPyConnection, cfg: dict[str, Any], work_dir: Path 
 def labels_of(rule: dict[str, Any]) -> list[tuple[str, str, str | None, str, int, int]]:
     """[(label, technique, sub_technique, tactic, tactic_idx, severity)] for primary and optional secondary."""
     out = []
-    for label, spec in (("primary", rule), ("secondary", rule.get("secondary"))):
+    specs = [("primary", rule), ("secondary", rule.get("secondary"))]
+    specs += [(f"sig{i}", sig) for i, sig in enumerate(rule.get("signatures") or [])]
+    for label, spec in specs:
         if not spec:
             continue
         tactic = spec["tactic"]
@@ -175,15 +206,17 @@ def labels_of(rule: dict[str, Any]) -> list[tuple[str, str, str | None, str, int
     return out
 
 
-def finish(rule: dict[str, Any], core_sql: str) -> str:
-    """Wrap a core SELECT (CORE_COLUMNS) into the exact raw_alerts columns (§15.4)."""
+def finish(rule: dict[str, Any], core_sql: str, row_severity: bool = False) -> str:
+    """Wrap a core SELECT (CORE_COLUMNS) into the exact raw_alerts columns (§15.4). With row_severity the core
+    also has `severity_override` (INTEGER, NULL = the label's severity)."""
+    sev_expr = "coalesce(c.severity_override, lb.severity)" if row_severity else "lb.severity"
     vals = ", ".join(f"({q(l)}, {q(t)}, {q(s)}::VARCHAR, {q(ta)}, {ti}, {sev})"
                      for l, t, s, ta, ti, sev in labels_of(rule))
     return f"""
     SELECT {q(rule['id'])}::VARCHAR AS rule_id, lb.technique_id::VARCHAR AS technique_id,
            coalesce(c.sub_technique_id, lb.sub_technique_id)::VARCHAR AS sub_technique_id,
            coalesce(a.name, a2.name)::VARCHAR AS technique_name, lb.tactic::VARCHAR AS tactic,
-           lb.tactic_idx::INTEGER AS tactic_idx, lb.severity::INTEGER AS severity,
+           lb.tactic_idx::INTEGER AS tactic_idx, {sev_expr}::INTEGER AS severity,
            c.ts_ms::BIGINT AS ts_ms, c.last_ts_ms::BIGINT AS last_ts_ms, c.source_seq::UBIGINT AS source_seq,
            c.host::VARCHAR AS host, c.subject_host::VARCHAR AS subject_host,
            sh.host::VARCHAR AS src_host, dh.host::VARCHAR AS dst_host,

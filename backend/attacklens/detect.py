@@ -49,7 +49,7 @@ def expand_where(rule: dict[str, Any], ioc: dict[str, Any]) -> str:
 def _check_labels(rule: dict[str, Any], attack: dict[str, Any]) -> None:
     techniques = attack.get("techniques") or {}
     rid = rule.get("id")
-    for spec in (rule, rule.get("secondary")):
+    for spec in (rule, rule.get("secondary"), *(rule.get("signatures") or [])):
         if not spec:
             continue
         for key in ("technique", "sub_technique"):
@@ -68,12 +68,12 @@ def rule_sql(con: duckdb.DuckDBPyConnection, rule: dict[str, Any], th: dict[str,
         fn = TEMPLATES.get(str(rule.get("template")))
         if fn is None:
             raise RuleError(f"{rule.get('id')}: unknown template {rule.get('template')!r}")
-        return fn(con, rule, th)
+        return fn(con, rule, {**th, **(rule.get("params") or {})})
     if rule.get("kind") == "match":
         mc = int(th.get("evidence_max_chars", 300))
         core = f"""
         SELECT 'primary' AS label, NULL AS sub_technique_id, h.ts_ms, h.ts_ms AS last_ts_ms, h.source_seq, h.host,
-               {subject_host_expr('h', 'm')} AS subject_host, h.src_user, h.target_user, h.src_ip, h.dst_ip,
+               {subject_host_expr('h', 'm', th)} AS subject_host, h.src_user, h.target_user, h.src_ip, h.dst_ip,
                1 AS raw_alert_count, [left(h.raw_line, {mc})] AS evidence_lines, [h.source_seq] AS source_keys
         FROM al_match_hits h LEFT JOIN al_ip_host m ON m.ip = h.src_ip
         WHERE list_contains(h.rule_ids, {sql_list([rule['id']])[1:-1]})"""
@@ -95,7 +95,7 @@ def build_match_hits(con: duckdb.DuckDBPyConnection, rules: list[dict[str, Any]]
               "], lambda x: x IS NOT NULL)"
     con.execute(f"""
         CREATE OR REPLACE TEMP TABLE al_match_hits AS
-        SELECT ts_ms, source_seq, action, host, src_user, target_user, src_ip, dst_ip,
+        SELECT ts_ms, source_seq, action, host, src_user, target_user, src_ip, dst_ip, src_zone, dst_zone,
                left(raw_line, {mc}) AS raw_line, {ids} AS rule_ids
         FROM events WHERE {OK} AND ts_ms IS NOT NULL AND ({cond})""")
 

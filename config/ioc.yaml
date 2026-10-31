@@ -11,3 +11,12 @@ ips:
   - 192.0.2.88
 ransom_extensions:
   - locked
+proxy_apps:                  # tor_or_proxy_app: lower(app) values
+  - tor
+  - tor.browser
+  - psiphon
+  - ultrasurf
+  - freegate
+malicious_web_categories:    # web_malicious_category: lower(signature) = FortiGate webfilter category
+  - malicious websites
+  - phishing
