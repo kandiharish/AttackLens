@@ -1,0 +1,13 @@
+# Indicators of compromise used by match rules via placeholders {ioc.<list>} in config/rules.yaml.
+# Values = the provided generator's SUSPECT_DOMAINS / SUSPECT_IPS (RFC 5737 / reserved TLDs) + ransom extensions.
+# All values lower-case; compared against lower(dst_domain) / dst_ip / lower(file_ext).
+domains:
+  - suspicious-example-c2.invalid
+  - bad-domain-demo.test
+  - sim-exfil.example
+ips:
+  - 198.51.100.23
+  - 203.0.113.57
+  - 192.0.2.88
+ransom_extensions:
+  - locked

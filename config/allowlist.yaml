@@ -1,0 +1,4 @@
+# Allowlisted entities (DEVELOPMENT.md §6.3): a component whose entities are ALL allowlisted is suppressed.
+# Entity strings are `type:value`, lower-case (host:srv-backup-01, user:svc_scanner, ip:10.0.0.5).
+# Detection itself never reads this file; Stage 4 (incidents) does.
+entities: []

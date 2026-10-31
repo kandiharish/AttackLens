@@ -1,0 +1,218 @@
+# Detection rules (DEVELOPMENT.md §5). Stage 2 (detect.py) turns each rule into one SQL query over `events`.
+# kind: match    -> `where` is a SQL predicate over canonical columns (§3.1). Placeholders {ioc.<list>} expand to
+#                   a quoted SQL list from config/ioc.yaml, e.g. dst_ip IN {ioc.ips}.
+# kind: template -> `template` names a function in attacklens/detect_templates.py; parameters come from `thresholds`.
+#                   `secondary` labels the second alert kind a template can emit (e.g. T1078 after a brute force).
+# technique / sub_technique must exist in config/attack_v20.json; tactic must be a v20 tactic name.
+
+thresholds:
+  # brute force (T1110 + T1078)
+  bf_min_failures: 50            # failures per (target_user, host) in one burst
+  bf_gap_ms: 600000              # a gap > 10 min between failures starts a new burst
+  bf_success_window_ms: 900000   # success must follow the last failure within 15 min (also for spray)
+  bf_require_success: false      # false: T1110 fires on the burst alone; T1078 only with a success
+  emit_t1078_on_bruteforce: true # emit the secondary T1078 Initial Access alert for the success (bf + spray)
+  # password spray (T1110.003)
+  spray_min_users: 15            # distinct target users failing from one src_ip ...
+  spray_window_ms: 600000        # ... within 10 min
+  # account created then elevated (T1136 + T1098)
+  create_elevate_window_ms: 86400000
+  # exfiltration (T1048)
+  exfil_min_bytes: 50000000      # sliding-window sum must exceed max(this, mult x host baseline)
+  exfil_window_ms: 900000
+  exfil_baseline_mult: 5.0       # baseline = host's median daily bytes per external destination
+  # ransomware (T1486)
+  mass_rename_min: 100
+  mass_rename_window_ms: 60000
+  # beaconing (T1071.001)
+  beacon_min_conns: 6
+  beacon_max_cv: 0.2             # inter-arrival coefficient of variation must be below this
+  beacon_session_gap_ms: 3600000 # a gap > 1 h splits a (host, dst) series into separate sessions
+  # new admin logon (T1021 / T1078)
+  new_admin_max_pair_seen: 2     # (user, host) pair with <= this many privileged logons in the data set
+  new_admin_excluded_logon_ids: ["0x3e7", "0x3e4", "0x3e5"]
+  lateral_context_window_ms: 86400000  # T1021 needs an earlier alert for the account on the source host, else T1078
+  # lookups / scoring (§4 Stage 1b, §6)
+  hub_min_median_daily_peers: 20
+  seed_confidence: 65
+  critical_confidence: 90
+  raw_ref_score: 15.0
+  baseline_max_other_rules: 0   # rule_host_baseline counts a host-day only if it had <= this many OTHER rules
+                                # firing that day (0 = DEVELOPMENT.md §4 literal; dense noise drives base to 0)
+  # evidence and episodes (§4 Stage 2/2.5, §15.4)
+  evidence_max_lines: 3
+  evidence_max_chars: 300
+  source_keys_max: 50
+  episode_bucket_ms: 300000
+  episode_cap: 25000
+  spill_hops: 2
+  spill_hop_window_ms: 86400000
+
+rules:
+  # ---------------- templates ----------------
+  - id: brute_force_then_success
+    kind: template
+    template: brute_force_then_success
+    technique: T1110
+    sub_technique: T1110.001
+    tactic: Credential Access
+    severity: 75
+    secondary: {technique: T1078, tactic: Initial Access, severity: 85}
+
+  - id: password_spray
+    kind: template
+    template: password_spray
+    technique: T1110
+    sub_technique: T1110.003
+    tactic: Credential Access
+    severity: 75
+    secondary: {technique: T1078, tactic: Initial Access, severity: 85}
+
+  - id: account_created_then_elevated
+    kind: template
+    template: account_created_then_elevated
+    technique: T1136
+    tactic: Persistence
+    severity: 70
+    secondary: {technique: T1098, tactic: Privilege Escalation, severity: 80}
+
+  - id: beaconing
+    kind: template
+    template: beaconing
+    technique: T1071
+    sub_technique: T1071.001
+    tactic: Command and Control
+    severity: 75
+
+  - id: ransom_rename
+    kind: template
+    template: ransom_rename
+    technique: T1486
+    tactic: Impact
+    severity: 95
+
+  - id: exfil_volume
+    kind: template
+    template: exfil_volume
+    technique: T1048
+    tactic: Exfiltration
+    severity: 85
+
+  - id: new_admin_logon
+    kind: template
+    template: new_admin_logon
+    technique: T1021            # internal source; sub-technique chosen per row (.002 SMB, .001 RDP, .004 SSH)
+    tactic: Lateral Movement
+    severity: 75
+    secondary: {technique: T1078, tactic: Initial Access, severity: 80}   # external (non-RFC1918) source
+    relabel_without_context: true   # internal source but no earlier alert for the account on the source host -> T1078
+
+  # ---------------- match rules ----------------
+  - id: office_spawns_script
+    kind: match
+    where: >-
+      action = 'proc_start'
+      AND lower(parent_process) IN ('winword.exe','excel.exe','outlook.exe','powerpnt.exe','msaccess.exe','onenote.exe')
+      AND lower(process_name) IN ('powershell.exe','pwsh.exe','cmd.exe','wscript.exe','cscript.exe','mshta.exe')
+    technique: T1059
+    sub_technique: T1059.001
+    tactic: Execution
+    severity: 80
+
+  - id: encoded_powershell
+    kind: match
+    where: >-
+      action = 'proc_start'
+      AND lower(process_name) IN ('powershell.exe','pwsh.exe')
+      AND (command_line ILIKE '% -enc%' OR command_line ILIKE '% -e %' OR command_line ILIKE '% -ec %')
+      AND coalesce(lower(parent_process), '') NOT IN ('winword.exe','excel.exe','outlook.exe','powerpnt.exe','msaccess.exe','onenote.exe')
+    technique: T1059
+    sub_technique: T1059.001
+    tactic: Execution
+    severity: 75
+
+  - id: run_key_persistence
+    kind: match
+    where: >-
+      action = 'reg_set'
+      AND (registry_path ILIKE '%\CurrentVersion\Run%')
+      AND lower(process_name) IN ('powershell.exe','pwsh.exe','cmd.exe','wscript.exe','cscript.exe','mshta.exe',
+                                  'reg.exe','rundll32.exe','regsvr32.exe')
+    technique: T1547
+    sub_technique: T1547.001
+    tactic: Persistence
+    severity: 75
+
+  - id: ioc_destination
+    kind: match
+    where: >-
+      action IN ('conn_out','conn_allowed','conn_denied','dns_query')
+      AND (dst_ip IN {ioc.ips} OR lower(dst_domain) IN {ioc.domains})
+    technique: T1071
+    sub_technique: T1071.001
+    tactic: Command and Control
+    severity: 75
+
+  - id: ransom_extension
+    kind: match
+    where: "action IN ('file_rename','file_write') AND lower(file_ext) IN {ioc.ransom_extensions}"
+    technique: T1486
+    tactic: Impact
+    severity: 90
+
+  - id: discovery_commands
+    kind: match
+    where: >-
+      action = 'proc_start'
+      AND (command_line ILIKE '%net user%' OR command_line ILIKE '%net group%' OR command_line ILIKE '%net1 group%'
+           OR command_line ILIKE '%net localgroup%' OR command_line ILIKE '%nltest%' OR command_line ILIKE '%get-aduser%')
+    technique: T1087
+    sub_technique: T1087.002
+    tactic: Discovery
+    severity: 55
+
+  - id: discovery_system
+    kind: match
+    where: >-
+      action = 'proc_start'
+      AND (lower(process_name) IN ('whoami.exe','systeminfo.exe')
+           OR command_line ILIKE '%whoami%' OR command_line ILIKE '%systeminfo%')
+    technique: T1082
+    tactic: Discovery
+    severity: 45
+
+  - id: service_or_task
+    kind: match
+    where: "action = 'service_installed'"
+    technique: T1543
+    sub_technique: T1543.003
+    tactic: Persistence
+    severity: 65
+
+  - id: scheduled_task
+    kind: match
+    where: "action = 'scheduled_task'"
+    technique: T1053
+    sub_technique: T1053.005
+    tactic: Persistence
+    severity: 60
+
+  - id: log_cleared
+    kind: match
+    where: "action = 'log_cleared'"
+    technique: T1070
+    sub_technique: T1070.001
+    tactic: Defense Impairment
+    severity: 80
+
+  - id: archive_staging
+    kind: match
+    where: >-
+      action = 'proc_start'
+      AND (command_line ILIKE '%7z% a %' OR command_line ILIKE '%7za% a %' OR command_line ILIKE '%rar% a %'
+           OR command_line ILIKE '%compress-archive%' OR command_line ILIKE '%zip -r %'
+           OR command_line ILIKE '%tar -c%' OR command_line ILIKE '%tar c%z%')
+    technique: T1560
+    sub_technique: T1560.001
+    tactic: Collection
+    severity: 60
