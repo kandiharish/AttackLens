@@ -1,0 +1,11 @@
+data/
+.venv/
+venv/
+__pycache__/
+.pytest_cache/
+*.parquet
+node_modules/
+dist/
+.env
+.claude/worktrees/
+.claude/settings.local.json
