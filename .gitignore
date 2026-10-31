@@ -10,3 +10,6 @@ dist/
 .claude/worktrees/
 .claude/settings.local.json
 *.egg-info/
+logs/
+50g.txt
+*.log
