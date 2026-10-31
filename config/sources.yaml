@@ -15,7 +15,8 @@
 #   target_name   explicit target account (new user, logon target) -> target_user
 #   member_name   group member (Windows MemberName, may be a DN)  -> target_user for group adds
 #   group, src_ip, src_port, dst_ip, dst_port, dst_domain, process_name, process_path,
-#   parent_process, command_line, file_path, file_ext, registry_path, bytes, direction, service_name
+#   parent_process, command_line, file_path, file_ext, registry_path, bytes, direction, service_name,
+#   auth_package, ticket_encryption
 #
 # NEVER alias generator label fields: threat, rule, labels, labels_extra, event.kind, event.severity,
 # event.module, event.dataset (and the CEF header name/signature or cs2 "mitre", which carry rule labels).
@@ -53,6 +54,8 @@ json_sources:
       bytes:         ['$.network.bytes', '$.source.bytes']
       direction:     ['$.network.direction']
       service_name:  ['$.service.name', '$.winlog.event_data.ServiceName']
+      auth_package:  ['$.winlog.event_data.AuthenticationPackageName', '$.winlog.event_data.LmPackageName']
+      ticket_encryption: ['$.winlog.event_data.TicketEncryptionType']
 
   # Windows EVTX exported as JSON (flat, or nested Event.System / Event.EventData).
   win_json:
@@ -87,7 +90,11 @@ json_sources:
       registry_path: ['$.TargetObject', '$.Event.EventData.TargetObject']
       bytes:         ['$.BytesSent']
       direction:     ['$.Direction']
-      service_name:  ['$.ServiceName', '$.Event.EventData.ServiceName']
+      service_name:  ['$.ServiceName', '$.Event.EventData.ServiceName', '$.EventData.ServiceName']
+      auth_package:  ['$.AuthenticationPackageName', '$.LmPackageName', '$.Event.EventData.AuthenticationPackageName',
+                      '$.Event.EventData.LmPackageName', '$.EventData.AuthenticationPackageName']
+      ticket_encryption: ['$.TicketEncryptionType', '$.Event.EventData.TicketEncryptionType',
+                          '$.EventData.TicketEncryptionType']
 
 csv_sources:
   # Firewall exports (any extension). Detected when >= min_matches header names below are present.
@@ -181,6 +188,8 @@ action_map:
     4771: login_failed
     4624: login_success
     4672: priv_assigned
+    4769: kerberos_tgs     # TGS request; requesting account -> src_user, ServiceName -> service_name
+    4648: explicit_creds   # logon with explicit credentials; actor -> src_user, TargetUserName -> target_user
     4720: user_created
     4728: group_member_added
     4732: group_member_added
@@ -217,6 +226,9 @@ action_map:
     registry_value_set: reg_set
     service_installed: service_installed
     scheduled_task_created: scheduled_task
+    kerberos_service_ticket_requested: kerberos_tgs
+    explicit_credential_logon: explicit_creds
+    logged-in-explicit: explicit_creds
     log_cleared: log_cleared
     # firewall / CEF dispositions
     allow: conn_allowed

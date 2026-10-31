@@ -1,4 +1,4 @@
-"""Stage 1: one DuckDB COPY of every profiled raw file into partitioned canonical Parquet.
+"""Stage 1: DuckDB COPY (in byte-budget batches) of every profiled raw file into partitioned canonical Parquet.
 
 Writes <parquet_dir>/events/source_type=*/ts_ok=*/event_day=*/ and out_dir/ingest_accounting.json.
 
@@ -49,18 +49,35 @@ def _load_profile(ctx: RunContext) -> dict[str, Any]:
     return ctx.stats["profile"]
 
 
-def build_selects(prof: dict[str, Any], cfg: dict[str, Any]) -> tuple[list[str], list[dict[str, Any]]]:
-    """One SELECT per (format, source_type[, csv header]) group.
+def _chunks(files: list[dict[str, Any]], budget: int) -> list[list[dict[str, Any]]]:
+    """Split one group's files into runs of <= budget bytes (a single bigger file is its own run)."""
+    out: list[list[dict[str, Any]]] = []
+    cur: list[dict[str, Any]] = []
+    size = 0
+    for f in files:
+        if cur and size + int(f.get("size", 0)) > budget:
+            out.append(cur)
+            cur, size = [], 0
+        cur.append(f)
+        size += int(f.get("size", 0))
+    if cur:
+        out.append(cur)
+    return out
 
-    Returns (selects, groups); each group = {source_type, format, files, rejects[, delimiter, columns]} where
-    `rejects` names the DuckDB rejects tables of that group's reader.
+
+def build_units(prof: dict[str, Any], cfg: dict[str, Any]) -> list[dict[str, Any]]:
+    """One reader unit per (format, source_type[, csv header]) group and byte-budget chunk of its files.
+
+    Each unit = {source_type, format, files, bytes, rejects, select[, delimiter, columns]}; `rejects` names the
+    DuckDB rejects tables of that unit's reader, `select` is its intermediate SELECT.
     """
     sources = cfg.get("sources") or {}
     pipe = cfg.get("pipeline") or {}
     ing = pipe.get("ingest") or {}
     formats = list(ing.get("ts_formats") or [])
+    budget = int(float(ing.get("batch_bytes", 2e9)))
     root = prof["raw_dir"]
-    grouped: dict[tuple[Any, ...], list[str]] = {}
+    grouped: dict[tuple[Any, ...], list[dict[str, Any]]] = {}
     for f in prof.get("files", []):
         fmt = f.get("format")
         if fmt == "unrecognized":
@@ -68,40 +85,98 @@ def build_selects(prof: dict[str, Any], cfg: dict[str, Any]) -> tuple[list[str],
         key: tuple[Any, ...] = (fmt, f["source_type"])
         if fmt == "csv":
             key += (f["delimiter"], tuple(f["columns"]))
-        grouped.setdefault(key, []).append(f["path"])
-    selects: list[str] = []
-    groups: list[dict[str, Any]] = []
-    for n, (key, files) in enumerate(grouped.items()):
+        grouped.setdefault(key, []).append(f)
+    units: list[dict[str, Any]] = []
+    for key, gfiles in grouped.items():
         fmt, stype = key[0], key[1]
-        rj = f"rej_ingest_{n}"
-        g: dict[str, Any] = {"source_type": stype, "format": fmt, "files": files, "rejects": rj}
-        if fmt == "json":
-            scfg = (sources.get("json_sources") or {}).get(stype) or {}
-            selects.append(q.json_select(stype, files, root, scfg, sources, formats, rejects=rj))
-        elif fmt == "cef":
-            selects.append(q.cef_select(files, root, sources.get("cef") or {}, formats, rejects=rj))
-        elif fmt == "syslog":
-            selects.append(q.syslog_select(files, root, sources.get("syslog") or {},
-                                           int(pipe.get("baseline_year", 2026)),
-                                           ing.get("syslog_ts_format", "%Y %b %d %H:%M:%S"), formats, rejects=rj))
-        elif fmt == "csv":
-            ccfg = (sources.get("csv_sources") or {}).get(stype) or {}
-            selects.append(q.csv_select(stype, files, root, key[2], list(key[3]), ccfg, formats, rejects=rj))
-            g.update(delimiter=key[2], columns=list(key[3]))
-        else:
-            continue
-        groups.append(g)
-    return selects, groups
+        for chunk in _chunks(gfiles, budget):
+            files = [f["path"] for f in chunk]
+            rj = f"rej_ingest_{len(units)}"
+            u: dict[str, Any] = {"source_type": stype, "format": fmt, "files": files, "rejects": rj,
+                                 "bytes": sum(int(f.get("size", 0)) for f in chunk)}
+            if fmt == "json":
+                scfg = (sources.get("json_sources") or {}).get(stype) or {}
+                u["select"] = q.json_select(stype, files, root, scfg, sources, formats, rejects=rj)
+            elif fmt == "cef":
+                u["select"] = q.cef_select(files, root, sources.get("cef") or {}, formats, rejects=rj)
+            elif fmt == "syslog":
+                u["select"] = q.syslog_select(files, root, sources.get("syslog") or {},
+                                              int(pipe.get("baseline_year", 2026)),
+                                              ing.get("syslog_ts_format", "%Y %b %d %H:%M:%S"), formats,
+                                              rejects=rj)
+            elif fmt == "csv":
+                ccfg = (sources.get("csv_sources") or {}).get(stype) or {}
+                u["select"] = q.csv_select(stype, files, root, key[2], list(key[3]), ccfg, formats, rejects=rj)
+                u.update(delimiter=key[2], columns=list(key[3]))
+            else:
+                continue
+            units.append(u)
+    return units
 
 
-def copy_sql(selects: list[str], cfg: dict[str, Any], events_dir: Path) -> str:
+def plan_batches(units: list[dict[str, Any]], budget: int) -> list[list[dict[str, Any]]]:
+    """Pack units into COPY batches of <= budget bytes (small sources share a batch, big ones get their own)."""
+    batches: list[list[dict[str, Any]]] = []
+    cur: list[dict[str, Any]] = []
+    size = 0
+    for u in units:
+        if cur and size + u["bytes"] > budget:
+            batches.append(cur)
+            cur, size = [], 0
+        cur.append(u)
+        size += u["bytes"]
+    if cur:
+        batches.append(cur)
+    return batches
+
+
+def copy_sql(selects: list[str], cfg: dict[str, Any], events_dir: Path, batch: int = 0) -> str:
+    """One COPY of the given intermediate SELECTs into the shared hive layout (file names unique per batch)."""
     union = " UNION ALL BY NAME ".join(f"({s})" for s in selects)
     norm = q.normalize_sql(union, cfg.get("sources") or {})
-    typed = ", ".join(f"CAST({c} AS {t}) AS {c}" for c, t in CANONICAL_COLUMNS.items())
-    comp = ((cfg.get("pipeline") or {}).get("ingest") or {}).get("compression", "ZSTD")
-    return (f"COPY (SELECT {typed} FROM ({norm})) TO {sql_path(events_dir)} "
+    cols = ", ".join(CANONICAL_COLUMNS)  # normalize_sql already emits every canonical column, typed
+    ing = (cfg.get("pipeline") or {}).get("ingest") or {}
+    comp = ing.get("compression", "ZSTD")
+    rg = int(ing.get("row_group_size", 122880))
+    return (f"COPY (SELECT {cols} FROM ({norm})) TO {sql_path(events_dir)} "
             f"(FORMAT PARQUET, PARTITION_BY (source_type, ts_ok, event_day), COMPRESSION {comp}, "
-            f"OVERWRITE_OR_IGNORE)")
+            f"ROW_GROUP_SIZE {rg}, OVERWRITE_OR_IGNORE, FILENAME_PATTERN 'b{batch:05d}_{{i}}')")
+
+
+def _copy_settings(ctx: RunContext) -> list[str]:
+    """Bound the partitioned writer's buffers for the COPY only (pipeline.yaml ingest.*)."""
+    ing = (ctx.cfg.get("pipeline") or {}).get("ingest") or {}
+    out = []
+    if ing.get("partitioned_write_flush_threshold"):
+        out.append(f"SET partitioned_write_flush_threshold={int(ing['partitioned_write_flush_threshold'])}")
+    if ing.get("partitioned_write_max_open_files"):
+        out.append(f"SET partitioned_write_max_open_files={int(ing['partitioned_write_max_open_files'])}")
+    if ing.get("threads"):
+        out.append(f"SET threads={int(ing['threads'])}")
+    return out
+
+
+def _run_copies(ctx: RunContext, units: list[dict[str, Any]], events_dir: Path) -> int:
+    ing = (ctx.cfg.get("pipeline") or {}).get("ingest") or {}
+    budget = int(float(ing.get("batch_bytes", 2e9)))
+    old_threads = ctx.con.execute("SELECT current_setting('threads')").fetchone()[0]
+    old_flush = ctx.con.execute("SELECT current_setting('partitioned_write_flush_threshold')").fetchone()[0]
+    for st in _copy_settings(ctx):
+        ctx.con.execute(st)
+    written = 0
+    try:
+        batches = plan_batches(units, budget)
+        for b, batch in enumerate(batches):
+            sql = copy_sql([u["select"] for u in batch], ctx.cfg, events_dir, batch=b)
+            log.debug("ingest batch %d SQL: %s", b, sql)
+            res = ctx.con.execute(sql).fetchone()
+            written += int(res[0]) if res else 0
+            log.info("ingest batch %d/%d: %d files, %.1f MB, %d rows so far", b + 1, len(batches),
+                     sum(len(u["files"]) for u in batch), sum(u["bytes"] for u in batch) / 1e6, written)
+    finally:
+        ctx.con.execute(f"SET threads={int(old_threads)}")
+        ctx.con.execute(f"SET partitioned_write_flush_threshold={int(old_flush)}")
+    return written
 
 
 def _truncated_csv(ctx: RunContext, g: dict[str, Any]) -> int:
@@ -174,18 +249,15 @@ def run(ctx: RunContext) -> dict[str, Any]:
     if events_dir.exists():
         shutil.rmtree(events_dir)
     events_dir.parent.mkdir(parents=True, exist_ok=True)
-    selects, groups = build_selects(prof, ctx.cfg)
-    for g in groups:
-        drop_rejects(ctx.con, g["rejects"])
+    units = build_units(prof, ctx.cfg)
+    for u in units:
+        drop_rejects(ctx.con, u["rejects"])
     written = 0
-    if selects:
-        sql = copy_sql(selects, ctx.cfg, events_dir)
-        log.debug("ingest SQL: %s", sql)
-        res = ctx.con.execute(sql).fetchone()
-        written = int(res[0]) if res else 0
+    if units:
+        written = _run_copies(ctx, units, events_dir)
     else:
         log.warning("ingest: no recognized source files under %s", ctx.raw_dir)
-    acc = _accounting(ctx, events_dir, groups, prof)
+    acc = _accounting(ctx, events_dir, units, prof)
     ctx.out_dir.mkdir(parents=True, exist_ok=True)
     (ctx.out_dir / "ingest_accounting.json").write_text(json.dumps(acc, indent=2), encoding="utf-8")
     rows_in = sum(a["rows_in"] for a in acc)

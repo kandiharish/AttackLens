@@ -13,23 +13,9 @@ from typing import Any, Callable
 import duckdb
 
 from attacklens.detect_sql import OK, ev_keys, ev_lines, finish, sql_list, subject_host_expr
+from attacklens.detect_sql import window_bursts as _window_bursts
 
 Template = Callable[[duckdb.DuckDBPyConnection, dict[str, Any], dict[str, Any]], str]
-
-
-def _window_bursts(part: str, win: int, agg: str, cond: str) -> str:
-    """CTEs over CTE `r` (ts_ms, source_seq, <part cols>, ...): rows inside any [t, t+win) window whose `agg`
-    satisfies `cond` (on column wv), grouped into bursts `bid` (a gap > win starts a new burst). Ends in CTE `mb`."""
-    return f"""
-    w AS (SELECT *, {agg} OVER (PARTITION BY {part} ORDER BY ts_ms
-                               RANGE BETWEEN CURRENT ROW AND {win - 1} FOLLOWING) AS wv FROM r),
-    s AS (SELECT *, max(CASE WHEN {cond} THEN ts_ms END) OVER (PARTITION BY {part} ORDER BY ts_ms, source_seq
-                                                               ROWS UNBOUNDED PRECEDING) AS ls FROM w),
-    m AS (SELECT * FROM s WHERE ls IS NOT NULL AND ts_ms - ls < {win}),
-    g AS (SELECT *, CASE WHEN ts_ms - lag(ts_ms) OVER (PARTITION BY {part} ORDER BY ts_ms, source_seq) <= {win}
-                         THEN 0 ELSE 1 END AS nb FROM m),
-    mb AS (SELECT *, sum(nb) OVER (PARTITION BY {part} ORDER BY ts_ms, source_seq ROWS UNBOUNDED PRECEDING) AS bid
-           FROM g)"""
 
 
 def _gap_sessions(src: str, part: str, gap: int) -> str:
@@ -296,3 +282,7 @@ TEMPLATES: dict[str, Template] = {
     "exfil_volume": exfil_volume,
     "new_admin_logon": new_admin_logon,
 }
+
+from attacklens.detect_templates2 import TEMPLATES2  # noqa: E402  (coverage-round templates)
+
+TEMPLATES.update(TEMPLATES2)

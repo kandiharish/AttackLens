@@ -32,6 +32,9 @@ CANONICAL_COLUMNS: dict[str, str] = {
     "file_ext": "VARCHAR",
     "registry_path": "VARCHAR",
     "bytes_out": "BIGINT",
+    "auth_package": "VARCHAR",       # NTLM / Kerberos / Negotiate (4624 AuthenticationPackageName, LmPackageName)
+    "ticket_encryption": "VARCHAR",  # Kerberos ticket encryption type, lower hex, e.g. 0x17 (4769)
+    "service_name": "VARCHAR",       # 7045 ServiceName / 4769 ServiceName / ECS service.name
     "raw_line": "VARCHAR",
 }
 

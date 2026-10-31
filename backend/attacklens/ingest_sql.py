@@ -6,18 +6,22 @@ canonical schema. Everything is generated from config/sources.yaml and config/pi
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
 
 from attacklens.db import line_reader, sql_list, sql_str
+from attacklens.schemas import CANONICAL_COLUMNS
+
+log = logging.getLogger(__name__)
 
 FIELDS: tuple[str, ...] = (
     "ts", "event_id", "event_action", "outcome", "logon_id", "logon_type", "host", "host_ip", "user",
     "subject_user", "target_name", "member_name", "group", "src_ip", "src_port", "dst_ip", "dst_port",
     "dst_domain", "process_name", "process_path", "parent_process", "command_line", "file_path", "file_ext",
-    "registry_path", "bytes", "direction", "service_name",
+    "registry_path", "bytes", "direction", "service_name", "auth_package", "ticket_encryption",
 )
 CANONICAL_ACTIONS = ("login_failed", "login_success", "priv_assigned", "user_created", "group_member_added",
-                     "proc_start", "conn_out", "conn_allowed", "conn_denied", "dns_query", "file_write",
+                     "kerberos_tgs", "explicit_creds", "proc_start", "conn_out", "conn_allowed", "conn_denied", "dns_query", "file_write",
                      "file_rename", "reg_set", "service_installed", "scheduled_task", "log_cleared", "other")
 LOGON_ACTIONS = "('login_success', 'login_failed')"
 NONEMPTY = "line IS NOT NULL AND trim(line) <> ''"
@@ -225,9 +229,11 @@ def normalize_sql(union_sql: str, sources: dict[str, Any]) -> str:
     b = f"SELECT *, {action_case(sources)} AS action FROM ({a})"
     c = (f"SELECT *, "
          f"CASE WHEN action IN {LOGON_ACTIONS} THEN {_user('f_subject_user')} "
+         f"WHEN action = 'kerberos_tgs' THEN {_user('coalesce(f_subject_user, f_target_name, f_user)')} "
          f"ELSE {_user('coalesce(f_subject_user, f_user)')} END AS src_user, "
          f"CASE WHEN action IN {LOGON_ACTIONS} THEN {_user('coalesce(f_target_name, f_user)')} "
          f"WHEN action IN ('user_created', 'group_member_added') THEN {_user(f'coalesce({member}, f_target_name)')} "
+         f"WHEN action = 'kerberos_tgs' THEN NULL "
          f"ELSE {_user('f_target_name')} END AS target_user, "
          f"coalesce({_base('f_process_name')}, {_base('f_process_path')}) AS process_name_n FROM ({b})")
     lt_expr = (f"coalesce(CASE lower(replace(f_logon_type, ' ', '')) {lt_arms} "
@@ -270,5 +276,17 @@ def normalize_sql(union_sql: str, sources: dict[str, Any]) -> str:
         "bytes_out": ("CASE WHEN f_direction IS NULL OR lower(f_direction) IN ('outbound', 'egress', 'outgoing', "
                       "'out', 'external') THEN try_cast(try_cast(f_bytes AS DOUBLE) AS BIGINT) END"),
         "raw_line": "raw_line",
+        "auth_package": "lower(f_auth_package)",
+        "ticket_encryption": ("CASE WHEN lower(f_ticket_encryption) LIKE '0x%' THEN '0x' || coalesce(nullif(ltrim("
+                              "substr(lower(f_ticket_encryption), 3), '0'), ''), '0') "
+                              "WHEN regexp_full_match(f_ticket_encryption, '\\d+') THEN '0x' || "
+                              "lower(to_hex(CAST(f_ticket_encryption AS BIGINT))) ELSE lower(f_ticket_encryption) END"),
+        "service_name": "lower(f_service_name)",
     }
-    return "SELECT " + ", ".join(f"{e} AS {k}" for k, e in cols.items()) + f" FROM ({c})"
+    # Emit EVERY canonical column (schemas.CANONICAL_COLUMNS order): one added to the schema but not mapped here
+    # becomes a typed NULL with a warning, never a binder error.
+    missing = [k for k in CANONICAL_COLUMNS if k not in cols]
+    if missing:
+        log.warning("ingest: canonical columns with no mapping (written as NULL): %s", missing)
+    exprs = [f"CAST({cols.get(k, 'NULL')} AS {t}) AS {k}" for k, t in CANONICAL_COLUMNS.items()]
+    return "SELECT " + ", ".join(exprs) + f" FROM ({c})"

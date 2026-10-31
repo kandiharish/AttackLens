@@ -29,6 +29,16 @@ ingest:
     - "%d.%m.%Y %H:%M:%S"
   syslog_ts_format: "%Y %b %d %H:%M:%S"
   compression: "ZSTD"
+  # Bounded ingest memory (measured 31 Oct, g1 / g10, 12 threads). Peak RSS grows with the data volume of ONE
+  # partitioned COPY, so files are packed into batches of <= batch_bytes (one COPY each, unique file names in
+  # the same hive layout). A single file larger than the budget is its own batch.
+  #   g10 part (1.8 GB) alone: defaults 4876 MB / 45.6 s -> flush 16384 + rg 32768: 2126 MB / 19.9 s
+  #   5.4 GB in one COPY with these knobs: 2970 MB
+  batch_bytes: 2.0e9
+  partitioned_write_flush_threshold: 16384   # rows buffered per partition before flushing (DuckDB default 524288)
+  partitioned_write_max_open_files: 100      # DuckDB default
+  row_group_size: 32768                      # Parquet row group rows (DuckDB default 122880)
+  threads: null                              # COPY-only thread override; null = connection threads
 
 telemetry:
   interval_s: 0.5            # RSS sampling period

@@ -515,3 +515,9 @@ to the integers in §3.1. `bytes_out` = `network.bytes` when direction is outbou
 | §4 R1 | source-host variant (`i.subject_host = j.src_host`) window 6 h (`R1.src_tau_ms`); dst variant stays 24 h | 20-seed sweep: noise in backbones 13 → 7, bridge failures 1 → 0 | `86400000` |
 | §4 Stage 4 branches | branch tails that pass the gate on their own are peeled into their own incident (`path.peel_standalone_branch_tails`) | seed-6 S2 glued onto S1 | `false` |
 | §6.4 risk | `raw_ref_score: 30.8` = S1 raw on g1 (`linking.yaml risk`) | default 15 saturated S1/S4 at 100 | `15` |
+
+### 15.8 Canonical columns added 31 Oct (detection coverage round)
+`auth_package`, `ticket_encryption`, `service_name` (schemas.CANONICAL_COLUMNS). New actions: `kerberos_tgs` (4769),
+`explicit_creds` (4648). Logon type `NewCredentials` → 9. Rules for T1059.003/.004, T1047, T1548.003, T1070.004,
+T1562.001, T1003.001, T1558.003, T1550.002, T1046, T1021.002 admin shares, T1021.006 WinRM, plus command-line variants of
+T1053.005 / T1543.003 / T1547.001 / T1070.001 / T1059.001.

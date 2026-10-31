@@ -33,6 +33,13 @@ thresholds:
   new_admin_routine_min_logons: 3        # pair with >= this many NON-privileged login_success on the host ...
   new_admin_business_hours_utc: [8, 19]  # ... and logon hour in [start, end) UTC -> routine admin work, no alert
   new_admin_excluded_logon_ids: ["0x3e7", "0x3e4", "0x3e5"]
+  sudo_max_pair_seen: 2          # sudo_escalation: (user, host) pair with <= this many sudo runs
+  kerberoast_min_services: 5     # kerberoasting: distinct service_name per account ...
+  kerberoast_window_ms: 600000   # ... within 10 min
+  kerberoast_encryption: ["0x17"]
+  pth_max_pair_seen: 2           # pass_the_hash: (user, host) pair with <= this many matching logons
+  pth_logon_types: [9]
+  pth_auth_packages: ["negotiate", "ntlm"]
   lateral_context_window_ms: 86400000  # T1021 needs an earlier alert for the account on the source host, else T1078
   # lookups / scoring (§4 Stage 1b, §6)
   hub_min_median_daily_peers: 40  # was 20: generator users log onto all 28 hosts daily -> every user/IP a hub,
@@ -129,7 +136,11 @@ rules:
     where: >-
       action = 'proc_start'
       AND lower(process_name) IN ('powershell.exe','pwsh.exe')
-      AND (command_line ILIKE '% -enc%' OR command_line ILIKE '% -e %' OR command_line ILIKE '% -ec %')
+      AND (command_line ILIKE '% -enc%' OR command_line ILIKE '% -e %' OR command_line ILIKE '% -ec %'
+           OR (regexp_matches(command_line, '(?i)\s-nop(rofile)?\b')
+               AND regexp_matches(command_line, '(?i)\s-w(indowstyle)?\s+hidden\b|\biex\b|invoke-expression|downloadstring'))
+           OR (regexp_matches(command_line, '(?i)\biex\b|invoke-expression')
+               AND regexp_matches(command_line, '(?i)downloadstring|downloadfile|invoke-webrequest')))
       AND coalesce(lower(parent_process), '') NOT IN ('winword.exe','excel.exe','outlook.exe','powerpnt.exe','msaccess.exe','onenote.exe')
     technique: T1059
     sub_technique: T1059.001
@@ -139,10 +150,11 @@ rules:
   - id: run_key_persistence
     kind: match
     where: >-
-      action = 'reg_set'
-      AND (registry_path ILIKE '%\CurrentVersion\Run%')
-      AND lower(process_name) IN ('powershell.exe','pwsh.exe','cmd.exe','wscript.exe','cscript.exe','mshta.exe',
-                                  'reg.exe','rundll32.exe','regsvr32.exe')
+      (action = 'reg_set'
+       AND (registry_path ILIKE '%\CurrentVersion\Run%')
+       AND lower(process_name) IN ('powershell.exe','pwsh.exe','cmd.exe','wscript.exe','cscript.exe','mshta.exe',
+                                   'reg.exe','rundll32.exe','regsvr32.exe'))
+      OR (action = 'proc_start' AND command_line ILIKE '%reg%add%\CurrentVersion\Run%')
     technique: T1547
     sub_technique: T1547.001
     tactic: Persistence
@@ -188,7 +200,9 @@ rules:
 
   - id: service_or_task
     kind: match
-    where: "action = 'service_installed'"
+    where: >-
+      action = 'service_installed'
+      OR (action = 'proc_start' AND (command_line ILIKE '%sc create %' OR command_line ILIKE '%sc.exe create %'))
     technique: T1543
     sub_technique: T1543.003
     tactic: Persistence
@@ -196,7 +210,9 @@ rules:
 
   - id: scheduled_task
     kind: match
-    where: "action = 'scheduled_task'"
+    where: >-
+      action = 'scheduled_task'
+      OR (action = 'proc_start' AND command_line ILIKE '%schtasks%/create%')
     technique: T1053
     sub_technique: T1053.005
     tactic: Persistence
@@ -204,7 +220,9 @@ rules:
 
   - id: log_cleared
     kind: match
-    where: "action = 'log_cleared'"
+    where: >-
+      action = 'log_cleared'
+      OR (action = 'proc_start' AND command_line ILIKE '%wevtutil% cl %')
     technique: T1070
     sub_technique: T1070.001
     tactic: Defense Impairment
@@ -221,3 +239,93 @@ rules:
     sub_technique: T1560.001
     tactic: Collection
     severity: 60
+
+  # ---------------- coverage round B2 ----------------
+  - id: suspicious_cmd          # cmd.exe under an unusual parent
+    kind: match
+    where: >-
+      action = 'proc_start' AND lower(process_name) = 'cmd.exe'
+      AND lower(parent_process) IN ('winword.exe','excel.exe','wmiprvse.exe','mshta.exe','w3wp.exe')
+    technique: T1059
+    sub_technique: T1059.003
+    tactic: Execution
+    severity: 70
+
+  - id: wmi_exec                # wmiprvse.exe child shell, or wmic process call create
+    kind: match
+    where: >-
+      action = 'proc_start'
+      AND ((lower(parent_process) = 'wmiprvse.exe' AND lower(process_name) IN ('cmd.exe','powershell.exe'))
+           OR (command_line ILIKE '%wmic%' AND command_line ILIKE '%process call create%'))
+    technique: T1047
+    tactic: Execution
+    severity: 70
+
+  - id: unix_reverse_shell      # bash -i, /dev/tcp/, curl|wget piped to sh
+    kind: match
+    where: >-
+      action = 'proc_start'
+      AND (command_line ILIKE '%bash -i%' OR command_line ILIKE '%/dev/tcp/%'
+           OR regexp_matches(command_line, '(?i)\b(curl|wget)\b[^|]*\|\s*(ba)?sh\b'))
+    technique: T1059
+    sub_technique: T1059.004
+    tactic: Execution
+    severity: 80
+
+  # ---------------- coverage round B3 ----------------
+  - id: indicator_removal_files # rm -rf /var/log, del /f /q
+    kind: match
+    where: >-
+      action = 'proc_start'
+      AND (command_line ILIKE '%rm -rf /var/log%' OR command_line ILIKE '%del /f /q%')
+    technique: T1070
+    sub_technique: T1070.004
+    tactic: Defense Impairment
+    severity: 70
+
+  - id: disable_security_tools  # Set-MpPreference with -Disable
+    kind: match
+    where: >-
+      action = 'proc_start'
+      AND command_line ILIKE '%set-mppreference%' AND command_line ILIKE '%-disable%'
+    technique: T1562
+    sub_technique: T1562.001
+    tactic: Defense Impairment
+    severity: 80
+
+  - id: sudo_escalation         # sudo on a rare (user, host) pair
+    kind: template
+    template: sudo_escalation
+    technique: T1548
+    sub_technique: T1548.003
+    tactic: Privilege Escalation
+    severity: 60
+
+  # ---------------- coverage round B4 ----------------
+  - id: lsass_dump              # mimikatz, sekurlsa, procdump+lsass, comsvcs+minidump
+    kind: match
+    where: >-
+      action = 'proc_start'
+      AND (command_line ILIKE '%mimikatz%' OR lower(process_name) LIKE '%mimikatz%' OR command_line ILIKE '%sekurlsa%'
+           OR (command_line ILIKE '%procdump%' AND command_line ILIKE '%lsass%')
+           OR (command_line ILIKE '%comsvcs%' AND command_line ILIKE '%minidump%'))
+    technique: T1003
+    sub_technique: T1003.001
+    tactic: Credential Access
+    severity: 90
+
+  - id: kerberoasting           # kerberos_tgs 0x17 for many services by one account
+    kind: template
+    template: kerberoasting
+    technique: T1558
+    sub_technique: T1558.003
+    tactic: Credential Access
+    severity: 80
+
+  - id: pass_the_hash           # logon_type 9 + negotiate/ntlm, rare pair
+    kind: template
+    template: pass_the_hash
+    technique: T1550
+    sub_technique: T1550.002
+    tactic: Lateral Movement
+    severity: 80

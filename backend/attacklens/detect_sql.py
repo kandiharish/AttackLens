@@ -88,9 +88,27 @@ def ensure_events(con: duckdb.DuckDBPyConnection, events_glob: str) -> None:
     root = Path(events_glob.split("**")[0])
     if root.exists() and any(root.rglob("*.parquet")):
         db.register_events(con, events_glob)  # db.py owns quoting of the glob
+        fill_missing_columns(con, events_glob)
         return
     log.warning("no event parquet under %s; using an empty events view", root)
     create_empty_events(con)
+
+
+def fill_missing_columns(con: duckdb.DuckDBPyConnection, events_glob: str) -> list[str]:
+    """Parquet written before a schema addition lacks the new canonical columns: re-create `events` with
+    NULL::<type> for each missing one, so rules never hit a binder error. Returns the added column names."""
+    from attacklens import db
+
+    have = {r[0] for r in con.execute("DESCRIBE events").fetchall()}
+    missing = [(c, t) for c, t in CANONICAL_COLUMNS.items() if c not in have]
+    if not missing:
+        return []
+    extra = ", ".join(f"NULL::{t} AS {c}" for c, t in missing)
+    con.execute(f"CREATE OR REPLACE VIEW events AS SELECT *, {extra} FROM read_parquet({sql_path(events_glob)}, "
+                f"hive_partitioning=true, union_by_name=true, hive_types={db.HIVE_TYPES})")
+    log.info("events: %d canonical column(s) absent from Parquet, read as NULL: %s",
+             len(missing), [c for c, _ in missing])
+    return [c for c, _ in missing]
 
 
 def create_empty_events(con: duckdb.DuckDBPyConnection) -> None:
@@ -184,3 +202,18 @@ def finish(rule: dict[str, Any], core_sql: str) -> str:
 
 def empty_raw_alerts_sql() -> str:
     return "SELECT " + ", ".join(f"NULL::{t} AS {c}" for c, t in RAW_ALERT_COLUMNS.items()) + " WHERE false"
+
+
+def window_bursts(part: str, win: int, agg: str, cond: str) -> str:
+    """CTEs over CTE `r` (ts_ms, source_seq, <part cols>, ...): rows inside any [t, t+win) window whose `agg`
+    satisfies `cond` (on column wv), grouped into bursts `bid` (a gap > win starts a new burst). Ends in CTE `mb`."""
+    return f"""
+    w AS (SELECT *, {agg} OVER (PARTITION BY {part} ORDER BY ts_ms
+                               RANGE BETWEEN CURRENT ROW AND {win - 1} FOLLOWING) AS wv FROM r),
+    s AS (SELECT *, max(CASE WHEN {cond} THEN ts_ms END) OVER (PARTITION BY {part} ORDER BY ts_ms, source_seq
+                                                               ROWS UNBOUNDED PRECEDING) AS ls FROM w),
+    m AS (SELECT * FROM s WHERE ls IS NOT NULL AND ts_ms - ls < {win}),
+    g AS (SELECT *, CASE WHEN ts_ms - lag(ts_ms) OVER (PARTITION BY {part} ORDER BY ts_ms, source_seq) <= {win}
+                         THEN 0 ELSE 1 END AS nb FROM m),
+    mb AS (SELECT *, sum(nb) OVER (PARTITION BY {part} ORDER BY ts_ms, source_seq ROWS UNBOUNDED PRECEDING) AS bid
+           FROM g)"""
