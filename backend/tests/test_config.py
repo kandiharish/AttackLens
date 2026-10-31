@@ -117,14 +117,33 @@ def test_thresholds_present(cfg: dict) -> None:
     assert th["seed_confidence"] < th["critical_confidence"] <= 100
 
 
-def _expand(where: str, cfg: dict) -> str:
-    """{ioc.<list>} -> quoted SQL list, as documented in config/rules.yaml. Unknown placeholder -> KeyError."""
-    def rep(m: re.Match) -> str:
-        section, key = m.group(1), m.group(2)
-        vals = cfg[section][key]
-        assert isinstance(vals, list) and vals, f"placeholder {m.group(0)} must name a non-empty list"
-        return "(" + ", ".join("'" + str(v).replace("'", "''") + "'" for v in vals) + ")"
-    return PLACEHOLDER.sub(rep, where)
+def _expand(rule: dict, cfg: dict) -> str:
+    """The product's own {ioc.<list>} expansion (detect.expand_where), so test and pipeline cannot drift."""
+    from attacklens import detect
+    for m in PLACEHOLDER.finditer(rule["where"]):
+        vals = cfg[m.group(1)][m.group(2)]
+        assert isinstance(vals, list) and vals, f"{rule['id']}: placeholder {m.group(0)} must name a non-empty list"
+    return detect.expand_where(rule, cfg.get("ioc") or {})
+
+
+def test_detect_validate_accepts_shipped_config(cfg: dict) -> None:
+    from attacklens import detect
+    detect.validate(cfg)  # raises detect.RuleError naming the rule
+
+
+@pytest.mark.parametrize("bad,needle", [
+    ({"where": "action = 'x' AND nope_column = 1"}, "does not compile"),
+    ({"where": "dst_ip IN {ioc.no_such_list}"}, "unknown placeholder"),
+    ({"technique": "T9999"}, "not in attack_v20"),
+    ({"tactic": "Defense Evasion"}, "not a v20 tactic"),
+])
+def test_detect_validate_rejects_bad_rule(cfg: dict, bad: dict, needle: str) -> None:
+    from attacklens import detect
+    rule = {"id": "zz_probe", "kind": "match", "where": "action = 'log_cleared'", "technique": "T1070",
+            "tactic": "Defense Impairment", "severity": 10, **bad}
+    broken = {**cfg, "rules": {**cfg["rules"], "rules": [*cfg["rules"]["rules"], rule]}}
+    with pytest.raises(detect.RuleError, match=rf"^zz_probe: .*{needle}"):
+        detect.validate(broken)
 
 
 def test_every_match_where_compiles(rules: list[dict], cfg: dict) -> None:
@@ -135,7 +154,7 @@ def test_every_match_where_compiles(rules: list[dict], cfg: dict) -> None:
     for r in rules:
         if r["kind"] != "match":
             continue
-        where = _expand(r["where"], cfg)
+        where = _expand(r, cfg)
         assert "{" not in where, f"{r['id']}: unexpanded placeholder in {where!r}"
         try:
             con.execute(f"EXPLAIN SELECT * FROM events WHERE {where}").fetchall()
