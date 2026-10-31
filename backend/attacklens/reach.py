@@ -23,12 +23,13 @@ log = logging.getLogger(__name__)
 DEFAULT_REACH: dict[str, Any] = {
     "max_hops": 3, "max_results": 20, "ports": [22, 445, 3389, 5985], "admin_logon_types": [3, 10],
     "excluded_logon_ids": ["0x3e7", "0x3e4", "0x3e5"], "ssh_process_names": ["sshd"],
+    "ssh_root_users": ["root"], "sudo_window_ms": 900_000,
     "admin_groups": ["administrators", "domain admins", "enterprise admins"],
     "domain_admin_groups": ["domain admins", "enterprise admins"], "elevated_tactics": ["Privilege Escalation"],
     "crown_jewels": [{"contains": "dc", "tag": "dc"}, {"contains": "file", "tag": "file"},
                      {"contains": "db", "tag": "db"}, {"contains": "web", "tag": "web"}],
 }
-FILES = {"admin": "reach_admin.parquet", "flows": "reach_flows.parquet"}
+FILES = {"admin": "reach_admin.parquet", "flows": "reach_flows.parquet", "ssh": "reach_ssh.parquet"}
 
 
 def reach_params(cfg: dict[str, Any]) -> dict[str, Any]:
@@ -46,6 +47,7 @@ class Frontier:
 class ReachGraph:
     admin: dict[str, list[tuple[str, str]]]          # user -> [(host, evidence)]
     flows: dict[str, list[tuple[str, int, str]]]     # src host -> [(dst host, port, evidence)]
+    ssh: dict[str, list[tuple[str, str]]] = field(default_factory=dict)  # user -> [(host, evidence)], not admin
 
 
 def crown_jewel(host: str, rules: list[dict[str, str]]) -> str | None:
@@ -85,14 +87,17 @@ def _ip_map_sql(work: Path) -> str:
 
 
 def prepare(ctx: RunContext) -> dict[str, int]:
-    """Build work/reach_admin.parquet (user, host, ts_ms, evidence) and work/reach_flows.parquet
-    (src_host, dst_host, port, ts_ms, evidence). Filters candidate actions before every join."""
+    """Build work/reach_admin.parquet (user, host, ts_ms, evidence), work/reach_ssh.parquet (same columns: plain
+    SSH logons, a reach hop but not admin) and work/reach_flows.parquet (src_host, dst_host, port, ts_ms, evidence).
+    SSH counts as AdminTo only as root or with a sudo proc_start by the same user on the same host within
+    sudo_window_ms after the logon (§6.7 "sudo/root SSH"). Filters candidate actions before every join."""
     p, con, work = reach_params(ctx.cfg), ctx.con, ctx.work_dir
     ev = _events_view(ctx)
-    admin_out, flows_out = work / FILES["admin"], work / FILES["flows"]
+    admin_out, flows_out, ssh_out = work / FILES["admin"], work / FILES["flows"], work / FILES["ssh"]
     if ev is None:
-        con.execute(f"COPY (SELECT NULL::VARCHAR AS \"user\", NULL::VARCHAR AS host, NULL::BIGINT AS ts_ms, "
-                    f"NULL::VARCHAR AS evidence WHERE FALSE) TO '{sql_path(admin_out)}' (FORMAT PARQUET)")
+        for out in (admin_out, ssh_out):
+            con.execute(f"COPY (SELECT NULL::VARCHAR AS \"user\", NULL::VARCHAR AS host, NULL::BIGINT AS ts_ms, "
+                        f"NULL::VARCHAR AS evidence WHERE FALSE) TO '{sql_path(out)}' (FORMAT PARQUET)")
         con.execute(f"COPY (SELECT NULL::VARCHAR AS src_host, NULL::VARCHAR AS dst_host, NULL::INTEGER AS port, "
                     f"NULL::BIGINT AS ts_ms, NULL::VARCHAR AS evidence WHERE FALSE) TO '{sql_path(flows_out)}' "
                     "(FORMAT PARQUET)")
@@ -101,6 +106,29 @@ def prepare(ctx: RunContext) -> dict[str, int]:
     sshp, groups = _lit(p["ssh_process_names"]), _lit(p["admin_groups"])
     ports = _lit([int(x) for x in p["ports"]])
     not_machine = "NOT coalesce(is_machine, FALSE) AND NOT ends_with(u, '$')"
+    roots, sudo_win = _lit(p["ssh_root_users"]), int(p["sudo_window_ms"])
+    con.execute(f"""CREATE OR REPLACE TEMP TABLE _reach_ssh AS
+        WITH ev AS ({ev}),
+        s AS (SELECT lower(host) AS host, lower(coalesce(target_user, src_user)) AS u, ts_ms, is_machine FROM ev
+              WHERE ts_ok AND action = 'login_success' AND host IS NOT NULL
+                AND (lower(process_name) IN ({sshp}) OR dst_port = 22)),
+        sudo AS (SELECT DISTINCT lower(host) AS host, lower(coalesce(src_user, target_user)) AS u, ts_ms FROM ev
+                 WHERE ts_ok AND action = 'proc_start' AND host IS NOT NULL
+                   AND (lower(process_name) = 'sudo' OR lower(ltrim(command_line)) LIKE 'sudo %')),
+        su AS (SELECT s.host, s.u, s.ts_ms, min(d.ts_ms) AS sudo_ms FROM s JOIN sudo d
+                 ON s.host = d.host AND s.u = d.u AND d.ts_ms BETWEEN s.ts_ms AND s.ts_ms + {sudo_win}
+               GROUP BY s.host, s.u, s.ts_ms)
+        SELECT s.u, s.host, s.ts_ms, s.is_machine,
+               s.u IN ({roots}) OR su.sudo_ms IS NOT NULL AS elevated,
+               CASE WHEN s.u IN ({roots}) THEN 'ssh logon as root at ' || {_iso('s.ts_ms')}
+                    WHEN su.sudo_ms IS NOT NULL THEN 'ssh logon at ' || {_iso('s.ts_ms')} || ' + sudo at '
+                         || {_iso('su.sudo_ms')}
+                    ELSE 'ssh logon at ' || {_iso('s.ts_ms')} END AS evidence
+        FROM s LEFT JOIN su ON s.host = su.host AND s.u = su.u AND s.ts_ms = su.ts_ms
+        WHERE s.u IS NOT NULL""")
+    con.execute(f"""COPY (SELECT u AS "user", host, min(ts_ms) AS ts_ms, arg_min(evidence, ts_ms) AS evidence
+        FROM _reach_ssh WHERE NOT elevated AND {not_machine} GROUP BY u, host ORDER BY u, host)
+        TO '{sql_path(ssh_out)}' (FORMAT PARQUET)""")
     con.execute(f"""COPY (
         WITH ev AS ({ev}),
         logons AS (SELECT lower(host) AS host, lower(logon_id) AS lid, logon_type, ts_ms, event_id, is_machine,
@@ -114,8 +142,7 @@ def prepare(ctx: RunContext) -> dict[str, int]:
                 FROM logons l JOIN privs p ON l.host = p.host AND l.lid = p.lid
                 WHERE l.logon_type IN ({ltypes}) AND l.lid NOT IN ({excl}) AND {not_machine}
                   AND l.u IS NOT NULL),
-        ssh AS (SELECT u, host, ts_ms, 'ssh logon at ' || {_iso('ts_ms')} AS evidence FROM logons
-                WHERE (lower(process_name) IN ({sshp}) OR dst_port = 22) AND u IS NOT NULL AND {not_machine}),
+        ssh AS (SELECT u, host, ts_ms, evidence FROM _reach_ssh WHERE elevated AND {not_machine}),
         grp AS (SELECT lower(target_user) AS u, lower(host) AS host, ts_ms, is_machine,
                        coalesce(event_id, 4732)::VARCHAR || ' added to ' || group_name || ' at '
                        || {_iso('ts_ms')} AS evidence
@@ -138,9 +165,10 @@ def prepare(ctx: RunContext) -> dict[str, int]:
         FROM r WHERE src_host IS NOT NULL AND dst_host IS NOT NULL AND src_host <> dst_host
         GROUP BY src_host, dst_host, port ORDER BY src_host, dst_host, port) TO '{sql_path(flows_out)}'
         (FORMAT PARQUET)""")
-    n_a = con.execute(f"SELECT count(*) FROM read_parquet('{sql_path(admin_out)}')").fetchone()[0]
-    n_f = con.execute(f"SELECT count(*) FROM read_parquet('{sql_path(flows_out)}')").fetchone()[0]
-    return {"admin_edges": int(n_a), "flow_edges": int(n_f)}
+    con.execute("DROP TABLE IF EXISTS _reach_ssh")
+    n_a, n_f, n_s = (con.execute(f"SELECT count(*) FROM read_parquet('{sql_path(x)}')").fetchone()[0]
+                     for x in (admin_out, flows_out, ssh_out))
+    return {"admin_edges": int(n_a), "flow_edges": int(n_f), "ssh_edges": int(n_s)}
 
 
 def load_graph(ctx: RunContext) -> ReachGraph:
@@ -165,7 +193,11 @@ def load_graph(ctx: RunContext) -> ReachGraph:
         if grants:
             have = {h for h, _ in lst}
             lst.extend((dc, grants[0]) for dc in dcs if dc not in have)
-    return ReachGraph(admin=admin, flows=flows)
+    ssh: dict[str, list[tuple[str, str]]] = {}
+    for u, h, ev in ctx.con.execute(f"SELECT \"user\", host, evidence FROM read_parquet("
+                                    f"'{sql_path(work / FILES['ssh'])}') ORDER BY 1, 2").fetchall():
+        ssh.setdefault(u, []).append((h, ev))
+    return ReachGraph(admin=admin, flows=flows, ssh=ssh)
 
 
 def compute(ctx: RunContext, frontier: Frontier, graph: ReachGraph | None = None) -> list[ReachNext]:
@@ -176,12 +208,15 @@ def compute(ctx: RunContext, frontier: Frontier, graph: ReachGraph | None = None
     best: dict[str, tuple[int, str | None, str]] = {}
     q: deque[tuple[str, int, str | None]] = deque((h, 0, None) for h in sorted(start_hosts))
     seen = set(start_hosts)
-    for u in sorted({u.lower() for u in frontier.users if u and not u.endswith("$")}):
-        for h, ev in g.admin.get(u, []):
-            if h not in seen:
-                seen.add(h)
-                best[h] = (1, u, ev)
-                q.append((h, 1, u))
+    users = sorted({u.lower() for u in frontier.users if u and not u.endswith("$")})
+    # Hop 1 via credentials: AdminTo first (stronger evidence wins), then plain SSH logons (reach, not admin).
+    creds = [(u, h, ev) for u in users for h, ev in g.admin.get(u, [])]
+    creds += [(u, h, ev) for u in users for h, ev in g.ssh.get(u, [])]
+    for u, h, ev in creds:
+        if h not in seen:
+            seen.add(h)
+            best[h] = (1, u, ev)
+            q.append((h, 1, u))
     while q:
         host, hops, via = q.popleft()
         if hops >= max_hops:

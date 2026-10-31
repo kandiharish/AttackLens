@@ -66,6 +66,10 @@ reach:
   admin_logon_types: [3, 10]
   excluded_logon_ids: ["0x3e7", "0x3e4", "0x3e5"]
   ssh_process_names: [sshd]
+  # SSH = AdminTo only as one of these users, or with a sudo proc_start (process 'sudo' / command 'sudo ...') by
+  # the same user on the same host within sudo_window_ms after the logon. Plain SSH = reach hop (via_user), not admin.
+  ssh_root_users: [root]
+  sudo_window_ms: 900000
   admin_groups: [administrators, "domain admins", "enterprise admins"]
   domain_admin_groups: ["domain admins", "enterprise admins"]
   elevated_tactics: ["Privilege Escalation"]

@@ -333,8 +333,17 @@ def run(ctx: RunContext) -> dict[str, Any]:
                                    "max_confidence": round(max_conf, 1), "reason": reason})
                 continue
             c, rest = _extract(ids, eps, by_j, g, p)
-            kept.append(c)
-            n_out += 1
+            # Re-gate the extracted incident (path + direct neighbours): it can fail even when its component passed.
+            c_reason, c_tactics, c_conf = _gate_ids(c.ids, eps, allow, p)
+            if c_reason is None:
+                kept.append(c)
+                n_out += 1
+            else:
+                reasons["extracted path fails gate"] = reasons.get("extracted path fails gate", 0) + 1
+                suppressed.append({"episode_ids": c.ids[: p["sup_ids"]], "episode_count": len(c.ids),
+                                   "tactics": sorted(c_tactics, key=lambda t: TACTIC_IDX.get(t, 99)),
+                                   "max_confidence": round(c_conf, 1),
+                                   "reason": f"extracted path fails gate: {c_reason}"})
             if rest:
                 # Peel: the remainder may hold another attack that a noise chain had merged in. Re-split, re-gate.
                 subs = sorted((sorted(cc) for cc in nx.connected_components(g.subgraph(rest))), key=lambda cc: cc[0])
