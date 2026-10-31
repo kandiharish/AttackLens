@@ -33,7 +33,19 @@ def _ip_fb(col: str, fallback: bool) -> str:
     return f"CASE WHEN {col} IS NOT NULL AND al_is_internal_ip({col}) THEN {col} END" if fallback else "NULL"
 
 
-def episodes_sql(work: Path, bucket_ms: int, seed_conf: float, fallback: bool = False) -> str:
+def _entities_sql(fallback: bool, fb_sources: list[str]) -> str:
+    """Host entities for N (§6.1): reporting hosts, except that for entity-fallback sources (firewalls) the
+    internal source IPs are the hosts (the device name is one box, not N endpoints)."""
+    if not fallback:
+        return f"SELECT host AS ent FROM events WHERE {OK} AND host IS NOT NULL"
+    srcs = ", ".join("'" + x.replace("'", "''") + "'" for x in fb_sources) or "''"
+    return (f"SELECT host AS ent FROM events WHERE {OK} AND host IS NOT NULL AND source_type NOT IN ({srcs}) "
+            f"UNION ALL SELECT src_ip FROM events WHERE {OK} AND source_type IN ({srcs}) AND src_ip IS NOT NULL "
+            f"AND al_is_internal_ip(src_ip)")
+
+
+def episodes_sql(work: Path, bucket_ms: int, seed_conf: float, fallback: bool = False,
+                 fb_sources: list[str] | None = None) -> str:
     raw = _src(work / "raw_alerts.parquet", RAW_ALERT_COLUMNS)
     hip = _src(work / "host_ip_map.parquet", {"ip": "VARCHAR", "host": "VARCHAR", "first_ms": "BIGINT",
                                                 "last_ms": "BIGINT"})
@@ -57,7 +69,7 @@ def episodes_sql(work: Path, bucket_ms: int, seed_conf: float, fallback: bool = 
                list_slice(flatten(list(source_keys ORDER BY ts_ms, source_seq)), 1, 50) AS source_keys
         FROM r2 GROUP BY ALL
     ),
-    n AS (SELECT greatest(count(DISTINCT host), 1)::DOUBLE AS n FROM events WHERE {OK} AND host IS NOT NULL),
+    n AS (SELECT greatest(count(DISTINCT ent), 1)::DOUBLE AS n FROM ({_entities_sql(fallback, fb_sources or [])})),
     s AS (
         SELECT g.*, b.base_freq,
                ln(1 + n.n / greatest(1.0, coalesce(b.base_freq, 0.0))) / ln(1 + n.n) AS rarity
@@ -127,7 +139,8 @@ def run(ctx: RunContext) -> dict[str, Any]:
     cap = int(th.get("episode_cap", 25000))
     con.execute("CREATE OR REPLACE TEMP TABLE al_episodes AS SELECT *, TRUE AS keep FROM ("
                 + episodes_sql(work, int(th.get("episode_bucket_ms", 300000)), float(th.get("seed_confidence", 65)),
-                               bool(th.get("entity_fallback_ip", False)))
+                               bool(th.get("entity_fallback_ip", False)),
+                               [str(x) for x in th.get("entity_fallback_source_types") or []])
                 + ")")
     total = int(con.execute("SELECT count(*) FROM al_episodes").fetchone()[0])
     spilled = 0

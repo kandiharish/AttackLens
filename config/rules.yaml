@@ -55,6 +55,7 @@ thresholds:
   scan_min_hosts: 20             # ... or distinct dst_ip on one dst_port ...
   scan_window_ms: 60000          # ... within 60 s
   scan_horizontal_internal_only: true   # count only internal dst_ip for the many-hosts variant
+  lateral_direction: internal    # internal_lateral: internal src only (inbound_remote_service: inbound)
   lateral_max_triple_seen: 2     # internal_lateral: (src_ip, dst_ip, dst_port) seen <= this many times
   lateral_ports: {445: T1021.002, 3389: T1021.001, 5985: T1021.006, 5986: T1021.006, 22: T1021.004}
   cfg_after_login_window_ms: 7200000  # fw_config_change_after_login: change within 2 h of external login
@@ -111,6 +112,7 @@ rules:
   - id: beaconing
     kind: template
     template: beaconing
+    filter: "source_type NOT IN ('fortigate_kv', 'firewall_csv') OR NOT al_is_internal_ip(dst_ip)"   # fw: external C2 only
     technique: T1071
     sub_technique: T1071.001
     tactic: Command and Control
@@ -388,6 +390,7 @@ rules:
     kind: template
     template: signature_map
     action: ips_alert
+    filter: "coalesce(lower(outcome), '') NOT IN ('failure', 'blocked', 'dropped', 'reset', 'deny')"   # allowed hits only; blocked: ips_blocked
     technique: T1190
     tactic: Initial Access
     severity: 90
@@ -399,9 +402,9 @@ rules:
       - {pattern: 'DNS.Zone.Transfer', technique: T1590, sub_technique: T1590.002, tactic: Reconnaissance}
       - {pattern: 'SMB.*Information.Disclosure', technique: T1210, tactic: Lateral Movement}
 
-  - id: av_malware_download     # antivirus detection on a transfer
+  - id: av_malware_download     # antivirus detection the device let through (blocked ones: av_blocked)
     kind: match
-    where: "action = 'av_alert'"
+    where: "action = 'av_alert' AND coalesce(lower(outcome), '') NOT IN ('failure', 'blocked', 'dropped', 'reset', 'deny')"   # outcome list = thresholds.blocked_outcomes
     technique: T1105
     tactic: Command and Control
     severity: 80
@@ -420,6 +423,14 @@ rules:
     technique: T1021
     tactic: Lateral Movement
     severity: 65
+
+  - id: inbound_remote_service  # rare allowed internet -> internal SMB/RDP/WinRM/SSH connection
+    kind: template
+    template: internal_lateral
+    params: {lateral_direction: inbound}
+    technique: T1021
+    tactic: Lateral Movement
+    severity: 70
 
   # ---------------- firewall pack D ----------------
   - id: fw_config_change_after_login   # config change soon after the same user's external login
@@ -444,3 +455,20 @@ rules:
     technique: T1189
     tactic: Initial Access
     severity: 60
+
+  # ---------------- firewall pack: prevented detections (bounded: one alert per subject per day) ----------------
+  - id: av_blocked              # AV detections the device blocked
+    kind: template
+    template: blocked_daily
+    actions: [av_alert]
+    technique: T1105
+    tactic: Command and Control
+    severity: 30
+
+  - id: ips_blocked             # IPS detections the device blocked
+    kind: template
+    template: blocked_daily
+    actions: [ips_alert]
+    technique: T1190
+    tactic: Initial Access
+    severity: 30

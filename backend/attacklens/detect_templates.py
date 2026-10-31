@@ -148,14 +148,15 @@ def beaconing(con: duckdb.DuckDBPyConnection, rule: dict[str, Any], th: dict[str
     """T1071.001: same (subject_host, destination) with >= beacon_min_conns connections in one session (gaps
     > beacon_session_gap_ms split sessions) and inter-arrival coefficient of variation < beacon_max_cv."""
     n, cv, gap = int(th["beacon_min_conns"]), float(th["beacon_max_cv"]), int(th["beacon_session_gap_ms"])
+    flt = rule_filter(rule)
     core = f"""
     WITH c0 AS (SELECT host, src_ip, coalesce(dst_ip, lower(dst_domain)) AS dk FROM events
-                WHERE {OK} AND action IN ('conn_out', 'conn_allowed') AND coalesce(dst_ip, dst_domain) IS NOT NULL),
+                WHERE {OK} AND action IN ('conn_out', 'conn_allowed') AND coalesce(dst_ip, dst_domain) IS NOT NULL{flt}),
     cand AS (SELECT host, src_ip, dk FROM c0 GROUP BY ALL HAVING count(*) >= {n}),
     c AS (SELECT e.ts_ms, e.source_seq, e.source_type, e.action, e.host, e.src_ip, e.dst_ip, e.src_user,
                  e.target_user,
                  e.src_zone, e.dst_zone, e.raw_line, coalesce(e.dst_ip, lower(e.dst_domain)) AS dk
-          FROM events e WHERE {OK} AND e.action IN ('conn_out', 'conn_allowed')
+          FROM (SELECT * FROM events WHERE {OK}{flt}) e WHERE e.action IN ('conn_out', 'conn_allowed')
                          AND coalesce(e.dst_ip, e.dst_domain) IS NOT NULL),
     cc AS (SELECT c.*, {subject_host_expr('c', 'm', th)} AS sh FROM c
            SEMI JOIN cand ON c.host = cand.host AND c.src_ip IS NOT DISTINCT FROM cand.src_ip AND c.dk = cand.dk

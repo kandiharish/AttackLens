@@ -9,7 +9,8 @@ from typing import Any
 
 import duckdb
 
-from attacklens.detect_sql import OK, ev_keys, ev_lines, finish, q, sql_list, subject_host_expr, window_bursts
+from attacklens.detect_sql import (OK, ev_keys, ev_lines, finish, q, rule_filter, sql_list, subject_host_expr,
+                                   window_bursts)
 
 CONN = "('conn_allowed', 'conn_denied')"
 
@@ -49,17 +50,23 @@ def port_scan(con: duckdb.DuckDBPyConnection, rule: dict[str, Any], th: dict[str
 
 
 def internal_lateral(con: duckdb.DuckDBPyConnection, rule: dict[str, Any], th: dict[str, Any]) -> str:
-    """T1021.x: conn_allowed internal -> internal on a lateral_ports port, for a (src_ip, dst_ip, dst_port)
-    triple seen <= lateral_max_triple_seen times in the data set. Sub-technique from lateral_ports."""
+    """T1021.x: conn_allowed on a lateral_ports port to an internal dst_ip, for a (src_ip, dst_ip, dst_port)
+    triple seen <= lateral_max_triple_seen times in the data set. lateral_direction: internal (default; internal
+    src only) or inbound (external src only). Sub-technique from lateral_ports. Subject = the source's host, else
+    the internal endpoint IP (inbound: the internal destination)."""
     mx = int(th["lateral_max_triple_seen"])
     ports = {int(k): str(v) for k, v in (th.get("lateral_ports") or {}).items()}
     if not ports:
         ports = {0: "T1021"}
     sub = "CASE dst_port " + " ".join(f"WHEN {p} THEN {q(t)}" for p, t in ports.items()) + " END"
     mc = int(th.get("evidence_max_chars", 300))
+    direction = str(th.get("lateral_direction", "internal"))
+    if direction not in ("internal", "inbound"):
+        raise ValueError(f"lateral_direction {direction!r}: expected internal or inbound")
+    src_ok = "NOT al_is_internal_ip(e.src_ip)" if direction == "inbound" else "al_is_internal_ip(e.src_ip)"
     core = f"""
     WITH c AS ({_conn_rows(th, f"AND e.action = 'conn_allowed' AND e.dst_port IN ({', '.join(map(str, ports))}) "
-                               "AND al_is_internal_ip(e.src_ip) AND al_is_internal_ip(e.dst_ip)")}),
+                               f"AND {src_ok} AND al_is_internal_ip(e.dst_ip)")}),
     t AS (SELECT src_ip, dst_ip, dst_port FROM c GROUP BY ALL HAVING count(*) <= {mx})
     SELECT 'primary' AS label, {sub} AS sub_technique_id, ts_ms, ts_ms AS last_ts_ms, source_seq, host,
            sh AS subject_host, NULL AS src_user, NULL AS target_user, src_ip, dst_ip, 1 AS raw_alert_count,
@@ -89,7 +96,7 @@ def signature_map(con: duckdb.DuckDBPyConnection, rule: dict[str, Any], th: dict
     label = "CASE " + " ".join(f"WHEN regexp_matches(e.signature, {q('(?i)' + str(s['pattern']))}) THEN 'sig{i}'"
                                for i, s in enumerate(sigs)) + " END" if sigs else "NULL"
     core = f"""
-    WITH e AS (SELECT * FROM events WHERE {OK} AND action = {q(action)} AND signature IS NOT NULL),
+    WITH e AS (SELECT * FROM events WHERE {OK} AND action = {q(action)} AND signature IS NOT NULL{rule_filter(rule)}),
     s AS (SELECT e.*, {label} AS lbl, {_severity_sql(th)} AS sev FROM e)
     SELECT s.lbl AS label, NULL AS sub_technique_id, s.ts_ms, s.ts_ms AS last_ts_ms, s.source_seq, s.host,
            {subject_host_expr('s', 'm', th)} AS subject_host, s.src_user, s.target_user, s.src_ip, s.dst_ip,
@@ -122,7 +129,28 @@ def config_change_after_login(con: duckdb.DuckDBPyConnection, rule: dict[str, An
     return finish(rule, core)
 
 
+def blocked_daily(con: duckdb.DuckDBPyConnection, rule: dict[str, Any], th: dict[str, Any]) -> str:
+    """Prevented detections (rule `actions`, outcome in blocked_outcomes) as ONE low-severity alert per
+    (subject, UTC day), so blocked noise stays visible but bounded (never one episode per hit)."""
+    acts = sql_list([str(a) for a in rule.get("actions") or []])
+    blocked = sql_list([str(o).lower() for o in th.get("blocked_outcomes") or []])
+    core = f"""
+    WITH e AS (SELECT * FROM events WHERE {OK} AND action IN {acts} AND lower(outcome) IN {blocked}),
+    r AS (SELECT e.*, {subject_host_expr('e', 'm', th)} AS sh FROM e LEFT JOIN al_ip_host m ON m.ip = e.src_ip),
+    b AS (SELECT sh, ts_ms // 86400000 AS d, min(ts_ms) AS ts_ms, max(ts_ms) AS last_ts_ms,
+                 min(source_seq) AS source_seq, count(*) AS n, al_mode(list(host)) AS host,
+                 al_mode(list(src_ip)) AS src_ip, al_mode(list(dst_ip)) AS dst_ip,
+                 {ev_lines(th)} AS ev, {ev_keys(th)} AS keys
+          FROM r GROUP BY sh, d)
+    SELECT 'primary' AS label, NULL AS sub_technique_id, ts_ms, last_ts_ms, source_seq, host, sh AS subject_host,
+           NULL AS src_user, NULL AS target_user, src_ip, dst_ip, n AS raw_alert_count, ev AS evidence_lines,
+           keys AS source_keys FROM b
+    """
+    return finish(rule, core)
+
+
 TEMPLATES3 = {
+    "blocked_daily": blocked_daily,
     "config_change_after_login": config_change_after_login,
     "signature_map": signature_map,
     "port_scan": port_scan,
