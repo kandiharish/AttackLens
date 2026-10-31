@@ -172,6 +172,7 @@ def _run_copies(ctx: RunContext, units: list[dict[str, Any]], events_dir: Path) 
     budget = int(float(ing.get("batch_bytes", 2e9)))
     old_threads = ctx.con.execute("SELECT current_setting('threads')").fetchone()[0]
     old_flush = ctx.con.execute("SELECT current_setting('partitioned_write_flush_threshold')").fetchone()[0]
+    old_open = ctx.con.execute("SELECT current_setting('partitioned_write_max_open_files')").fetchone()[0]
     for st in _copy_settings(ctx):
         ctx.con.execute(st)
     written = 0
@@ -187,6 +188,7 @@ def _run_copies(ctx: RunContext, units: list[dict[str, Any]], events_dir: Path) 
     finally:
         ctx.con.execute(f"SET threads={int(old_threads)}")
         ctx.con.execute(f"SET partitioned_write_flush_threshold={int(old_flush)}")
+        ctx.con.execute(f"SET partitioned_write_max_open_files={int(old_open)}")
     return written
 
 
