@@ -1,0 +1,406 @@
+{
+ "id": "inc-5e7a11fd",
+ "risk": 84,
+ "first_ts": "2026-10-26T01:10:00Z",
+ "last_ts": "2026-10-26T02:40:12Z",
+ "merged_alert_count": 1998,
+ "episode_count": 11,
+ "entry_point": {
+  "step": 0,
+  "summary": "Password spraying on user:vpn_jdoe from ip:203.0.113.66 against SSL-VPN on host:fgt60ftk-sim"
+ },
+ "tactics": [
+  "Credential Access",
+  "Initial Access",
+  "Discovery",
+  "Lateral Movement",
+  "Exfiltration"
+ ],
+ "gaps": [
+  "Execution",
+  "Persistence",
+  "Privilege Escalation",
+  "Stealth",
+  "Defense Impairment",
+  "Collection",
+  "Command and Control"
+ ],
+ "backbone": [
+  {
+   "step": 0,
+   "episode_id": "e101",
+   "ts": "2026-10-26T01:10:00Z",
+   "technique_id": "T1110",
+   "sub_technique_id": "T1110.003",
+   "technique_name": "Password Spraying",
+   "tactic": "Credential Access",
+   "rule_id": "fgt_vpn_bruteforce",
+   "host": "fgt60ftk-sim",
+   "user": "vpn_jdoe",
+   "src_ip": "203.0.113.66",
+   "dst_ip": null,
+   "severity": 80,
+   "confidence": 78,
+   "merged_alert_count": 142,
+   "evidence": [
+    "date=2026-10-26 time=01:10:02 devname=\"fgt60ftk-sim\" logid=\"0101039426\" type=\"event\" subtype=\"vpn\" action=\"ssl-login-fail\" remip=203.0.113.66 user=\"vpn_jdoe\" reason=\"sslvpn_login_permission_denied\" msg=\"SSL user failed to logged in\"",
+    "date=2026-10-26 time=01:31:44 devname=\"fgt60ftk-sim\" logid=\"0101039947\" type=\"event\" subtype=\"vpn\" action=\"tunnel-up\" remip=203.0.113.66 user=\"vpn_jdoe\" tunnelip=10.212.134.200 msg=\"SSL tunnel established\""
+   ]
+  },
+  {
+   "step": 1,
+   "episode_id": "e102",
+   "ts": "2026-10-26T01:31:44Z",
+   "technique_id": "T1133",
+   "sub_technique_id": null,
+   "technique_name": "External Remote Services",
+   "tactic": "Initial Access",
+   "rule_id": "fgt_vpn_new_geo",
+   "host": "fgt60ftk-sim",
+   "user": "vpn_jdoe",
+   "src_ip": "203.0.113.66",
+   "dst_ip": "10.10.20.15",
+   "severity": 75,
+   "confidence": 74,
+   "merged_alert_count": 1,
+   "evidence": [
+    "date=2026-10-26 time=01:33:10 devname=\"fgt60ftk-sim\" devid=\"FGT60FTK0000SIM0\" logid=\"0000000013\" type=\"traffic\" subtype=\"forward\" level=\"notice\" vd=\"root\" srcip=10.212.134.200 srcintf=\"ssl.root\" dstip=10.10.20.15 dstport=3389 dstintf=\"internal\" proto=6 action=\"accept\" policyid=7 service=\"RDP\" user=\"vpn_jdoe\" sentbyte=48211 rcvdbyte=1903311"
+   ]
+  },
+  {
+   "step": 2,
+   "episode_id": "e104",
+   "ts": "2026-10-26T01:48:05Z",
+   "technique_id": "T1046",
+   "sub_technique_id": null,
+   "technique_name": "Network Service Discovery",
+   "tactic": "Discovery",
+   "rule_id": "fgt_internal_scan",
+   "host": "10.10.20.15",
+   "user": null,
+   "src_ip": "10.10.20.15",
+   "dst_ip": null,
+   "severity": 60,
+   "confidence": 66,
+   "merged_alert_count": 1840,
+   "evidence": [
+    "date=2026-10-26 time=01:48:05 devname=\"fgt60ftk-sim\" devid=\"FGT60FTK0000SIM0\" logid=\"0000000013\" type=\"traffic\" subtype=\"forward\" level=\"notice\" vd=\"root\" srcip=10.10.20.15 srcport=50112 srcintf=\"internal\" dstip=10.10.30.4 dstport=445 dstintf=\"servers\" proto=6 action=\"deny\" policyid=0 service=\"SMB\" sentbyte=0 rcvdbyte=0 crscore=30 craction=131072 crlevel=\"high\" srccountry=\"Reserved\" dstcountry=\"Reserved\" appcat=\"unscanned\" XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+    "date=2026-10-26 time=01:48:06 devname=\"fgt60ftk-sim\" devid=\"FGT60FTK0000SIM0\" logid=\"0000000013\" type=\"traffic\" subtype=\"forward\" level=\"notice\" vd=\"root\" srcip=10.10.20.15 srcport=50113 dstip=10.10.30.5 dstport=445 action=\"accept\" service=\"SMB\"",
+    "date=2026-10-26 time=01:48:06 devname=\"fgt60ftk-sim\" devid=\"FGT60FTK0000SIM0\" logid=\"0000000013\" type=\"traffic\" subtype=\"forward\" level=\"notice\" vd=\"root\" srcip=10.10.20.15 srcport=50114 dstip=10.10.30.6 dstport=135 action=\"deny\" service=\"DCE-RPC\"",
+    "date=2026-10-26 time=01:48:07 devname=\"fgt60ftk-sim\" devid=\"FGT60FTK0000SIM0\" logid=\"0000000013\" type=\"traffic\" subtype=\"forward\" level=\"notice\" vd=\"root\" srcip=10.10.20.15 srcport=50115 dstip=10.10.30.7 dstport=22 action=\"deny\" service=\"SSH\""
+   ]
+  },
+  {
+   "step": 3,
+   "episode_id": "e106",
+   "ts": "2026-10-26T02:05:31Z",
+   "technique_id": "T1021",
+   "sub_technique_id": "T1021.002",
+   "technique_name": "SMB/Windows Admin Shares",
+   "tactic": "Lateral Movement",
+   "rule_id": "fgt_smb_after_scan",
+   "host": "10.10.30.5",
+   "user": null,
+   "src_ip": "10.10.20.15",
+   "dst_ip": "10.10.30.5",
+   "severity": 78,
+   "confidence": 72,
+   "merged_alert_count": 6,
+   "evidence": [
+    "date=2026-10-26 time=02:05:31 devname=\"fgt60ftk-sim\" devid=\"FGT60FTK0000SIM0\" logid=\"0000000013\" type=\"traffic\" subtype=\"forward\" level=\"notice\" vd=\"root\" srcip=10.10.20.15 srcport=50980 dstip=10.10.30.5 dstport=445 action=\"accept\" policyid=12 service=\"SMB\" app=\"SMB\" sentbyte=2201933 rcvdbyte=88123 duration=412"
+   ]
+  },
+  {
+   "step": 4,
+   "episode_id": "e109",
+   "ts": "2026-10-26T02:40:12Z",
+   "technique_id": "T1048",
+   "sub_technique_id": null,
+   "technique_name": "Exfiltration Over Alternative Protocol",
+   "tactic": "Exfiltration",
+   "rule_id": "fgt_exfil_volume",
+   "host": "10.10.30.5",
+   "user": null,
+   "src_ip": "10.10.30.5",
+   "dst_ip": "198.51.100.200",
+   "severity": 90,
+   "confidence": 88,
+   "merged_alert_count": 9,
+   "evidence": [
+    "date=2026-10-26 time=02:40:12 devname=\"fgt60ftk-sim\" devid=\"FGT60FTK0000SIM0\" logid=\"0000000013\" type=\"traffic\" subtype=\"forward\" level=\"notice\" vd=\"root\" srcip=10.10.30.5 srcport=61002 srcintf=\"servers\" dstip=198.51.100.200 dstport=8443 dstintf=\"wan1\" proto=6 action=\"accept\" policyid=3 service=\"tcp/8443\" app=\"SSL\" sentbyte=734003200 rcvdbyte=120331 dstcountry=\"Reserved\"",
+    "<script>alert(\"fgt\")</script> devname must render as text"
+   ]
+  }
+ ],
+ "branches": [],
+ "edges": [
+  {
+   "from": "e101",
+   "to": "e102",
+   "rule": "R2",
+   "weight": 0.95,
+   "why_linked": "Same account vpn_jdoe from 203.0.113.66: failures then SSL tunnel up, 21m42s apart"
+  },
+  {
+   "from": "e102",
+   "to": "e104",
+   "rule": "R1",
+   "weight": 1.22,
+   "why_linked": "VPN session landed on 10.10.20.15 (RDP); scan from 10.10.20.15 began 14m55s later"
+  },
+  {
+   "from": "e104",
+   "to": "e106",
+   "rule": "R1",
+   "weight": 1.31,
+   "why_linked": "10.10.30.5 accepted SMB during the scan; SMB session from 10.10.20.15 17m26s later"
+  },
+  {
+   "from": "e106",
+   "to": "e109",
+   "rule": "R4",
+   "weight": 1.12,
+   "why_linked": "10.10.30.5 sent 700 MB to 198.51.100.200:8443 34m41s after inbound SMB"
+  }
+ ],
+ "graph": {
+  "nodes": [
+   {
+    "id": "ip:203.0.113.66",
+    "type": "ip",
+    "label": "203.0.113.66",
+    "compromised": false
+   },
+   {
+    "id": "user:vpn_jdoe",
+    "type": "user",
+    "label": "vpn_jdoe",
+    "compromised": true
+   },
+   {
+    "id": "host:fgt60ftk-sim",
+    "type": "host",
+    "label": "fgt60ftk-sim",
+    "compromised": false
+   },
+   {
+    "id": "ip:10.10.20.15",
+    "type": "ip",
+    "label": "10.10.20.15",
+    "compromised": true
+   },
+   {
+    "id": "ip:10.10.30.1",
+    "type": "ip",
+    "label": "10.10.30.1",
+    "compromised": false
+   },
+   {
+    "id": "ip:10.10.30.2",
+    "type": "ip",
+    "label": "10.10.30.2",
+    "compromised": false
+   },
+   {
+    "id": "ip:10.10.30.3",
+    "type": "ip",
+    "label": "10.10.30.3",
+    "compromised": false
+   },
+   {
+    "id": "ip:10.10.30.4",
+    "type": "ip",
+    "label": "10.10.30.4",
+    "compromised": false
+   },
+   {
+    "id": "ip:10.10.30.5",
+    "type": "ip",
+    "label": "10.10.30.5",
+    "compromised": true
+   },
+   {
+    "id": "ip:10.10.30.6",
+    "type": "ip",
+    "label": "10.10.30.6",
+    "compromised": false
+   },
+   {
+    "id": "ip:10.10.30.7",
+    "type": "ip",
+    "label": "10.10.30.7",
+    "compromised": false
+   },
+   {
+    "id": "ip:10.10.30.8",
+    "type": "ip",
+    "label": "10.10.30.8",
+    "compromised": false
+   },
+   {
+    "id": "ip:10.10.30.9",
+    "type": "ip",
+    "label": "10.10.30.9",
+    "compromised": false
+   },
+   {
+    "id": "ip:10.10.30.10",
+    "type": "ip",
+    "label": "10.10.30.10",
+    "compromised": false
+   },
+   {
+    "id": "ip:10.10.30.11",
+    "type": "ip",
+    "label": "10.10.30.11",
+    "compromised": false
+   },
+   {
+    "id": "ip:10.10.30.12",
+    "type": "ip",
+    "label": "10.10.30.12",
+    "compromised": false
+   },
+   {
+    "id": "ip:198.51.100.200",
+    "type": "ip",
+    "label": "198.51.100.200",
+    "compromised": false
+   }
+  ],
+  "edges": [
+   {
+    "source": "ip:203.0.113.66",
+    "target": "host:fgt60ftk-sim",
+    "label": "T1110",
+    "step": 0
+   },
+   {
+    "source": "user:vpn_jdoe",
+    "target": "host:fgt60ftk-sim",
+    "label": "T1133",
+    "step": 1
+   },
+   {
+    "source": "host:fgt60ftk-sim",
+    "target": "ip:10.10.20.15",
+    "label": "T1133",
+    "step": 1
+   },
+   {
+    "source": "ip:10.10.20.15",
+    "target": "ip:10.10.30.1",
+    "label": "T1046",
+    "step": 2
+   },
+   {
+    "source": "ip:10.10.20.15",
+    "target": "ip:10.10.30.2",
+    "label": "T1046",
+    "step": 2
+   },
+   {
+    "source": "ip:10.10.20.15",
+    "target": "ip:10.10.30.3",
+    "label": "T1046",
+    "step": 2
+   },
+   {
+    "source": "ip:10.10.20.15",
+    "target": "ip:10.10.30.4",
+    "label": "T1046",
+    "step": 2
+   },
+   {
+    "source": "ip:10.10.20.15",
+    "target": "ip:10.10.30.5",
+    "label": "T1046",
+    "step": 2
+   },
+   {
+    "source": "ip:10.10.20.15",
+    "target": "ip:10.10.30.6",
+    "label": "T1046",
+    "step": 2
+   },
+   {
+    "source": "ip:10.10.20.15",
+    "target": "ip:10.10.30.7",
+    "label": "T1046",
+    "step": 2
+   },
+   {
+    "source": "ip:10.10.20.15",
+    "target": "ip:10.10.30.8",
+    "label": "T1046",
+    "step": 2
+   },
+   {
+    "source": "ip:10.10.20.15",
+    "target": "ip:10.10.30.9",
+    "label": "T1046",
+    "step": 2
+   },
+   {
+    "source": "ip:10.10.20.15",
+    "target": "ip:10.10.30.10",
+    "label": "T1046",
+    "step": 2
+   },
+   {
+    "source": "ip:10.10.20.15",
+    "target": "ip:10.10.30.11",
+    "label": "T1046",
+    "step": 2
+   },
+   {
+    "source": "ip:10.10.20.15",
+    "target": "ip:10.10.30.12",
+    "label": "T1046",
+    "step": 2
+   },
+   {
+    "source": "ip:10.10.20.15",
+    "target": "ip:10.10.30.5",
+    "label": "T1021",
+    "step": 3
+   },
+   {
+    "source": "ip:10.10.30.5",
+    "target": "ip:198.51.100.200",
+    "label": "T1048",
+    "step": 4
+   }
+  ]
+ },
+ "reach_next": [
+  {
+   "host": "10.10.40.20",
+   "hops": 1,
+   "via_user": null,
+   "evidence": "allowed flows 10.10.30.5 -> 10.10.40.20:1433 (policyid=14, 37 sessions, action=accept)",
+   "crown_jewel": "db",
+   "touched": false
+  },
+  {
+   "host": "10.10.30.12",
+   "hops": 1,
+   "via_user": null,
+   "evidence": "SMB accept 10.10.20.15 -> 10.10.30.12:445 during scan, no follow-up session yet",
+   "crown_jewel": null,
+   "touched": false
+  },
+  {
+   "host": "10.10.30.5",
+   "hops": 0,
+   "via_user": null,
+   "evidence": "already used as staging host",
+   "crown_jewel": "file",
+   "touched": true
+  }
+ ],
+ "narrative": {
+  "source": "template",
+  "text": "An external IP (203.0.113.66) sprayed passwords at the SSL-VPN on fgt60ftk-sim and got in as vpn_jdoe. From the VPN landing host 10.10.20.15 it scanned 12 servers, moved to 10.10.30.5 over SMB and sent about 700 MB to 198.51.100.200 on port 8443. 10.10.30.5 can still reach the database 10.10.40.20."
+ }
+}

@@ -1,11 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
-import { getLiveStatus, getRun, startRun, USE_MOCK, type LiveStatus, type RunStatus } from '../api'
+import { getRun, startRun, USE_MOCK, type LiveStatus, type RunStatus } from '../api'
+import { fmtTime } from '../lib/format'
 import { fmtCount, fmtPct, fmtRss, fmtSeconds, readIngest, readRunSummary, readScorecard } from '../lib/metrics'
 import type { Metrics } from '../types'
 
 interface Props {
   metrics: Metrics | null
   metricsError: string | null
+  live: LiveStatus | null
+  liveUpdatedAt: string | null
   onRunFinished: () => void
 }
 
@@ -18,7 +21,7 @@ function Stat({ label, value, title, tone = 'text-slate-100' }: { label: string;
   )
 }
 
-export function Header({ metrics, metricsError, onRunFinished }: Props) {
+export function Header({ metrics, metricsError, live, liveUpdatedAt, onRunFinished }: Props) {
   const sc = readScorecard(metrics)
   const run = readRunSummary(metrics)
   const ingest = readIngest(metrics)
@@ -87,36 +90,29 @@ export function Header({ metrics, metricsError, onRunFinished }: Props) {
       )}
 
       <div className="ml-auto flex items-center gap-3">
-        <LiveBadge />
+        <LiveBadge status={live} updatedAt={liveUpdatedAt} />
         <RunControl onFinished={onRunFinished} />
       </div>
     </header>
   )
 }
 
-function LiveBadge() {
-  const [status, setStatus] = useState<LiveStatus | null>(null)
-  useEffect(() => {
-    let alive = true
-    const tick = () =>
-      getLiveStatus()
-        .then((s) => alive && setStatus(s))
-        .catch(() => alive && setStatus(null))
-    tick()
-    const t = window.setInterval(tick, 5000)
-    return () => {
-      alive = false
-      window.clearInterval(t)
-    }
-  }, [])
+function LiveBadge({ status, updatedAt }: { status: LiveStatus | null; updatedAt: string | null }) {
   const on = status?.enabled === true
-  const label = status === null ? 'live: n/a' : on ? 'live' : 'live: off'
+  const label = status === null ? 'live: n/a' : on ? `live · ${updatedAt ? fmtTime(updatedAt) : 'waiting'}` : 'live: off'
   return (
     <span
       className={`flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] ${
         on ? 'border-emerald-500/60 text-emerald-300' : 'border-slate-700 text-slate-500'
       }`}
-      title={status ? JSON.stringify(status).slice(0, 300) : 'GET /api/live/status unavailable'}
+      title={
+        status === null
+          ? 'GET /api/live/status unavailable'
+          : on
+            ? 'Live mode: incident list refreshes every 2 s (time = last refresh, UTC)'
+            : 'Live mode off: list is static'
+      }
+      aria-live="polite"
     >
       <span className={`h-2 w-2 rounded-full ${on ? 'animate-pulse bg-emerald-400' : 'bg-slate-600'}`} aria-hidden="true" />
       {label}

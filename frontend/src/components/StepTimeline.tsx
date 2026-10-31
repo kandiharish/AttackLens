@@ -1,3 +1,4 @@
+import { isFirewall } from '../lib/entity'
 import { confidenceColor, fmtTs, truncate } from '../lib/format'
 import type { PathEdge, Step } from '../types'
 
@@ -136,9 +137,20 @@ function StepCard({
 function Field({ k, v }: { k: string; v: string | null }) {
   if (v === null || v === '') return null
   return (
-    <div className="flex gap-1">
+    <div className="flex items-center gap-1">
       <dt className="text-slate-500">{k}</dt>
-      <dd className="text-slate-200">{v}</dd>
+      <dd className="text-slate-200">
+        {v}
+        {k === 'host' && isFirewall(v) && <FirewallTag />}
+      </dd>
     </div>
+  )
+}
+
+export function FirewallTag() {
+  return (
+    <span className="ml-1 rounded bg-orange-900/60 px-1 py-px font-sans text-[9px] font-semibold uppercase text-orange-200 ring-1 ring-orange-500/50" title="Firewall device (devname): the logging device, not the victim endpoint">
+      firewall
+    </span>
   )
 }

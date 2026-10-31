@@ -1,6 +1,7 @@
 import cytoscape from 'cytoscape'
 import dagre from 'cytoscape-dagre'
 import { useEffect, useRef, useState } from 'react'
+import { isFirewall } from '../lib/entity'
 import { truncate } from '../lib/format'
 import type { GraphEdge, GraphNode } from '../types'
 
@@ -36,6 +37,13 @@ const COLOR: Record<GraphNode['type'], string> = {
   domain: '#5b3a12',
 }
 
+const FIREWALL_COLOR = '#7c2d12'
+
+/** Graph height grows with entity count so 10–20 IP nodes stay legible at 1366×768. */
+function graphHeight(n: number): number {
+  return Math.max(288, Math.min(600, 120 + n * 24))
+}
+
 function inferType(id: string): GraphNode['type'] {
   const p = id.split(':', 1)[0]
   return p === 'user' || p === 'ip' || p === 'domain' ? p : 'host'
@@ -66,19 +74,39 @@ export function AttackGraph({ nodes, edges, highlighted, whyForStep, onSelectSte
       }
     }
     const allNodes = [...nodes, ...implicit]
+    const dense = allNodes.length > 10
+
+    // Fan-out (e.g. one scanner -> 12 IPs, same step + technique): label only the first edge of each group.
+    const seenFan = new Set<string>()
+    const edgeEls = edges.map((e, i) => {
+      const fanKey = `${e.source}|${e.step}|${e.label}`
+      const repeat = seenFan.has(fanKey)
+      seenFan.add(fanKey)
+      return {
+        group: 'edges' as const,
+        data: { id: `edge-${i}`, source: e.source, target: e.target, step: e.step, tech: e.label, label: repeat ? '' : `${e.step + 1} · ${e.label}` },
+        classes: repeat ? 'fan' : '',
+      }
+    })
 
     const cy = cytoscape({
       container: box.current,
       elements: [
-        ...allNodes.map((n) => ({
-          group: 'nodes' as const,
-          data: { id: n.id, label: n.label, type: n.type, shape: SHAPE[n.type] ?? 'round-rectangle', color: COLOR[n.type] ?? '#1e293b' },
-          classes: n.compromised ? 'compromised' : '',
-        })),
-        ...edges.map((e, i) => ({
-          group: 'edges' as const,
-          data: { id: `edge-${i}`, source: e.source, target: e.target, step: e.step, tech: e.label, label: `${e.step + 1} · ${e.label}` },
-        })),
+        ...allNodes.map((n) => {
+          const fw = n.type === 'host' && (isFirewall(n.id) || isFirewall(n.label))
+          return {
+            group: 'nodes' as const,
+            data: {
+              id: n.id,
+              label: fw ? `${n.label}\nfirewall` : n.label,
+              type: n.type,
+              shape: fw ? 'barrel' : (SHAPE[n.type] ?? 'round-rectangle'),
+              color: fw ? FIREWALL_COLOR : (COLOR[n.type] ?? '#1e293b'),
+            },
+            classes: [n.compromised ? 'compromised' : '', fw ? 'firewall' : ''].join(' ').trim(),
+          }
+        }),
+        ...edgeEls,
       ],
       style: [
         {
@@ -90,14 +118,17 @@ export function AttackGraph({ nodes, edges, highlighted, whyForStep, onSelectSte
             'border-color': '#475569',
             label: 'data(label)',
             color: '#e2e8f0',
-            'font-size': 11,
+            'font-size': dense ? 10 : 11,
             'font-family': 'ui-monospace, Consolas, monospace',
             'text-valign': 'bottom',
-            'text-margin-y': 5,
-            width: 38,
-            height: 38,
+            'text-margin-y': 4,
+            'text-wrap': 'wrap',
+            'text-max-width': '150px',
+            width: dense ? 26 : 38,
+            height: dense ? 26 : 38,
           },
         },
+        { selector: 'node.firewall', style: { 'border-color': '#fb923c', color: '#fed7aa' } },
         {
           selector: 'node.compromised',
           style: { 'border-color': '#f43f5e', 'border-width': 4, 'background-color': '#4c0519', color: '#fecdd3', 'font-weight': 'bold' },
@@ -120,13 +151,13 @@ export function AttackGraph({ nodes, edges, highlighted, whyForStep, onSelectSte
             'text-rotation': 'autorotate',
           },
         },
+        { selector: 'edge.fan', style: { width: 1, 'line-color': '#475569', 'target-arrow-color': '#475569', 'arrow-scale': 0.7 } },
         {
           selector: 'edge.hl, edge:selected',
           style: { width: 4, 'line-color': '#38bdf8', 'target-arrow-color': '#38bdf8', color: '#ffffff', 'z-index': 10 },
         },
       ],
-      layout: { name: 'dagre', rankDir: 'LR', nodeSep: 40, rankSep: 110, edgeSep: 20, padding: 24 } as cytoscape.LayoutOptions,
-      wheelSensitivity: 0.2,
+      layout: { name: 'dagre', rankDir: 'LR', nodeSep: dense ? 22 : 40, rankSep: dense ? 130 : 110, edgeSep: 12, padding: 24 } as cytoscape.LayoutOptions,
       minZoom: 0.3,
       maxZoom: 2.5,
       autoungrabify: false,
@@ -147,6 +178,7 @@ export function AttackGraph({ nodes, edges, highlighted, whyForStep, onSelectSte
     })
     cy.on('tap', 'edge', (evt) => selectRef.current(Number(evt.target.data('step'))))
 
+    cy.fit(undefined, 24)
     const ro = new ResizeObserver(() => {
       cy.resize()
       cy.fit(undefined, 24)
@@ -160,6 +192,9 @@ export function AttackGraph({ nodes, edges, highlighted, whyForStep, onSelectSte
     }
   }, [nodes, edges])
 
+  const fit = () => cyRef.current?.animate({ fit: { eles: cyRef.current.elements(), padding: 24 } }, { duration: 200 })
+  const height = graphHeight(nodes.length)
+
   useEffect(() => {
     const cy = cyRef.current
     if (!cy) return
@@ -172,11 +207,19 @@ export function AttackGraph({ nodes, edges, highlighted, whyForStep, onSelectSte
       <div className="mb-1.5 flex flex-wrap items-baseline gap-x-4 gap-y-1">
         <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400">Attack graph</h3>
         <Legend />
+        <button
+          type="button"
+          onClick={fit}
+          className="ml-auto rounded border border-slate-700 px-2 py-0.5 text-[10px] text-slate-300 hover:bg-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
+        >
+          Fit
+        </button>
       </div>
       <div className="relative">
         <div
           ref={box}
-          className="h-72 w-full rounded-md border border-slate-800 bg-slate-950"
+          className="w-full rounded-md border border-slate-800 bg-slate-950"
+          style={{ height }}
           role="img"
           aria-label={`Attack graph left to right: ${nodes.length} entities, ${edges.length} edges. Hover an edge for why it is linked, click to jump to the step.`}
         />
@@ -210,8 +253,9 @@ function Legend() {
       {item(<circle cx="7" cy="7" r="5.5" fill={COLOR.user} stroke="#94a3b8" />, 'user')}
       {item(<path d="M7 1l6 6-6 6-6-6z" fill={COLOR.ip} stroke="#94a3b8" />, 'ip')}
       {item(<path d="M4 1.5h6L13 7l-3 5.5H4L1 7z" fill={COLOR.domain} stroke="#94a3b8" />, 'domain')}
+      {item(<rect x="1" y="2" width="12" height="10" rx="5" fill={FIREWALL_COLOR} stroke="#fb923c" />, 'firewall')}
       {item(<circle cx="7" cy="7" r="5" fill="#4c0519" stroke="#f43f5e" strokeWidth="2.5" />, 'compromised')}
-      <span>edge label = step · technique</span>
+      <span>edge label = step · technique · scroll to zoom, drag to pan</span>
     </div>
   )
 }

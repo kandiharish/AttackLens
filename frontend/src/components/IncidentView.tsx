@@ -90,7 +90,7 @@ export function IncidentView({ incident, openedAt }: Props) {
       </section>
 
       {/* 3. Kill chain */}
-      <KillChainBar tactics={incident.tactics} gaps={incident.gaps} steps={incident.backbone} onJump={jumpTo} />
+      <KillChainBar tactics={incident.tactics} gaps={incident.gaps} steps={allSteps} onJump={jumpTo} />
 
       {/* 4. Ordered steps + evidence + why-linked */}
       <StepTimeline

@@ -2,8 +2,14 @@ import { truncate } from '../lib/format'
 import type { ReachNext as ReachNextRow } from '../types'
 
 export function ReachNext({ rows }: { rows: ReachNextRow[] }) {
-  // Untouched targets first (that is where the attacker goes next), then by hop distance.
-  const ordered = [...rows].sort((a, b) => Number(a.touched) - Number(b.touched) || a.hops - b.hops || a.host.localeCompare(b.host))
+  // Untouched targets first (that is where the attacker goes next), then by hop distance, crown jewels first.
+  const ordered = [...rows].sort(
+    (a, b) =>
+      Number(a.touched) - Number(b.touched) ||
+      a.hops - b.hops ||
+      Number(b.crown_jewel !== null) - Number(a.crown_jewel !== null) ||
+      a.host.localeCompare(b.host),
+  )
   return (
     <section aria-label="Reach next">
       <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-slate-400">

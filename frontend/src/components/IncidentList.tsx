@@ -1,6 +1,9 @@
 import { tacticIndex } from '../lib/attack'
+import { isFirewall } from '../lib/entity'
 import { fmtSpan, riskStyle } from '../lib/format'
 import type { IncidentSummary } from '../types'
+
+const MAX_HOSTS = 6
 
 interface Props {
   incidents: IncidentSummary[] | null
@@ -52,7 +55,7 @@ export function IncidentList({ incidents, error, selectedId, onSelect, onRetry }
                 </div>
                 <p className="mt-1 text-xs font-medium text-slate-200">
                   {inc.merged_alert_count.toLocaleString('en-US')} alerts → 1 incident
-                  <span className="text-slate-500"> · {inc.episode_count} steps</span>
+                  <span className="text-slate-500"> · {inc.episode_count} episodes</span>
                 </p>
                 <p className="mt-0.5 text-[11px] text-slate-500">{fmtSpan(inc.first_ts, inc.last_ts)}</p>
                 <p className="mt-1 line-clamp-2 text-[11px] text-slate-400">{inc.entry_summary}</p>
@@ -64,8 +67,15 @@ export function IncidentList({ incidents, error, selectedId, onSelect, onRetry }
                   ))}
                 </div>
                 {inc.hosts.length > 0 && (
-                  <p className="mt-1 truncate font-mono text-[10px] text-slate-500" title={inc.hosts.join(', ')}>
-                    {inc.hosts.join(' · ')}
+                  <p className="mt-1 line-clamp-2 font-mono text-[10px] text-slate-500" title={inc.hosts.join(', ')}>
+                    {inc.hosts.slice(0, MAX_HOSTS).map((h, i) => (
+                      <span key={h}>
+                        {i > 0 && ' · '}
+                        <span className={isFirewall(h) ? 'text-orange-300' : undefined}>{h}</span>
+                        {isFirewall(h) && <span className="text-orange-400"> (fw)</span>}
+                      </span>
+                    ))}
+                    {inc.hosts.length > MAX_HOSTS && <span> · +{inc.hosts.length - MAX_HOSTS} more</span>}
                   </p>
                 )}
               </button>
