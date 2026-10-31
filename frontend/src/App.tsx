@@ -8,8 +8,13 @@ import type { Incident, IncidentSummary, Metrics } from './types'
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e))
 
 function hashId(): string | null {
-  const h = decodeURIComponent(window.location.hash.replace(/^#/, ''))
-  return h || null
+  try {
+    const h = decodeURIComponent(window.location.hash.replace(/^#/, ''))
+    return h || null
+  } catch {
+    // Malformed hash (e.g. "#%E0"): ignore it and fall back to no selection.
+    return null
+  }
 }
 
 export default function App() {
