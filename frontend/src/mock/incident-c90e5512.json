@@ -1,0 +1,34 @@
+{
+  "id": "inc-c90e5512",
+  "risk": 41,
+  "first_ts": "2026-10-23T14:10:00Z",
+  "last_ts": "2026-10-23T16:40:00Z",
+  "merged_alert_count": 18,
+  "episode_count": 2,
+  "entry_point": {"step": 0, "summary": "Run key persistence on host:ws-hr-004 by user:a.rao"},
+  "tactics": ["Persistence", "Command and Control"],
+  "gaps": ["Execution"],
+  "backbone": [
+    {"step": 0, "episode_id": "e70", "ts": "2026-10-23T14:10:00Z", "technique_id": "T1547", "sub_technique_id": "T1547.001", "technique_name": "Registry Run Keys / Startup Folder", "tactic": "Persistence", "rule_id": "run_key_persistence", "host": "ws-hr-004", "user": "a.rao", "src_ip": null, "dst_ip": null, "severity": 60, "confidence": 58, "merged_alert_count": 1, "evidence": ["{\"registry\":{\"path\":\"HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run\\updater\",\"data\":{\"strings\":[\"C:\\Users\\a.rao\\AppData\\upd.exe\"]}}}"]},
+    {"step": 1, "episode_id": "e71", "ts": "2026-10-23T14:12:30Z", "technique_id": "T1071", "sub_technique_id": "T1071.001", "technique_name": "Web Protocols", "tactic": "Command and Control", "rule_id": "beacon_periodic", "host": "ws-hr-004", "user": "a.rao", "src_ip": "10.10.4.4", "dst_ip": "192.0.2.80", "severity": 65, "confidence": 62, "merged_alert_count": 17, "evidence": ["{\"destination\":{\"ip\":\"192.0.2.80\",\"port\":80,\"domain\":\"cdn-update.invalid\"},\"http\":{\"request\":{\"method\":\"GET\"}}}", "17 connections, period 540s +/- 6s"]}
+  ],
+  "branches": [],
+  "edges": [
+    {"from": "e70", "to": "e71", "rule": "R2", "weight": 0.71, "why_linked": "Same host and user: a.rao on ws-hr-004, 2m30s apart"}
+  ],
+  "graph": {
+    "nodes": [
+      {"id": "user:a.rao", "type": "user", "label": "a.rao", "compromised": true},
+      {"id": "host:ws-hr-004", "type": "host", "label": "WS-HR-004", "compromised": true},
+      {"id": "domain:cdn-update.invalid", "type": "domain", "label": "cdn-update.invalid", "compromised": false},
+      {"id": "ip:192.0.2.80", "type": "ip", "label": "192.0.2.80", "compromised": false}
+    ],
+    "edges": [
+      {"source": "user:a.rao", "target": "host:ws-hr-004", "label": "T1547", "step": 0},
+      {"source": "host:ws-hr-004", "target": "domain:cdn-update.invalid", "label": "T1071", "step": 1},
+      {"source": "domain:cdn-update.invalid", "target": "ip:192.0.2.80", "label": "T1071", "step": 1}
+    ]
+  },
+  "reach_next": [],
+  "narrative": {"source": "llm", "text": "A Run key on WS-HR-004 started upd.exe, which then beaconed every ~9 minutes to an .invalid domain."}
+}

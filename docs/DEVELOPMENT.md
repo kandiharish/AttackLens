@@ -494,3 +494,10 @@ Built from the generator's `base_event()`; `host.name` upper-case as in the gene
 | process / network / file / registry | as the generator (`process_created`, `network_connection` with `network.bytes` + `network.direction=outbound`, `file_rename` with `file.extension`, `registry_value_set`) |
 Action map precedence: `winlog.event_id` (§3.3 table) → `event.action` → `other`. Logon types: names and numbers both map
 to the integers in §3.1. `bytes_out` = `network.bytes` when direction is outbound or absent.
+
+### 15.6 Metric file keys (binding for harness, run.py and UI)
+- `eval_scorecard.json` top level: `detection_pct`, `labels_pct`, `rebuilt_pct`, `false_alarms_strict_pct`,
+  `false_alarms_lenient_pct`, `singleton_recall_pct` (all 0–100 floats, `null` if not computable), plus
+  `per_attack`, `per_rule_alerts`, `unmatched_incidents`, `targets` (Good/Great pass flags).
+- `run_metrics.json` top level: `total_wall_s`, `peak_rss_mb`, `rows_per_s`, `stages` [{name, wall_s, peak_rss_mb}],
+  `episodes`, `episodes_spilled`, `incidents`, `effective_config`.

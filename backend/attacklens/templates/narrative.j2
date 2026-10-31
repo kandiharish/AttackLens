@@ -1,0 +1,12 @@
+{#- Deterministic narrative. Every variable is a placeholder token, enum, count, ISO time or technique id/name. -#}
+{%- if not steps -%}
+No linked attack steps were found for this incident (risk {{ risk }}/100, {{ merged_alert_count }} merged alerts).
+{%- else -%}
+{%- set first = steps[0] -%}
+{%- set last = steps[-1] -%}
+The attack started at {{ first.ts }} with {{ first.tech }} ({{ first.tactic }}){% if first.host %} on {{ first.host }}{% endif %}{% if first.src %} from {{ first.src }}{% endif %}{% if first.user %} using account {{ first.user }}{% endif %}.
+{% if hosts|length > 1 %}It then moved across {{ hosts|length }} hosts in order: {{ hosts|join(' -> ') }}.{% elif hosts %}All linked activity stayed on {{ hosts[0] }}.{% endif %}
+Steps in order: {% for s in steps %}{{ s.tech }} ({{ s.tactic }}){% if not loop.last %}, {% endif %}{% endfor %}{% if omitted %}, plus {{ omitted }} more steps{% endif %}.
+The last step was {{ last.tech }} ({{ last.tactic }}){% if last.host %} on {{ last.host }}{% endif %}{% if last.dst %} towards {{ last.dst }}{% endif %} at {{ last.ts }}; risk is {{ risk }}/100 across {{ episode_count }} episodes and {{ merged_alert_count }} merged alerts{% if gaps %}, with no evidence for {{ gaps|join(', ') }}{% endif %}.
+{% if reach %}{% if reach_user %}{{ reach_user }} still has admin rights on{% else %}The attacker can still reach{% endif %} {{ reach_total }} more host{{ 's' if reach_total != 1 else '' }}: {% for r in reach %}{{ r.host }} ({% if r.crown_jewel %}{{ r.crown_jewel }} server, {% endif %}{{ r.hops }} hop{{ 's' if r.hops != 1 else '' }}){% if not loop.last %}, {% endif %}{% endfor %}{% if reach_total > reach|length %}, and {{ reach_total - reach|length }} more{% endif %}.{% else %}No further reachable hosts were found from the last compromised accounts.{% endif %}
+{%- endif -%}

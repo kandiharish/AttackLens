@@ -1,0 +1,12 @@
+# Narrative generator (DEVELOPMENT.md §4 Stage 5). The LLM only ever sees placeholders ({{HOST_1}}) and enums.
+# LLM path runs only if: enabled AND env ANTHROPIC_API_KEY is set AND the `anthropic` package is importable.
+# Any error, timeout, unknown placeholder, missing backbone technique or bad length -> deterministic template.
+enabled: true
+model: claude-haiku-5-5
+timeout_s: 10            # hard wall-clock bound for the whole LLM call
+max_tokens: 400
+temperature: 0.0
+min_chars: 80            # reply length bounds (placeholder form, before substitution)
+max_chars: 1500
+max_steps_in_prompt: 25  # backbone steps beyond this are summarised by count only
+max_reach_in_text: 5     # reach-next hosts listed by name in the narrative

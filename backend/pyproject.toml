@@ -29,3 +29,6 @@ include = ["attacklens*", "eval*"]
 [tool.pytest.ini_options]
 testpaths = ["tests", "eval"]
 markers = ["stress: long-running stress tests (deselect with -m 'not stress')"]
+
+[tool.setuptools.package-data]
+attacklens = ["templates/*.j2"]

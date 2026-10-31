@@ -10,7 +10,7 @@ Read these before writing code — they are the source of truth, in this order:
 3. `docs/TESTING.md` — test layers, data generation from `reports/edr_log_generator.py`, 10/30/50 GB stress tests.
 
 ## Status
-- [ ] Phase 0: repo bootstrap (git, venv, folders) — see DEVELOPMENT.md §10
+- [x] Phase 0: repo bootstrap (git, venv, folders) — see DEVELOPMENT.md §10
 - [ ] Phase 1: Stage 0–1 ingest + accounting + eval harness + probes
 - [ ] Phase 2: Stage 2 detection + Stage 2.5 episodes
 - [ ] Phase 3: Stage 3 links + Stage 4 incidents/path/reach-next
