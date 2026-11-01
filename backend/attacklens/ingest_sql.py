@@ -38,8 +38,9 @@ def _clean(expr: str) -> str:
     return f"nullif(nullif(trim({expr}), ''), '-')"
 
 
-def _rel(root: str) -> str:
-    return f"replace(filename, {sql_str(root.rstrip('/') + '/')}, '')"
+def _rel(root: str, col: str = "filename") -> str:
+    """Path relative to root of the reader's source-file column (line_reader: `filename`; CSV: db.SRC_FILE_COL)."""
+    return f"replace({col}, {sql_str(root.rstrip('/') + '/')}, '')"
 
 
 def ts_expr(x: str, formats: list[str]) -> str:
@@ -125,69 +126,9 @@ def cef_select(files: list[str], root: str, ccfg: dict[str, Any], formats: list[
 
 def syslog_select(files: list[str], root: str, scfg: dict[str, Any], year: int, syslog_fmt: str,
                   formats: list[str], rejects: str | None = None) -> str:
-    """RFC 3164 has no year: baseline_year for every line; Dec->Jan rollover is not corrected (see sources.yaml)."""
-    msgs: list[dict[str, Any]] = scfg.get("messages") or []
-    conds = []
-    for m in msgs:
-        c = f"regexp_matches(msg, {sql_str(m['regex'])})"
-        if m.get("process"):
-            c = f"proc = {sql_str(str(m['process']).lower())} AND {c}"
-        conds.append(c)
-
-    def per_msg(getter: Any) -> str | None:
-        arms = [f"WHEN {c} THEN {getter(m)}" for c, m in zip(conds, msgs) if getter(m) is not None]
-        return f"CASE {' '.join(arms)} END" if arms else None
-
-    vals: dict[str, str] = {"host": "nullif(p.host, '')", "process_name": "proc"}
-    a = per_msg(lambda m: sql_str(m["action"]) if m.get("action") else None)
-    if a:
-        vals["event_action"] = a
-    o = per_msg(lambda m: sql_str(m["outcome"]) if m.get("outcome") else None)
-    if o:
-        vals["outcome"] = o
-    for f in FIELDS:
-        def g(m: dict[str, Any], f: str = f) -> str | None:
-            if f in (m.get("fields") or {}):
-                return f"nullif(regexp_extract(msg, {sql_str(m['regex'])}, {int(m['fields'][f])}), '')"
-            if f in (m.get("const") or {}):
-                return sql_str(str(m["const"][f]))
-            return None
-        e = per_msg(g)
-        if e and f not in ("event_action", "outcome"):
-            vals[f] = e
-    bsd = (f"epoch_ms(try_strptime({sql_str(str(year))} || ' ' || regexp_replace(p.ts_bsd, '\\s+', ' ', 'g'), "
-           f"{sql_str(syslog_fmt)})::TIMESTAMPTZ)")
-    ts = f"CASE WHEN p.ts_bsd <> '' THEN {bsd} WHEN p.ts_iso <> '' THEN {ts_expr('p.ts_iso', formats)} END"
-    return (f"SELECT 'syslog' AS source_type, rel, line, line AS raw_line, false AS malformed, {ts} AS ts_ms, "
-            f"{_fcols(vals)} FROM (SELECT *, nullif(lower(p.proc), '') AS proc, p.msg AS msg FROM ("
-            f"SELECT {_rel(root)} AS rel, line, regexp_extract(line, {sql_str(scfg['line_regex'])}, "
-            f"['ts_bsd', 'ts_iso', 'host', 'proc', 'pid', 'msg']) AS p FROM {line_reader(files, rejects=rejects)} WHERE {NONEMPTY}))")
-
-
-def csv_select(stype: str, files: list[str], root: str, delim: str, columns: list[str],
-               ccfg: dict[str, Any], formats: list[str], rejects: str | None = None) -> str:
-    """Quote-aware CSV read: strict_mode=false (mixed CRLF/LF, quoted newlines), no null_padding (the parallel
-    scanner refuses it with quoted newlines). Missing-column / bad-encoding rows go to the rejects tables and
-    are counted; extra trailing fields are dropped by the reader (ingest flags them as truncated_columns).
-    raw_line is rebuilt from the parsed fields."""
-    by_lower = {c.lower(): c for c in columns}
-
-    def q(c: str) -> str:
-        return '"' + c.replace('"', '""') + '"'
-
-    vals: dict[str, str] = {}
-    for f, aliases in (ccfg.get("fields") or {}).items():
-        hit = [by_lower[a.lower()] for a in aliases or [] if a.lower() in by_lower]
-        if hit:
-            vals[f] = "coalesce(" + ", ".join(_clean(q(h)) for h in hit) + ")"
-    raw = f"concat_ws({sql_str(delim)}, " + ", ".join(f"coalesce({q(c)}, '')" for c in columns) + ")"
-    rj = (f", store_rejects=true, rejects_table={sql_str(rejects + '_err')}, "
-          f"rejects_scan={sql_str(rejects + '_scan')}") if rejects else ""
-    reader = (f"read_csv({sql_list(files)}, header=true, delim={sql_str(delim)}, all_varchar=true, "
-              f"filename=true, strict_mode=false, ignore_errors=true{rj})")
-    return (f"SELECT {sql_str(stype)} AS source_type, rel, raw AS line, raw AS raw_line, false AS malformed, "
-            f"{ts_expr('f_ts', formats)} AS ts_ms, * EXCLUDE (rel, raw) FROM ("
-            f"SELECT {_rel(root)} AS rel, {raw} AS raw, {_fcols(vals)} FROM {reader})")
+    """Syslog / auditd units: built by ingest_syslog (ordered header grammar + message pack, config-driven)."""
+    from attacklens.ingest_syslog import syslog_select as _syslog_select
+    return _syslog_select(files, root, scfg, year, syslog_fmt, formats, rejects, FIELDS, ts_expr)
 
 
 def kv_select(stype: str, files: list[str], root: str, kcfg: dict[str, Any],

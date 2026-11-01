@@ -1,0 +1,298 @@
+# Vendor firewall payload parsers (attacklens/ingest_payload.py; sweep item 15, reports/robust/SUMMARY.md).
+# Input = the syslog message part (msg) after the header grammar in sources.yaml `syslog.headers`.
+# `types` is ORDERED: the first `detect` regex that matches names the payload type (the Python sniff `detect()` and
+# the SQL CASE are both built from this list, so routing and parsing cannot disagree). `sniff: false` types are
+# never auto-detected; a caller forces them (e.g. a header-based CSV export).
+# Source keys: csv -> 1-based column; msgid -> named regex group; kv / leef -> attribute key; `_id` = message id
+# (ASA) or LEEF EventID. Field value: key | [keys] (first non-empty wins) . `const:` sets fixed values.
+# actions: first rule whose `when` (case-insensitive value list, '*' = any non-empty) and `when_regex` all hold.
+# require_any: when every listed canonical field is empty the row is counted as `missing_required` (never silent).
+# All regexes use the RE2 / Python common subset (named groups, no look-around).
+
+input:
+  # A syslog tag (the header's proc) that is really the start of the payload is glued back to msg.
+  tag_rejoin:
+    - {proc_regex: '(?i)^%(?:asa|ftd|pix|fwsm)-\d-\d{6}$', sep: ': '}
+    - {proc_regex: '^LEEF$', sep: ':'}
+  # RFC 5424 structured data that IS the payload (Check Point Log Exporter syslog format).
+  sd_payload_regex: '^\[[A-Za-z_]\w*:"'
+  pri_strip_regex: '^<\d{1,3}>'
+
+csv_split_regex: ',("(?:[^"]|"")*"|[^,]*)'   # applied to ',' || payload; quoted fields keep their commas
+null_values: ['', '-', 'N/A']
+
+value_maps:
+  proto: {'1': icmp, '6': tcp, '17': udp, '47': gre, '50': esp, '58': ipv6-icmp, '132': sctp}
+
+types:
+  # ---- Cisco ASA / FTD: %ASA-<sev>-<id>: <text>  [ASA] https://www.cisco.com/c/en/us/td/docs/security/asa/syslog/asa-syslog.html
+  - name: asa
+    kind: msgid
+    detect: '(?i)^%(?:asa|ftd|pix|fwsm)-\d-\d{6}: ?'
+    id_regex: '(?i)^%(?:asa|ftd|pix|fwsm)-(\d)-(\d{6}): ?(.*)$'   # 1 severity, 2 id, 3 body
+    messages:
+      - name: built_inbound
+        ids: ['302013', '302015']
+        regex: '^Built inbound (?P<proto>TCP|UDP) connection \d+ for (?P<src_zone>[^:\s]+):(?P<src_ip>[^/\s]+)/(?P<src_port>\d+)(?: \([^)]*\))* to (?P<dst_zone>[^:\s]+):(?P<dst_ip>[^/\s]+)/(?P<dst_port>\d+)'
+        fields: {proto: proto, src_zone: src_zone, src_ip: src_ip, src_port: src_port, dst_zone: dst_zone, dst_ip: dst_ip, dst_port: dst_port}
+        const: {direction: inbound}
+        action: conn_allowed
+      - name: built_outbound          # outbound: the first endpoint is the foreign (responder) side
+        ids: ['302013', '302015']
+        regex: '^Built outbound (?P<proto>TCP|UDP) connection \d+ for (?P<dst_zone>[^:\s]+):(?P<dst_ip>[^/\s]+)/(?P<dst_port>\d+)(?: \([^)]*\))* to (?P<src_zone>[^:\s]+):(?P<src_ip>[^/\s]+)/(?P<src_port>\d+)'
+        fields: {proto: proto, src_zone: src_zone, src_ip: src_ip, src_port: src_port, dst_zone: dst_zone, dst_ip: dst_ip, dst_port: dst_port}
+        const: {direction: outbound}
+        action: conn_allowed
+      - name: teardown
+        ids: ['302014', '302016']
+        regex: '^Teardown (?P<proto>TCP|UDP) connection \d+ for (?P<src_zone>[^:\s]+):(?P<src_ip>[^/\s]+)/(?P<src_port>\d+)(?: \([^)]*\))* to (?P<dst_zone>[^:\s]+):(?P<dst_ip>[^/\s]+)/(?P<dst_port>\d+)(?: \([^)]*\))* duration \S+ bytes (?P<bytes>\d+)'
+        fields: {proto: proto, src_zone: src_zone, src_ip: src_ip, src_port: src_port, dst_zone: dst_zone, dst_ip: dst_ip, dst_port: dst_port, bytes: bytes}
+        action: conn_allowed
+      - name: inbound_denied
+        ids: ['106001']
+        regex: '^Inbound (?P<proto>TCP) connection denied from (?P<src_ip>[^/\s]+)/(?P<src_port>\d+) to (?P<dst_ip>[^/\s]+)/(?P<dst_port>\d+) flags .*? on interface (?P<src_zone>[^\s.]+)'
+        fields: {proto: proto, src_ip: src_ip, src_port: src_port, dst_ip: dst_ip, dst_port: dst_port, src_zone: src_zone}
+        action: conn_denied
+      - name: deny_inbound_udp
+        ids: ['106006', '106007']
+        regex: '^Deny inbound (?P<proto>UDP) from (?P<src_ip>[^/\s]+)/(?P<src_port>\d+) to (?P<dst_ip>[^/\s]+)/(?P<dst_port>\d+).*? on interface (?P<src_zone>[^\s.]+)'
+        fields: {proto: proto, src_ip: src_ip, src_port: src_port, dst_ip: dst_ip, dst_port: dst_port, src_zone: src_zone}
+        action: conn_denied
+      - name: deny_inbound_icmp
+        ids: ['106014']
+        regex: '^Deny inbound (?P<proto>icmp) src (?P<src_zone>[^:\s]+):(?P<src_ip>\S+) dst (?P<dst_zone>[^:\s]+):(?P<dst_ip>\S+)'
+        fields: {proto: proto, src_zone: src_zone, src_ip: src_ip, dst_zone: dst_zone, dst_ip: dst_ip}
+        action: conn_denied
+      - name: deny_no_connection
+        ids: ['106015']
+        regex: '^Deny (?P<proto>TCP) \(no connection\) from (?P<src_ip>[^/\s]+)/(?P<src_port>\d+) to (?P<dst_ip>[^/\s]+)/(?P<dst_port>\d+) flags .*? on interface (?P<src_zone>[^\s.]+)'
+        fields: {proto: proto, src_ip: src_ip, src_port: src_port, dst_ip: dst_ip, dst_port: dst_port, src_zone: src_zone}
+        action: conn_denied
+      - name: deny_acl
+        ids: ['106023']
+        regex: '^Deny (?P<proto>\S+) src (?P<src_zone>[^:\s]+):(?P<src_ip>[^/\s]+)(?:/(?P<src_port>\d+))?(?: \([^)]*\))* dst (?P<dst_zone>[^:\s]+):(?P<dst_ip>[^/\s]+)(?:/(?P<dst_port>\d+))?.*? by access-group "?(?P<fw_rule>[^"\s]+)"?'
+        fields: {proto: proto, src_zone: src_zone, src_ip: src_ip, src_port: src_port, dst_zone: dst_zone, dst_ip: dst_ip, dst_port: dst_port, fw_rule: fw_rule}
+        action: conn_denied
+      - name: acl_hit
+        ids: ['106100']
+        regex: '^access-list (?P<fw_rule>\S+) (?P<verdict>permitted|denied|est-allowed) (?P<proto>\S+) (?P<src_zone>[^/\s]+)/(?P<src_ip>[^(\s]+)\((?P<src_port>\d+)\)(?: \([^)]*\))? -> (?P<dst_zone>[^/\s]+)/(?P<dst_ip>[^(\s]+)\((?P<dst_port>\d+)\)'
+        fields: {proto: proto, src_zone: src_zone, src_ip: src_ip, src_port: src_port, dst_zone: dst_zone, dst_ip: dst_ip, dst_port: dst_port, fw_rule: fw_rule}
+        actions:
+          - {when: {verdict: [denied]}, action: conn_denied}
+          - {when: {verdict: [permitted, est-allowed]}, action: conn_allowed}
+      - name: acl_denied_710003
+        ids: ['710003']
+        regex: '^(?P<proto>TCP|UDP) access denied by ACL from (?P<src_ip>[^/\s]+)/(?P<src_port>\d+) to (?P<dst_zone>[^:\s]+):(?P<dst_ip>[^/\s]+)/(?P<app>\S+)'
+        fields: {proto: proto, src_ip: src_ip, src_port: src_port, dst_zone: dst_zone, dst_ip: dst_ip, app: app}
+        action: conn_denied
+      - name: aaa_success
+        ids: ['113004']
+        regex: '^AAA user authentication Successful : server = +\S+ : user = (?P<user>\S+)'
+        fields: {user: user}
+        action: login_success
+        outcome: success
+      - name: aaa_rejected
+        ids: ['113005', '113015']
+        regex: '^AAA user authentication Rejected : reason = .*? : (?:server = +\S+|local database) : user = (?P<user>[^:\s]+) ?: user IP = (?P<src_ip>\S+)'
+        fields: {user: user, src_ip: src_ip}
+        action: login_failed
+        outcome: failure
+      - name: anyconnect_parent_start
+        ids: ['113039']
+        regex: '^Group <(?P<group>[^>]*)> User <(?P<user>[^>]*)> IP <(?P<src_ip>[^>]*)> AnyConnect parent session started'
+        fields: {group: group, user: user, src_ip: src_ip}
+        action: login_success
+        outcome: success
+      - name: session_disconnected
+        ids: ['113019']
+        regex: '^Group = (?P<group>[^,]*), Username = (?P<user>[^,]*), IP = (?P<src_ip>[^,]*), Session disconnected\..*?Bytes xmt: (?P<bytes>\d+), Bytes rcv: (?P<bytes_in>\d+)'
+        fields: {group: group, user: user, src_ip: src_ip, bytes: bytes, bytes_in: bytes_in}
+        action: other
+      - name: mgmt_login_denied
+        ids: ['605004']
+        regex: '^Login denied from (?P<src_ip>[^/\s]+)/(?P<src_port>\d+) to (?P<dst_zone>[^:\s]+):(?P<dst_ip>[^/\s]+)/(?P<app>\S+) for user "(?P<user>[^"]*)"'
+        fields: {src_ip: src_ip, src_port: src_port, dst_zone: dst_zone, dst_ip: dst_ip, app: app, user: user}
+        action: login_failed
+        outcome: failure
+      - name: mgmt_login_permitted
+        ids: ['605005']
+        regex: '^Login permitted from (?P<src_ip>[^/\s]+)/(?P<src_port>\d+) to (?P<dst_zone>[^:\s]+):(?P<dst_ip>[^/\s]+)/(?P<app>\S+) for user "(?P<user>[^"]*)"'
+        fields: {src_ip: src_ip, src_port: src_port, dst_zone: dst_zone, dst_ip: dst_ip, app: app, user: user}
+        action: login_success
+        outcome: success
+      - name: mgmt_auth_succeeded
+        ids: ['611101']
+        regex: '^User authentication succeeded: IP(?: address)?[:,]? *(?:IP address *: *)?(?P<src_ip>[^,\s]+) *[,:]? *Uname: (?P<user>\S+)'
+        fields: {src_ip: src_ip, user: user}
+        action: login_success
+        outcome: success
+      - name: mgmt_auth_failed
+        ids: ['611102']
+        regex: '^User authentication failed: IP(?: address)?[:,]? *(?:IP address *: *)?(?P<src_ip>[^,\s]+) *[,:]? *Uname: (?P<user>\S+)'
+        fields: {src_ip: src_ip, user: user}
+        action: login_failed
+        outcome: failure
+      - name: webvpn_session_start
+        ids: ['716001']
+        regex: '^Group <(?P<group>[^>]*)> User <(?P<user>[^>]*)> IP <(?P<src_ip>[^>]*)> WebVPN session started'
+        fields: {group: group, user: user, src_ip: src_ip}
+        action: login_success
+        outcome: success
+      - name: svc_established
+        ids: ['722022']
+        regex: '^Group <(?P<group>[^>]*)> User <(?P<user>[^>]*)> IP <(?P<src_ip>[^>]*)> (?P<proto>TCP|UDP) SVC connection established'
+        fields: {group: group, user: user, src_ip: src_ip, proto: proto}
+        action: other
+      - name: vpn_address_assigned    # assigned (tunnel) IP -> dst_ip: the session handoff public IP -> inside IP
+        ids: ['722051']
+        regex: '^Group <(?P<group>[^>]*)> User <(?P<user>[^>]*)> IP <(?P<src_ip>[^>]*)> IPv4 Address <(?P<dst_ip>[^>]*)>'
+        fields: {group: group, user: user, src_ip: src_ip, dst_ip: dst_ip}
+        action: other
+
+  # ---- PAN-OS syslog CSV  [PAN-TRAFFIC] [PAN-THREAT] PAN-OS 11.1 syslog field descriptions (1-based positions)
+  - name: panos
+    kind: csv
+    detect: '^\d*,\d{4}/\d\d/\d\d \d\d:\d\d:\d\d,[^,]*,(?:TRAFFIC|THREAT|GLOBALPROTECT|SYSTEM|CONFIG|HIPMATCH|USERID|AUTH|DECRYPTION|TUNNEL|CORRELATION|IPTAG|SCTP|GTP),'
+    ts:
+      - {regex: ',(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?(?:Z|[+-]\d\d:?\d\d))(?:,|$)'}   # High Resolution Timestamp (zoned)
+      - {key: 7, format: '%Y/%m/%d %H:%M:%S'}                                                 # Generated Time (device-local, naive)
+    layouts:
+      - name: traffic
+        when: {4: [TRAFFIC]}
+        fields: {src_ip: 8, dst_ip: 9, fw_rule: 12, user: 13, app: 15, src_zone: 17, dst_zone: 18,
+                 src_port: 25, dst_port: 26, proto: 30, bytes: 33, bytes_in: 34}
+        actions:
+          - {when: {31: [allow]}, action: conn_allowed}
+          - {when: {31: ['*']}, action: conn_denied}     # deny, drop, drop-icmp, reset-client/server/both
+        require_any: [src_ip, dst_ip]
+      - name: threat
+        when: {4: [THREAT]}
+        fields: {src_ip: 8, dst_ip: 9, fw_rule: 12, user: 13, app: 15, src_zone: 17, dst_zone: 18,
+                 src_port: 25, dst_port: 26, proto: 30, signature: 33, vendor_severity: 35}
+        action: ips_alert
+        require_any: [src_ip, dst_ip]
+      - name: globalprotect      # PAN-OS 10.x+: 9 event id, 13 user, 16 public IP, 18 private IP, 29 status
+        when: {4: [GLOBALPROTECT]}
+        fields: {signature: 9, user: 13, src_ip: 16, dst_ip: 18, app: 12}
+        actions:
+          - {when: {9: [gateway-auth, portal-auth], 29: [success]}, action: login_success, outcome: success}
+          - {when: {9: [gateway-auth, portal-auth], 29: [failure]}, action: login_failed, outcome: failure}
+          - {when: {29: [success]}, action: other, outcome: success}
+          - {when: {29: [failure]}, action: other, outcome: failure}
+        require_any: [user]
+      - name: system
+        when: {4: [SYSTEM, CONFIG]}
+        fields: {}
+        action: other
+
+  # ---- PAN-OS WebUI Monitor CSV export (header "Domain,Receive Time,..."): no FUTURE_USE column after Log Action.
+  # Only used when a caller forces it (csv source with the PAN-OS export header).
+  - name: panos_webui_export
+    kind: csv
+    sniff: false
+    detect: '^\d*,\d{4}/\d\d/\d\d \d\d:\d\d:\d\d,[^,]*,(?:TRAFFIC|THREAT),'
+    ts:
+      - {key: 7, format: '%Y/%m/%d %H:%M:%S'}
+    layouts:
+      - name: traffic
+        when: {4: [TRAFFIC]}
+        fields: {src_ip: 8, dst_ip: 9, fw_rule: 12, user: 13, app: 15, src_zone: 17, dst_zone: 18,
+                 src_port: 24, dst_port: 25, proto: 29, bytes: 32, bytes_in: 33, host: 38}
+        actions:
+          - {when: {30: [allow]}, action: conn_allowed}
+          - {when: {30: ['*']}, action: conn_denied}
+        require_any: [src_ip, dst_ip]
+
+  # ---- pfSense / OPNsense filterlog  [PF] https://docs.netgate.com/pfsense/en/latest/monitoring/logs/raw-filter-format.html
+  # 1 rule, 2 sub rule, 3 anchor, 4 tracker, 5 interface, 6 reason, 7 action, 8 direction, 9 IP version, then
+  # IPv4: 10 tos, 11 ecn, 12 ttl, 13 id, 14 offset, 15 flags, 16 proto id, 17 proto, 18 length, 19 src, 20 dst, 21/22 ports
+  # IPv6: 10 class, 11 flow label, 12 hop limit, 13 proto, 14 proto id, 15 length, 16 src, 17 dst, 18/19 ports
+  - name: pfsense_filterlog
+    kind: csv
+    detect: '^\d*,[^,]*,[^,]*,[^,]*,[^,]*,[^,]*,(?:pass|block|reject),(?:in|out),[46],'
+    layouts:
+      - name: ipv4_tcp_udp
+        when: {9: ['4'], 17: [tcp, udp]}
+        fields: {fw_rule: 4, direction: 8, proto: 17, src_ip: 19, dst_ip: 20, src_port: 21, dst_port: 22}
+      - name: ipv4_other
+        when: {9: ['4']}
+        fields: {fw_rule: 4, direction: 8, proto: 17, src_ip: 19, dst_ip: 20}
+      - name: ipv6_tcp_udp
+        when: {9: ['6'], 13: [tcp, udp]}
+        fields: {fw_rule: 4, direction: 8, proto: 13, src_ip: 16, dst_ip: 17, src_port: 18, dst_port: 19}
+      - name: ipv6_other
+        when: {9: ['6']}
+        fields: {fw_rule: 4, direction: 8, proto: 13, src_ip: 16, dst_ip: 17}
+    actions:
+      - {when: {7: [pass]}, action: conn_allowed}
+      - {when: {7: [block, reject]}, action: conn_denied}
+    require_any: [src_ip, dst_ip]
+
+  # ---- Check Point Log Exporter (syslog SD `[key:"value"; ...]`, or key="value")  [CP-LE]
+  - name: checkpoint
+    kind: kv
+    detect: '(?:^|[\[;\s|])(?:loguid|originsicname|origin_sic_name|ifdir|sequencenum)[:=]"'
+    pair_regex: '(?:^|[\[;\s|]){key}[:=]"((?:[^"\\]|\\.)*)"'
+    ts:
+      - {key: time, epoch: true}
+    fields:
+      src_ip: [src]
+      dst_ip: [dst]
+      src_port: [s_port]
+      dst_port: [service]
+      proto: [proto]
+      user: [src_user_name, user, src_user]
+      app: [service_id, appi_name]
+      fw_rule: [rule_name, rule_uid]
+      host_ip: [origin]
+      src_zone: [inzone]
+      dst_zone: [outzone]
+      bytes: [client_outbound_bytes, bytes]
+      bytes_in: [client_inbound_bytes]
+      signature: [protection_name, attack]
+      vendor_severity: [severity]
+      direction: [ifdir]
+    actions:
+      - {when: {action: [accept, allow, encrypt, decrypt, key install]}, action: conn_allowed}
+      - {when: {action: [drop, reject, block]}, action: conn_denied}
+      - {when: {action: [prevent, detect, inspect]}, action: ips_alert}
+      - {when: {action: [log in]}, action: login_success, outcome: success}
+      - {when: {action: [failed log in]}, action: login_failed, outcome: failure}
+    require_any: [src_ip, dst_ip, user]
+
+  # ---- IBM QRadar LEEF 1.0 (tab) / 2.0 (delimiter in header field 6, char or xHH)  [LEEF]
+  - name: leef
+    kind: leef
+    detect: '(?:^|\s)LEEF:[12]\.0\|'
+    header_regex: 'LEEF:([12]\.0)\|([^|]*)\|([^|]*)\|([^|]*)\|([^|]*)\|(.*)$'   # 1 ver 2 vendor 3 product 4 version 5 event id 6 rest
+    delim_regex: '^(0?[xX][0-9A-Fa-f]{2,4}|[^|=])\|(.*)$'                        # LEEF 2.0 delimiter field
+    ts:
+      - {key: devTime, format_key: devTimeFormat}
+    devtime_formats:          # devTimeFormat (Java SimpleDateFormat) -> strptime; 'epoch' = epoch s/ms
+      'MMM dd yyyy HH:mm:ss': '%b %d %Y %H:%M:%S'
+      'MMM dd yyyy HH:mm:ss.SSS': '%b %d %Y %H:%M:%S.%g'
+      'MMM dd yyyy HH:mm:ss.SSS zzz': '%b %d %Y %H:%M:%S.%g %Z'
+      'MMM dd yyyy HH:mm:ss zzz': '%b %d %Y %H:%M:%S %Z'
+      'yyyy-MM-dd HH:mm:ss': '%Y-%m-%d %H:%M:%S'
+      "yyyy-MM-dd'T'HH:mm:ss.SSSZ": '%Y-%m-%dT%H:%M:%S.%g%z'
+      "yyyy-MM-dd'T'HH:mm:ssZ": '%Y-%m-%dT%H:%M:%S%z'
+    fields:
+      src_ip: [src, srcPreNAT]
+      dst_ip: [dst, dstPreNAT]
+      src_port: [srcPort, srcPreNATPort]
+      dst_port: [dstPort, dstPreNATPort]
+      proto: [proto]
+      user: [usrName, accountName, suser]
+      bytes: [srcBytes, bytes]
+      bytes_in: [dstBytes]
+      vendor_severity: [sev]
+      host: [identHostName]
+      signature: [_id]
+    actions:
+      - {when_regex: {action: '(?i)^(allow|accept|permit|pass)'}, action: conn_allowed}
+      - {when_regex: {action: '(?i)^(deny|denied|drop|block|reject)'}, action: conn_denied}
+      - {when_regex: {_id: '(?i)(log[io]n|auth\w*)[ _-]?(fail|reject|denied)'}, action: login_failed, outcome: failure}
+      - {when_regex: {_id: '(?i)(log[io]n|auth\w*)[ _-]?(success|succeeded|ok)'}, action: login_success, outcome: success}
+      - {when_regex: {_id: '(?i)conn\w*[ _-]?(allow|accept|permit)'}, action: conn_allowed}
+      - {when_regex: {_id: '(?i)conn\w*[ _-]?(deny|denied|drop|block)'}, action: conn_denied}
+    require_any: [src_ip, dst_ip, user]

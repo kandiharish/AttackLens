@@ -43,7 +43,8 @@ def by_sig(ctx, stype: str) -> dict[str, dict]:
 
 
 def test_every_file_routed_and_fully_accounted(ctx) -> None:
-    prof = {f["rel"]: f.get("source_type") for f in ctx.stats["profile"]["files"]}
+    # an envelope file is unpacked in Stage 0 (cloud_unpack): its records are profiled as "<file>!/<part>"
+    prof = {f["rel"].split("!/")[0]: f.get("source_type") for f in ctx.stats["profile"]["files"]}
     for i, (name, (stype, _)) in enumerate(FILES.items()):
         assert prof[f"part-{i}.log"] == stype, (name, prof[f"part-{i}.log"])
     want: dict[str, int] = {}
@@ -67,9 +68,10 @@ def test_okta_bare_and_eventbridge(ctx) -> None:
     assert (grant["action"], grant["outcome"], grant["src_user"], grant["signature"]) == \
         ("other", "success", "alice", "user.account.privilege.grant")
     assert (push["outcome"], push["src_user"]) == (None, "carol")           # CHALLENGE is no outcome
-    # EventBridge envelope: detail.* aliases, partner source -> org as host, DENY -> failure
-    assert (eb["action"], eb["outcome"], eb["target_user"], eb["src_ip"], eb["host"]) == \
-        ("login_failed", "failure", "dave", "203.0.113.70", "corp-dev-123")
+    # EventBridge envelope (detail lifted by Stage 0, or read through the detail.* aliases): DENY -> failure
+    assert (eb["action"], eb["outcome"], eb["target_user"], eb["src_ip"]) == \
+        ("login_failed", "failure", "dave", "203.0.113.70")
+    assert eb["host"] in ("corp.example", "corp-dev-123")
     assert "mozilla" in ok["app"]
 
 
@@ -112,10 +114,11 @@ def test_m365_purview_csv(ctx) -> None:
     r = rows(ctx, "m365_purview_csv")
     assert [(x["ts_ms"], x["src_user"], x["signature"]) for x in r] == \
         [(T0 + 5000, "alice", "New-InboxRule"), (T0 + 6000, "alice", "FileDownloaded")]
+    # AuditData decoded (sources.yaml json_columns): tenant, client IP without its port, object
+    assert [(x["host"], x["src_ip"]) for x in r] == [(ORG, "203.0.113.5"), (ORG, "203.0.113.5")]
+    assert r[0]["outcome"] == "success" and r[1]["file_path"].endswith("a, b.xlsx")
 
 
-@pytest.mark.xfail(reason="csv_select ignores sources.yaml quote / escape until "
-                          "reports/cloud/patches/identity-saas-ingest_sql.diff is applied", strict=False)
 def test_m365_purview_csv_auditdata_intact(ctx) -> None:
     r = rows(ctx, "m365_purview_csv")
     assert '"ForwardTo"' in r[0]["raw_line"]                                  # AuditData kept for the cloud rules

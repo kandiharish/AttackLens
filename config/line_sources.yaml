@@ -1,0 +1,235 @@
+# Line-oriented text logs that are not JSON / CEF / syslog / key=value / CSV (attacklens/ingest_lines.py).
+# Loaded by config.load_config as cfg["line_sources"] = {line_sources: ..., directive_sources: ...}.
+#
+# Two source kinds, both config-driven, both parsed by DuckDB over attacklens.db.line_reader (one VARCHAR per line):
+#
+# 1) line_sources: ONE RE2 regex per format with named groups (?P<name>...). RE2 and Python `re` share that syntax,
+#    so sniff (Python) and parse (DuckDB) use the SAME regex and cannot disagree. Never use lookarounds or
+#    backreferences (RE2 has none; validate() fails on them).
+#      detect_regex   sniff: the first non-header line of a file must match (config order decides, first wins).
+#      line_regex     parse: a non-empty, non-header line that does not match is kept as action=malformed,
+#                     ts_ok=false and counted as unparseable_line (never silently dropped).
+#      header_regex   optional: lines that are file headers (not events) are counted as header_line, not rows.
+#      ts             {fields: [group, ...] joined with ' ', format: epoch | epoch_ms | <strptime>, zone: <IANA>}.
+#                     A strptime format without %z / %Z MUST name its zone (validate() fails otherwise): the zone is
+#                     never guessed. %z in the format means the offset in the value is used and zone is ignored.
+#      null_values    group values read as NULL (default ['', '-']).
+#      fields         canonical f_<field> -> spec. spec = "<group>" | [spec, ...] (coalesce) |
+#                     {group, regex (group 1 of it), replace: [pattern, replacement] (all matches), trim: chars,
+#                      lower: true, concat: [spec, ...], sep: '?', const: value}.
+#      actions        ordered rules {when: {<group>: <RE2 regex>, ...}, action, outcome?}; first match wins; a rule
+#                     without `when` is the default.
+#      outcome_rules  ordered rules {when, outcome}; used when the matching action rule sets no outcome.
+#    Web status >= 400 means failure (RFC 9110: 4xx client error, 5xx server error).
+#
+# 2) directive_sources: header-defined TSV. The column list comes from a directive line IN THE FILE (Zeek
+#    '#fields', W3C '#Fields:'); every later directive restarts the schema (ingest_lines.plan_directive splits a
+#    file whose blocks carry different schemas). Lines starting with '#' are header_line, not rows. A data line
+#    whose field count differs from its schema is kept as malformed (unparseable_line).
+#      paths          per log type (Zeek '#path', else the file name stem; '_default' otherwise): ts / fields /
+#                     actions / outcome_rules as above, but groups are COLUMN NAMES of the directive. A column the
+#                     file does not carry is NULL (never a binder error).
+#
+# Field semantics shared with the other sources: bytes = bytes sent by src (bytes_out), bytes_in = bytes received
+# by src. For a web / proxy log src is the client, so the response size is bytes_in.
+
+line_sources:
+  # Squid native access.log: 'time elapsed client code/status bytes method URL user hier/peer type'
+  # https://wiki.squid-cache.org/Features/LogFormat
+  squid_native:
+    detect_regex: '^\d{9,10}\.\d{3} +-?\d+ \S+ [A-Z_]+/\d{3} \d+ \S+ '
+    line_regex: '^(?P<ts>\d{9,10}\.\d{3}) +(?P<elapsed>-?\d+) (?P<client>\S+) (?P<code>[A-Z_]+)/(?P<status>\d{3}) (?P<bytes>\d+) (?P<method>\S+) (?P<url>\S+) (?P<user>\S+) (?P<hier>[A-Z_]+)/(?P<peer>\S+)(?: (?P<ctype>\S+))?'
+    ts: {fields: [ts], format: epoch}
+    fields:
+      src_ip: client
+      user: user
+      dst_ip: peer
+      dst_domain: {group: url, regex: '^(?:[A-Za-z][A-Za-z0-9+.-]*://)?(?:[^@/]*@)?(\[[^\]]+\]|[^/:?#]+)', lower: true}
+      file_path: url
+      bytes_in: bytes
+      app: {const: squid}
+    actions:
+      - {when: {code: 'DENIED'}, action: web_blocked, outcome: failure}
+      - {action: web_access}
+    outcome_rules: &http_status
+      - {when: {status: '^[45]\d\d$'}, outcome: failure}
+      - {when: {status: '^[123]\d\d$'}, outcome: success}
+
+  # Squid 'logformat combined' = Apache combined + ' %Ss:%Sh'. Listed BEFORE apache_access (its lines also match
+  # the Apache regex, which is not anchored at the end).
+  squid_combined:
+    detect_regex: '^\S+ \S+ \S+ \[\d{2}/[A-Za-z]{3}/\d{4}:\d{2}:\d{2}:\d{2} [+-]\d{4}\] "[^"]*" \d{3} \S+ "[^"]*" "[^"]*" [A-Z_]+:[A-Z_]+$'
+    line_regex: '^(?P<client>\S+) (?P<ident>\S+) (?P<user>\S+) \[(?P<ts>[^\]]+)\] "(?P<method>[A-Za-z]+) (?P<url>\S+)(?: (?P<proto>[^"]*))?" (?P<status>\d{3}) (?P<bytes>\d+|-) "(?P<referer>[^"]*)" "(?P<agent>[^"]*)" (?P<code>[A-Z_]+):(?P<hier>[A-Z_]+)$'
+    ts: {fields: [ts], format: '%d/%b/%Y:%H:%M:%S %z'}
+    fields:
+      src_ip: client
+      user: user
+      dst_domain: {group: url, regex: '^(?:[A-Za-z][A-Za-z0-9+.-]*://)?(?:[^@/]*@)?(\[[^\]]+\]|[^/:?#]+)', lower: true}
+      file_path: url
+      bytes_in: bytes
+      app: {const: squid}
+    actions:
+      - {when: {code: 'DENIED'}, action: web_blocked, outcome: failure}
+      - {action: web_access}
+    outcome_rules: *http_status
+
+  # Apache / nginx combined and common log format (nginx 'combined' and 'main' are the same prefix):
+  # '%h %l %u [%t] "%r" %>s %b' [+ ' "%{Referer}i" "%{User-agent}i"'] [+ anything, e.g. nginx "$http_x_forwarded_for"]
+  # https://httpd.apache.org/docs/2.4/logs.html#common , https://nginx.org/en/docs/http/ngx_http_log_module.html
+  # A malformed request line ("-" or binary junk) still parses: method / uri are then NULL.
+  apache_access:
+    detect_regex: '^\S+ \S+ \S+ \[\d{2}/[A-Za-z]{3}/\d{4}:\d{2}:\d{2}:\d{2} [+-]\d{4}\] "'
+    line_regex: '^(?P<client>\S+) (?P<ident>\S+) (?P<user>\S+) \[(?P<ts>[^\]]+)\] "(?:(?P<method>[A-Za-z]+) (?P<uri>\S+)(?: (?P<proto>[^"]*))?|(?P<badreq>(?:[^"\\]|\\.)*))" (?P<status>\d{3}|-) (?P<bytes>\d+|-)(?: "(?P<referer>(?:[^"\\]|\\.)*)" "(?P<agent>(?:[^"\\]|\\.)*)")?'
+    ts: {fields: [ts], format: '%d/%b/%Y:%H:%M:%S %z'}
+    fields:
+      src_ip: client
+      user: user
+      file_path: uri
+      bytes_in: bytes
+    actions:
+      - {action: web_access}
+    outcome_rules: *http_status
+
+  # nginx error_log: 'YYYY/MM/DD HH:MM:SS [level] pid#tid: *cid message, client: ip, server: name, request: "..."'
+  # https://nginx.org/en/docs/ngx_core_module.html#error_log . The timestamp is server LOCAL time with no offset:
+  # set zone to the server's zone.
+  nginx_error:
+    detect_regex: '^\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2} \[(?:debug|info|notice|warn|error|crit|alert|emerg)\] \d+#\d+: '
+    line_regex: '^(?P<ts>\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}) \[(?P<level>[a-z]+)\] (?P<pid>\d+)#(?P<tid>\d+): (?:\*(?P<cid>\d+) )?(?P<msg>.*?)(?:, client: (?P<client>[^,]+))?(?:, server: (?P<server>[^,]*))?(?:, request: "(?P<method>[A-Za-z]+) (?P<uri>\S+)[^"]*")?(?:, (?:upstream|host|referrer): .*)?$'
+    ts: {fields: [ts], format: '%Y/%m/%d %H:%M:%S', zone: UTC}
+    fields:
+      src_ip: client
+      host: server
+      file_path: uri
+      vendor_severity: level
+      signature: msg
+    actions:
+      - {when: {msg: 'forbidden|denied'}, action: web_blocked, outcome: failure}
+      - {when: {level: '^(?:error|crit|alert|emerg)$', uri: '.'}, action: web_access, outcome: failure}
+      - {when: {uri: '.'}, action: web_access}
+      - {action: other}
+
+  # Windows DNS Server debug log (dns.log). Header block + packet lines:
+  # '10/31/2026 10:00:00 AM 0E3C PACKET  000001F2A3B4C5D0 UDP Rcv 192.0.2.10  a1b2 R Q [8385 A DR NXDOMAIN] TXT (3)www(7)example(3)com(0)'
+  # https://learn.microsoft.com/en-us/previous-versions/windows/it-pro/windows-server-2012-r2-and-2012/dn800669(v=ws.11)
+  # The timestamp is the DNS server's LOCAL time, no offset and a locale-dependent layout: set zone (and format)
+  # to the server's. Non-PACKET lines (EVENT, Note ...) are unparseable_line, counted.
+  windns_debug:
+    detect_regex: '^(?:DNS Server log file creation at |Log file wrap at |Message logging key |\d{1,2}/\d{1,2}/\d{4} \d{1,2}:\d{2}:\d{2}(?: [AP]M)? [0-9A-Fa-f]+ PACKET )'
+    header_regex: '^(?:DNS Server log file creation at|Log file wrap at|Message logging key|\s)'
+    line_regex: '^(?P<date>\d{1,2}/\d{1,2}/\d{4}) (?P<time>\d{1,2}:\d{2}:\d{2}(?: [AP]M)?) (?P<thread>[0-9A-Fa-f]+) PACKET +(?P<ctx>[0-9A-Fa-f]+) (?P<proto>UDP|TCP) (?P<dir>Snd|Rcv) (?P<client>\S+) +(?P<xid>[0-9A-Fa-f]+) +(?:(?P<resp>R) )?(?P<opcode>[QNU?]) \[(?P<flags_hex>[0-9A-Fa-f]+) [^\]]*?(?P<rcode>[A-Z]+)\] (?P<qtype>\S+) +(?P<qname>\S+)'
+    ts: {fields: [date, time], format: '%m/%d/%Y %I:%M:%S %p', zone: UTC}
+    fields:
+      src_ip: client
+      dst_domain: {group: qname, replace: ['\(\d+\)', '.'], trim: '.', lower: true}
+    actions:
+      - {action: dns_query}
+    outcome_rules:
+      - {when: {resp: 'R', rcode: '^NOERROR$'}, outcome: success}
+      - {when: {resp: 'R', rcode: '^(NXDOMAIN|SERVFAIL|REFUSED)$'}, outcome: failure}
+
+directive_sources:
+  # Zeek ASCII (TSV) logs: '#separator \x09', '#path conn', '#fields ts uid ...', '#types ...', rows, '#close'.
+  # https://docs.zeek.org/en/master/log-formats.html , https://docs.zeek.org/en/master/logs/conn.html ,
+  # https://docs.zeek.org/en/master/logs/dns.html , https://docs.zeek.org/en/master/logs/http.html
+  # ts is epoch seconds with a fraction (UTC by definition).
+  zeek_tsv:
+    detect_regex: '^#separator '
+    fields_directive: '#fields'        # columns = the rest of the line, split by the separator
+    separator_directive: '#separator'  # '\x09' style escapes decoded
+    separator: "\t"
+    path_directive: '#path'
+    null_values: ['-', '(empty)']
+    paths:
+      conn:
+        ts: {fields: [ts], format: epoch}
+        fields:
+          src_ip: id.orig_h
+          src_port: id.orig_p
+          dst_ip: id.resp_h
+          dst_port: id.resp_p
+          bytes: orig_bytes
+          bytes_in: resp_bytes
+          app: service
+        actions:
+          - {action: conn_out}
+        outcome_rules:     # conn_state: S0 / REJ / RSTOS0 / RSTRH / SH / SHR = no established connection
+          - {when: {conn_state: '^(S0|REJ|RSTOS0|RSTRH|SH|SHR)$'}, outcome: failure}
+          - {when: {conn_state: '^(SF|S1|S2|S3|RSTO|RSTR)$'}, outcome: success}
+      dns:
+        ts: {fields: [ts], format: epoch}
+        fields:
+          src_ip: id.orig_h
+          src_port: id.orig_p
+          dst_ip: id.resp_h
+          dst_port: id.resp_p
+          dst_domain: {group: query, lower: true}
+        actions:
+          - {action: dns_query}
+        outcome_rules:
+          - {when: {rcode_name: '^NOERROR$'}, outcome: success}
+          - {when: {rcode_name: '^(NXDOMAIN|SERVFAIL|REFUSED)$'}, outcome: failure}
+      http:
+        ts: {fields: [ts], format: epoch}
+        fields:
+          src_ip: id.orig_h
+          src_port: id.orig_p
+          dst_ip: id.resp_h
+          dst_port: id.resp_p
+          dst_domain: {group: host, regex: '^(\[[^\]]+\]|[^:]+)', lower: true}
+          file_path: uri
+          user: username
+          bytes: request_body_len
+          bytes_in: response_body_len
+        actions:
+          - {action: web_access}
+        outcome_rules:
+          - {when: {status_code: '^[45]\d\d$'}, outcome: failure}
+          - {when: {status_code: '^[123]\d\d$'}, outcome: success}
+      ssl:
+        ts: {fields: [ts], format: epoch}
+        fields:
+          src_ip: id.orig_h
+          src_port: id.orig_p
+          dst_ip: id.resp_h
+          dst_port: id.resp_p
+          dst_domain: {group: server_name, lower: true}
+        actions:
+          - {action: web_access}
+      _default:            # other Zeek logs (files, x509, notice ...): kept and counted, action other
+        ts: {fields: [ts], format: epoch}
+        fields:
+          src_ip: id.orig_h
+          src_port: id.orig_p
+          dst_ip: id.resp_h
+          dst_port: id.resp_p
+        actions:
+          - {action: other}
+
+  # IIS / W3C extended log: '#Software:', '#Version:', '#Date:', '#Fields: date time s-ip cs-method ...'.
+  # https://learn.microsoft.com/en-us/windows/win32/http/w3c-logging ; date + time are UTC (W3C spec).
+  # IIS writes a new header block on every restart / config change; a changed #Fields restarts the schema.
+  iis_w3c:
+    detect_regex: '^#(?:Software|Version|Date|Fields): '
+    fields_directive: '#Fields:'       # columns = the rest of the line, split on spaces
+    separator: ' '
+    null_values: ['-']
+    paths:
+      _default:
+        ts: {fields: [date, time], format: '%Y-%m-%d %H:%M:%S', zone: UTC}
+        fields:
+          src_ip: c-ip
+          src_port: c-port
+          dst_ip: s-ip
+          dst_port: s-port
+          host: [s-computername, s-sitename]
+          dst_domain: {group: cs-host, regex: '^(\[[^\]]+\]|[^:]+)', lower: true}
+          user: cs-username
+          file_path: {concat: [cs-uri-stem, cs-uri-query], sep: '?'}
+          bytes: cs-bytes
+          bytes_in: sc-bytes
+        actions:
+          - {action: web_access}
+        outcome_rules:
+          - {when: {sc-status: '^[45]\d\d$'}, outcome: failure}
+          - {when: {sc-status: '^[123]\d\d$'}, outcome: success}

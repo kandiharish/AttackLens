@@ -19,6 +19,21 @@ outcome and action are encoded differently from Windows / ECS:
     zones: {'$.UtcTime': utc, '$.EventTime': local}   # per alias; default explicit
     naive_tz: null        # IANA zone for naive values; null = a naive value never counts (ts falls to the next alias)
     naive_formats: ['%m/%d/%Y %I:%M:%S %p']           # strptime formats tried after the ISO cast (naive_tz only)
+    Every alias of a ts_policy source also accepts epoch us (16 digits, journald) and ns (19 digits): the first 13
+    digits (epoch ms) are kept.
+  scalar_fields: [host]   # a JSON object / array value (e.g. ECS host {...} where a string was expected) -> NULL
+  action_fallback:        # only rows whose raw event_action is NULL or listed in when_action_in (generic verbs such
+    when_action_in: [start, exec]   # as ECS 'start'): the first rule whose JSON array/string paths contain every
+    paths: {category: '$.event.category', type: '$.event.type'}   # listed value (and whose `require` fields are
+    rules: [{category: process, type: start, action: proc_start}]  # non-NULL) sets event_action (else unchanged)
+  json_fallbacks:         # field -> extra JSON paths read only when every alias is NULL (and the raw action is in
+    command_line: {when_action_in: [executed], paths: [{path: '$.process.args[*]', join: ' '}, {path: '$.x'}]}
+  properties_map:         # Get-WinEvent ConvertTo-Json: positional $.Properties[n].Value per event id, read only
+    path: '$.Properties[{i}].Value'          # when the field's aliases are all NULL
+    ids: {4624: {target_name: 5, logon_type: 8, src_ip: 18}}
+
+The action_fallback / json_fallbacks / properties_map paths are read from the raw `line` of the JSON SELECT
+(ingest_sql.json_select), inside a CASE that only evaluates them on the rows that need them.
 
 Everything is SQL over the already-extracted strings: no row reaches Python.
 """
@@ -35,6 +50,8 @@ IP_RX = r"^(\d{1,3}\.){3}\d{1,3}$|^[0-9A-Fa-f:]*:[0-9A-Fa-f:.]*$"
 TZ_RX = r"\d:\d\d(:\d\d([.,]\d+)?)?\s*([Zz]|[+-]\d\d(:?\d\d)?|UTC|GMT)$"
 EPOCH_RX = r"^(\d{12,13}|\d{9,10}(\.\d+)?)$"          # epoch ms / s (what ingest_sql.ts_expr reads as UTC)
 DOTNET_RX = r"^/Date\((\d{9,13})([+-]\d{4})?\)/$"     # .NET / PowerShell ConvertTo-Json: UTC epoch ms
+EPOCH_WIDE_RX = r"^(\d{13})(\d{3}|\d{6})(\.\d*)?$"        # epoch us (16 digits) / ns (19): group 1 = epoch ms
+LINE = "line"                                         # the raw JSON text column of ingest_sql.json_select
 TS_ZONES = ("utc", "explicit", "local")
 TZ_NAME_RX = re.compile(r"^[A-Za-z][A-Za-z0-9_+\-/]{0,63}$")
 
@@ -75,7 +92,9 @@ def ts_value_sql(x: str, zone: str, pol: dict[str, Any]) -> str:
     """One timestamp alias -> a string ts_expr parses as true UTC, or NULL when the value does not qualify.
       utc       UTC by definition (Sysmon UtcTime): taken as is, naive allowed
       explicit  needs its own zone (Z / offset / UTC), epoch digits or /Date(ms)/; naive -> naive_sql
-      local     a local wall clock (NXLog EventTime): its own zone if present, else naive_sql"""
+      local     a local wall clock (NXLog EventTime): its own zone if present, else naive_sql
+    Epoch us / ns digits are cut to epoch ms first (any zone class)."""
+    x = f"CASE WHEN regexp_matches({x}, {sql_str(EPOCH_WIDE_RX)}) THEN left({x}, 13) ELSE {x} END"
     if zone == "utc":
         return x
     own = f"regexp_matches({x}, {sql_str(TZ_RX)})"
@@ -132,12 +151,78 @@ def value_regex_sql(x: str, patterns: Any) -> str:
     return f"CASE {arms} ELSE {x} END" if arms else x
 
 
+def _clean(x: str) -> str:
+    return f"nullif(nullif(trim({x}), ''), '-')"
+
+
+def _jpath(path: str, join: str | None = None) -> str:
+    """One JSON path read from the raw line (malformed JSON -> NULL); an array joined with `join`."""
+    if join is None:
+        return _clean(f"try(json_extract_string({LINE}, {sql_str(path)}))")
+    return _clean(f"array_to_string(try(json_extract_string({LINE}, {sql_str(path)})), {sql_str(join)})")
+
+
+def _action_in(a: str, names: list[Any]) -> str:
+    if not names:
+        return "true"
+    return f"({a} IS NULL OR lower(trim({a})) IN ({', '.join(sql_str(str(n).lower()) for n in names)}))"
+
+
+def action_fallback_sql(vals: dict[str, str], spec: dict[str, Any]) -> str:
+    """event_action for rows with a generic / missing verb: first rule whose JSON paths contain the listed values."""
+    a = vals.get("event_action", "CAST(NULL AS VARCHAR)")
+    paths = {str(k): str(v) for k, v in (spec.get("paths") or {}).items()}
+    arms = []
+    for rule in spec.get("rules") or []:
+        conds = [f"contains(coalesce(CAST(try(json_extract({LINE}, {sql_str(p)})) AS VARCHAR), ''), "
+                 f"{sql_str(chr(34) + str(rule[k]) + chr(34))})" for k, p in paths.items() if k in rule]
+        conds += [f"{vals.get(str(f), 'CAST(NULL AS VARCHAR)')} IS NOT NULL" for f in rule.get("require") or []]
+        if conds:
+            arms.append(f"WHEN {' AND '.join(conds)} THEN {sql_str(str(rule['action']))}")
+    if not arms:
+        return a
+    when = spec.get("when_action_in") or []
+    return f"CASE WHEN {_action_in(a, when)} THEN coalesce(CASE {' '.join(arms)} END, {a}) ELSE {a} END"
+
+
+def json_fallbacks_sql(x: str, a: str, spec: dict[str, Any]) -> str:
+    reads = [_jpath(str(p["path"]), p.get("join")) for p in spec.get("paths") or []]
+    if not reads:
+        return x
+    guard = _action_in(a, spec.get("when_action_in") or [])
+    return f"CASE WHEN {x} IS NULL AND {guard} THEN coalesce({', '.join(reads)}) ELSE {x} END"
+
+
+def properties_sql(out: dict[str, str], spec: dict[str, Any]) -> dict[str, str]:
+    """Positional Properties[n].Value per event id, as a fallback after the field's own aliases."""
+    tmpl = str(spec.get("path") or "$.Properties[{i}].Value")
+    eid = f"try_cast({out.get('event_id', 'CAST(NULL AS VARCHAR)')} AS INTEGER)"
+    per_field: dict[str, list[str]] = {}
+    for ev, fmap in (spec.get("ids") or {}).items():
+        for f, i in (fmap or {}).items():
+            per_field.setdefault(str(f), []).append(f"WHEN {int(ev)} THEN {_jpath(tmpl.format(i=int(i)))}")
+    res = dict(out)
+    for f, arms in per_field.items():
+        res[f] = f"coalesce({out.get(f, 'CAST(NULL AS VARCHAR)')}, CASE {eid} {' '.join(arms)} END)"
+    return res
+
+
 def apply_source_maps(vals: dict[str, str], scfg: dict[str, Any]) -> dict[str, str]:
     """vals: intermediate field -> SQL expression (VARCHAR). Returns a copy with the source's maps applied."""
     out = dict(vals)
     pol = ts_policy_of(scfg)
     if pol and "ts" in out:
         out["ts"] = _ts_policy_expr(out["ts"], scfg, pol)
+    if scfg.get("properties_map"):
+        out = properties_sql(out, scfg["properties_map"])
+    for f in scfg.get("scalar_fields") or []:
+        if f in out:
+            out[f] = f"CASE WHEN left(ltrim({out[f]}), 1) IN ('{{', '[') THEN NULL ELSE {out[f]} END"
+    raw_action = out.get("event_action", "CAST(NULL AS VARCHAR)")
+    for f, spec in (scfg.get("json_fallbacks") or {}).items():
+        out[f] = json_fallbacks_sql(out.get(f, "CAST(NULL AS VARCHAR)"), raw_action, spec)
+    if scfg.get("action_fallback"):
+        out["event_action"] = action_fallback_sql(out, scfg["action_fallback"])
     for f, pats in (scfg.get("value_regex") or {}).items():
         if f in out:
             out[f] = value_regex_sql(f"trim({out[f]})", pats)

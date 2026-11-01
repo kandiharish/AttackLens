@@ -1,0 +1,92 @@
+{
+  "_about": "Cloud and identity log coverage shown on the Connections page. Kept equal to config/sources.yaml and the connector modules by backend/tests/test_cloud_logs_ui.py. detection: rules = scored detection rules read it; context = timeline / accounting only (vendor verdicts are not raw evidence).",
+  "connectors": {
+    "aws_cloudtrail": {
+      "provider": "AWS",
+      "pulls": "CloudTrail management events (LookupEvents API, last 90 days) or the trail's log files in S3 (management + data events, org trails)."
+    },
+    "azure_monitor": {
+      "provider": "Azure",
+      "pulls": "Log Analytics: Activity Log, Entra ID sign-ins (interactive, non-interactive, service principal, managed identity) and audit logs; optional blob data plane. Alerts mode: SecurityAlert."
+    },
+    "gcp_logging": {
+      "provider": "Google Cloud",
+      "pulls": "Cloud Logging: Cloud Audit Logs (Admin Activity, Data Access, System Event, Policy Denied), GKE audit included."
+    },
+    "okta": {
+      "provider": "Okta",
+      "pulls": "System Log (/api/v1/logs): sign-ins, MFA, admin and app events, last 90 days."
+    },
+    "m365_ual": {
+      "provider": "Microsoft 365",
+      "pulls": "Management Activity API: Exchange, SharePoint / OneDrive, Entra ID and General audit (last 7 days)."
+    },
+    "gws_reports": {
+      "provider": "Google Workspace",
+      "pulls": "Reports API: login, admin console, OAuth token and Drive activity."
+    }
+  },
+  "providers": [
+    {
+      "provider": "AWS",
+      "logs": [
+        { "log": "CloudTrail management + data events (incl. console / Identity Center sign-in)", "short": "CloudTrail", "source_type": "cloudtrail_json", "file": true, "connector": "aws_cloudtrail" },
+        { "log": "VPC Flow Logs (JSON: Firehose, Security Lake, Sentinel)", "short": "VPC Flow (JSON)", "source_type": "aws_vpcflow_json", "file": true, "connector": null },
+        { "log": "VPC Flow Logs (text: comma / tab exports)", "short": "VPC Flow (CSV / TSV)", "source_type": "aws_vpcflow_txt", "file": true, "connector": null, "note": "Native space-separated S3 / CloudWatch text not yet" },
+        { "log": "Route 53 Resolver query logs", "short": "Route 53 Resolver", "source_type": "aws_r53resolver_json", "file": true, "connector": null },
+        { "log": "Network Firewall (alert / flow / tls)", "short": "Network Firewall", "source_type": "aws_nfw_json", "file": true, "connector": null },
+        { "log": "GuardDuty findings", "short": "GuardDuty", "source_type": "aws_guardduty_json", "file": true, "connector": null, "detection": "context" },
+        { "log": "Security Hub findings (ASFF)", "short": "Security Hub", "source_type": "aws_securityhub_json", "file": true, "connector": null, "detection": "context" }
+      ]
+    },
+    {
+      "provider": "Azure / Entra ID",
+      "logs": [
+        { "log": "Entra ID sign-ins (interactive, non-interactive, service principal, managed identity)", "short": "Entra ID sign-ins", "source_type": "azure_signin_json", "file": true, "connector": "azure_monitor", "connector_scope": ["SigninLogs", "AADNonInteractiveUserSignInLogs", "AADServicePrincipalSignInLogs", "AADManagedIdentitySignInLogs"] },
+        { "log": "Azure Activity Log + Entra ID audit logs", "short": "Activity Log + Entra audit", "source_type": "azure_activity_json", "file": true, "connector": "azure_monitor", "connector_scope": ["AzureActivity", "AuditLogs"] },
+        { "log": "Storage blob data plane (StorageBlobLogs)", "short": "Blob storage", "source_type": "azure_storageblob_json", "file": true, "connector": "azure_monitor", "connector_scope": ["StorageBlobLogs"], "note": "Optional table in the connector" },
+        { "log": "Key Vault audit (AuditEvent)", "short": "Key Vault", "source_type": "azure_keyvault_json", "file": true, "connector": null },
+        { "log": "Microsoft Graph activity logs", "short": "Graph activity", "source_type": "azure_graph_json", "file": true, "connector": null },
+        { "log": "Entra ID Protection risk detections / risky users", "short": "Identity Protection", "source_type": "azure_risk_json", "file": true, "connector": null }
+      ]
+    },
+    {
+      "provider": "Google Cloud",
+      "logs": [
+        { "log": "Cloud Audit Logs (Admin Activity, Data Access, System Event, Policy Denied; GKE)", "short": "Cloud Audit Logs + GKE", "source_type": "gcp_audit_json", "file": true, "connector": "gcp_logging" },
+        { "log": "Firewall Rules Logging", "short": "Firewall", "source_type": "gcp_firewall_json", "file": true, "connector": null },
+        { "log": "VPC Flow Logs", "short": "VPC Flow", "source_type": "gcp_vpcflow_json", "file": true, "connector": null },
+        { "log": "Cloud DNS query logs", "short": "Cloud DNS", "source_type": "gcp_dns_json", "file": true, "connector": null },
+        { "log": "Security Command Center findings", "short": "SCC findings", "source_type": "gcp_scc_json", "file": true, "connector": null, "detection": "context" }
+      ]
+    },
+    {
+      "provider": "Kubernetes",
+      "logs": [
+        { "log": "API server audit (kube-apiserver file, EKS shipped by an agent, AKS AKSAudit)", "short": "API server audit", "source_type": "k8s_audit_json", "file": true, "connector": null, "note": "GKE audit arrives as Google Cloud audit" }
+      ]
+    },
+    {
+      "provider": "Microsoft 365",
+      "logs": [
+        { "log": "Unified Audit Log (Exchange, SharePoint / OneDrive, Entra ID, General)", "short": "Unified Audit Log", "source_type": "m365_ual_json", "file": true, "connector": "m365_ual", "connector_scope": ["Audit.Exchange", "Audit.SharePoint", "Audit.AzureActiveDirectory", "Audit.General"] },
+        { "log": "Purview audit search export (CSV)", "short": "Purview export (CSV)", "source_type": "m365_purview_csv", "file": true, "connector": null, "note": "Header columns only; AuditData fields not mapped yet" }
+      ]
+    },
+    {
+      "provider": "Google Workspace",
+      "logs": [
+        { "log": "Reports API activities (login, admin, token, drive)", "short": "Reports API", "source_type": "gws_reports_json", "file": true, "connector": "gws_reports", "connector_scope": ["login", "admin", "token", "drive"] },
+        { "log": "Admin console audit export (CSV)", "short": "Admin audit export (CSV)", "source_type": "gws_admin_csv", "file": true, "connector": null, "detection": "context", "note": "Searchable; rules read the Reports API shape" }
+      ]
+    },
+    {
+      "provider": "Identity SaaS",
+      "logs": [
+        { "log": "Okta System Log", "short": "Okta System Log", "source_type": "okta_json", "file": true, "connector": "okta" },
+        { "log": "Auth0 tenant logs", "short": "Auth0", "source_type": "auth0_json", "file": true, "connector": null },
+        { "log": "Cisco Duo authentication log", "short": "Duo authentication", "source_type": "duo_auth_json", "file": true, "connector": null }
+      ]
+    }
+  ]
+}

@@ -7,7 +7,8 @@ Accounting (no line is ever lost uncounted):
 - rows without a parseable timestamp are kept with ts_ok=false;
 - rows in a timestamp pile-up second (ingest_post) are kept with ts_ok=false and their ts_ms (timestamp_pileup);
 - lines the reader cannot decode (invalid UTF-8) or CSV records with missing columns are recorded in DuckDB
-  rejects tables (one per reader) and counted as dropped with a reason;
+  rejects tables (one per reader) and counted as dropped with a reason; CSV records with more fields than the
+  header are kept (extras dropped) and counted in notes (field_count_mismatch, ingest_checks.csv_field_count);
 - unrecognized files: their non-blank lines are counted as rows_in and dropped (reason unrecognized_format).
 rows_in = rows written + rejected lines; rows_ok = rows with ts_ok; dropped = rows_in - rows_ok.
 
@@ -26,18 +27,20 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
-from attacklens import cloud_unpack, ingest_post
+from attacklens import cloud_unpack, ingest_csv, ingest_post
 from attacklens import ingest_sql as q
 from attacklens import profile as profile_stage
 from attacklens.context import RunContext
-from attacklens.db import (HIVE_TYPES, MAX_LINE_SIZE, count_rejects, drop_rejects, line_reader, sql_path,
-                           sql_str)
+from attacklens.db import HIVE_TYPES, MAX_LINE_SIZE, count_rejects, drop_rejects, sql_path
 from attacklens.schemas import CANONICAL_COLUMNS
 
 log = logging.getLogger(__name__)
 
-REJECT_REASONS = {"INVALID ENCODING": "decode_error", "MISSING COLUMNS": "csv_missing_columns",
-                  "TOO MANY COLUMNS": "csv_too_many_columns", "UNQUOTED VALUE": "csv_parse_error",
+FIELD_COUNT_DROP = "field_count_mismatch (fewer fields than the header, row not readable)"
+FIELD_COUNT_NOTE = "field_count_mismatch (more fields than the header: extras dropped, row kept)"
+REJECT_REASONS = {"INVALID ENCODING": "decode_error", "MISSING COLUMNS": FIELD_COUNT_DROP,
+                  "TOO MANY COLUMNS": "field_count_mismatch (more fields than the header, row not readable)",
+                  "UNQUOTED VALUE": "csv_parse_error",
                   "LINE SIZE OVER MAXIMUM": "line_too_long", "CAST": "csv_parse_error"}
 
 
@@ -120,8 +123,10 @@ def build_units(prof: dict[str, Any], cfg: dict[str, Any]) -> list[dict[str, Any
                 u["select"] = q.kv_select(stype, files, root, kcfg, rejects=rj)
             elif fmt == "csv":
                 ccfg = (sources.get("csv_sources") or {}).get(stype) or {}
-                u["select"] = q.csv_select(stype, files, root, key[2], list(key[3]), ccfg, formats, rejects=rj)
-                u.update(delimiter=key[2], columns=list(key[3]))
+                d = ingest_csv.dialect(sources, ccfg)
+                u["select"] = ingest_csv.csv_select(stype, files, root, key[2], list(key[3]), ccfg, formats, d,
+                                                    rejects=rj)
+                u.update(delimiter=key[2], columns=list(key[3]), dialect=d)
             else:
                 continue
             units.append(u)
@@ -195,13 +200,14 @@ def _run_copies(ctx: RunContext, units: list[dict[str, Any]], events_dir: Path) 
     return written
 
 
-def _truncated_csv(ctx: RunContext, g: dict[str, Any]) -> int:
-    """Physical CSV lines (without quotes) with more fields than the header: the reader drops the extras."""
-    d, ncols = g["delimiter"], len(g["columns"])
-    return int(ctx.con.execute(
-        f"SELECT count(*) FROM {line_reader(g['files'], filename=False)} WHERE line IS NOT NULL "
-        f"AND NOT contains(line, '\"') AND length(line) - length(replace(line, {sql_str(d)}, '')) > {ncols - 1}"
-    ).fetchone()[0])
+def _csv_field_count(ctx: RunContext, g: dict[str, Any]) -> int | None:
+    """CSV records (quote-aware, quoted newlines included) with more fields than the header: the reader keeps the
+    row and drops the extras. None when sources.yaml ingest_checks.csv_field_count is false."""
+    if not (((ctx.cfg.get("sources") or {}).get("ingest_checks") or {}).get("csv_field_count", True)):
+        return None
+    sql = ingest_csv.field_count_sql(g["files"], g["delimiter"], len(g["columns"]),
+                                     g.get("dialect") or ingest_csv.RFC4180)
+    return int(ctx.con.execute(sql).fetchone()[0])
 
 
 # linear-time patterns: runs of non-terminator bytes, and runs that are only spaces (blank lines)
@@ -309,12 +315,14 @@ def _accounting(ctx: RunContext, events_dir: Path, groups: list[dict[str, Any]],
             reason = REJECT_REASONS.get(etype, f"read_error ({etype.lower()})")
             e["rows_in"] += n
             e["drop_reasons"][reason] = e["drop_reasons"].get(reason, 0) + n
-        if g["format"] == "csv":
-            t = _truncated_csv(ctx, g)
-            if t:
-                e.setdefault("notes", {})["truncated_columns (extra fields dropped, row kept)"] = t
-                log.warning("ingest: %d %s rows had more fields than the header; extras dropped",
-                            t, g["source_type"])
+        t = _csv_field_count(ctx, g)
+        if t is None:
+            log.warning("ingest: %s: ingest_checks.csv_field_count is off; rows with extra fields are not counted",
+                        g["source_type"])
+        elif t:
+            notes = e.setdefault("notes", {})
+            notes[FIELD_COUNT_NOTE] = notes.get(FIELD_COUNT_NOTE, 0) + t
+            log.warning("ingest: %d %s rows had more fields than the header; extras dropped", t, g["source_type"])
     for st, dup in ((post or {}).get("duplicates") or {}).items():
         notes = entry(st).setdefault("notes", {})
         notes["duplicate_lines (byte-identical copies in one file, kept)"] = dup["lines"]

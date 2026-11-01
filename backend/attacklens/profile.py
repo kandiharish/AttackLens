@@ -23,16 +23,21 @@ from attacklens.context import RunContext
 from attacklens.db import line_reader, sql_list, sql_str
 from attacklens.ingest_maps import ts_candidates_sql, ts_policy_of
 from attacklens.ingest_sql import ts_expr
+from attacklens.ingest_syslog import sniff_syslog
 
 log = logging.getLogger(__name__)
 
 BOM = "\ufeff"
 CEF_RE = re.compile(r"^(?:<\d+>)?(?:.*?\s)?CEF:\d+\|")
-SYSLOG_RES = (
-    re.compile(r"^(?:<\d+>)?[A-Z][a-z]{2}\s+\d+\s+\d\d:\d\d:\d\d \S+ "),
-    re.compile(r"^(?:<\d+>)?(?:1 )?\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\S* \S+ \S+"),
-)
+# syslog sniff regexes = config/sources.yaml syslog.headers (ingest_syslog.sniff_syslog), shared with parse
 CSV_DELIMS = (",", "\t", ";", "|")
+# Compressed / archive magic bytes as first_lines decodes them (NULs removed, invalid UTF-8 -> U+FFFD): never text.
+# tar needs no pattern: its 512-byte NUL-padded headers always fail first_lines' NUL test (binary).
+JSON_ARRAY_RE = re.compile(r"^\[\s*(?:[{\[\]\"]|$)")
+_RC, _GZ, _ZIP = chr(0xFFFD), chr(0x1F), "PK" + chr(3) + chr(4)  # U+FFFD replacement char; magic bytes
+MAGIC_RES = (("gzip", re.compile(f"^{_GZ}({_RC}|{chr(0x8B)})")), ("bzip2", re.compile("^BZh[1-9]1AY&SY")),
+             ("xz", re.compile(f"^{_RC}7zXZ")), ("zstd", re.compile(f"^[(]{_RC}/{_RC}")),
+             ("zip", re.compile(f"^{_ZIP}")))
 
 
 def _skip(path: Path, root: Path, pcfg: dict[str, Any]) -> str | None:
@@ -75,8 +80,8 @@ def sniff_lines(lines: list[str] | None, sources_cfg: dict[str, Any]) -> dict[st
     if not lines:
         return sniff(None, sources_cfg)
     first = sniff(lines[0], sources_cfg)
-    if first["format"] != "unrecognized":
-        return first
+    if first.pop("final", False) or first["format"] != "unrecognized":
+        return first  # final: compressed bytes / a JSON array never fall through to later lines
     for i, line in enumerate(lines[1:], start=1):
         info = sniff(line, sources_cfg)
         if info["format"] not in ("unrecognized", "csv"):
@@ -93,17 +98,35 @@ def _csv_header(line: str) -> tuple[str, list[str]] | None:
     return best, cols
 
 
+def _syslog_dispatch(sl: dict[str, Any], sources_cfg: dict[str, Any]) -> dict[str, Any]:
+    """Syslog header matched: a kv payload (e.g. FortiGate behind <PRI> / a relay) goes to its kv source when
+    syslog.dispatch_kv is on; everything else stays syslog (CEF payloads were routed by CEF_RE already)."""
+    msg = str(sl.pop("msg", "") or "")
+    if sl["source_type"] == "syslog" and (sources_cfg.get("syslog") or {}).get("dispatch_kv"):
+        for name, kcfg in (sources_cfg.get("kv_sources") or {}).items():
+            if any(re.match(rx, msg) for rx in kcfg.get("detect_regex") or []):
+                return {"format": "kv", "source_type": name, "dispatched_from": "syslog"}
+    return sl
+
+
 def sniff(line: str | None, sources_cfg: dict[str, Any]) -> dict[str, Any]:
     """Return {'format': json|cef|syslog|csv|unrecognized, ...}."""
     if line is None:
         return {"format": "unrecognized", "reason": "no text line found (empty or binary)"}
+    magic = next((k for k, rx in MAGIC_RES if rx.match(line)), None)  # before lstrip: \x1f is whitespace
+    if magic:
+        return {"format": "unrecognized", "final": True,
+                "reason": f"{magic} compressed / archive bytes (Stage 0 did not unpack it)"}
     s = line.lstrip()
+    if JSON_ARRAY_RE.match(s):  # "[" + object / array / string / "]" / end of line; not "[Thu Oct 30 ...] msg"
+        return {"format": "unrecognized", "final": True, "reason": "json_array (unwrap failed)"}
     if s.startswith("{"):
         return {"format": "json"}
     if CEF_RE.match(s):
         return {"format": "cef", "source_type": "cef"}
-    if any(r.match(s) for r in SYSLOG_RES):
-        return {"format": "syslog", "source_type": "syslog"}
+    sl = sniff_syslog(s, sources_cfg.get("syslog") or {})
+    if sl is not None:
+        return _syslog_dispatch(sl, sources_cfg)
     for name, kcfg in (sources_cfg.get("kv_sources") or {}).items():
         if any(re.match(rx, s) for rx in kcfg.get("detect_regex") or []):
             return {"format": "kv", "source_type": name}

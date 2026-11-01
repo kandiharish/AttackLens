@@ -37,7 +37,8 @@ export interface IncidentPivots {
 // GET /api/integrations/catalog, GET|PUT|DELETE /api/integrations/{id}, POST .../{test,start,stop}.
 // Secrets are write-only: the API only ever returns secrets_set[key] = true/false, never the value.
 
-export type IntegrationKind = 'siem' | 'cloud' | 'sink'
+/** identity = SaaS identity / productivity audit logs (Okta, Microsoft 365, Google Workspace). */
+export type IntegrationKind = 'siem' | 'cloud' | 'identity' | 'sink'
 export type IntegrationMode = 'events' | 'alerts'
 export type IntegrationFieldType = 'text' | 'url' | 'secret' | 'number' | 'bool' | 'select'
 export type IntegrationValue = string | number | boolean | null
@@ -124,4 +125,37 @@ export interface IntegrationStart {
 export interface IntegrationFieldError {
   error: string
   field: string | null
+}
+
+// ---------- Supported cloud logs (static: src/mock/integrations_cloud_logs.json) ----------
+// Kept equal to config/sources.yaml and the connector modules by backend/tests/test_cloud_logs_ui.py.
+
+/** rules = scored detection rules read this log; context = timeline / accounting only (vendor verdicts). */
+export type CloudLogDetection = 'rules' | 'context'
+
+export interface CloudLogRow {
+  log: string
+  /** Short name for the compact per-provider table. */
+  short: string
+  /** config/sources.yaml json_sources / csv_sources key. */
+  source_type: string
+  /** Ingest by uploading / pointing at exported files. */
+  file: boolean
+  /** Catalog id of the connector that pulls it, or null (file only). */
+  connector: string | null
+  /** Tables / content types / applications of that connector that carry this log. */
+  connector_scope?: string[]
+  detection?: CloudLogDetection
+  note?: string
+}
+
+export interface CloudLogProvider {
+  provider: string
+  logs: CloudLogRow[]
+}
+
+export interface CloudLogsCatalog {
+  /** Tile text per cloud / identity connector id. */
+  connectors: Record<string, { provider: string; pulls: string }>
+  providers: CloudLogProvider[]
 }

@@ -237,7 +237,7 @@ export function ConnectionForm({ entry, initial, onState, onClose }: Props) {
   const status = tileStatus(entry.kind, st)
   const docs = safeHttpUrl(entry.docs_url)
   const disabled = busy !== null
-  const formLoader = entry.kind === 'cloud' && !entry.fields.some(isKeyFileField)
+  const formLoader = (entry.kind === 'cloud' || entry.kind === 'identity') && !entry.fields.some(isKeyFileField)
   const titleId = `conn-${entry.id}-title`
   const basicFields = entry.fields.filter((f) => !f.advanced)
   const advancedFields = entry.fields.filter((f) => f.advanced)
@@ -279,7 +279,7 @@ export function ConnectionForm({ entry, initial, onState, onClose }: Props) {
     >
       <header className="flex items-start gap-3 border-b border-line px-5 py-4 sm:px-6">
         <div className="min-w-0">
-          <div className="section-label">{entry.kind === 'sink' ? 'Send incidents to' : entry.kind === 'cloud' ? 'Cloud source' : 'SIEM source'}</div>
+          <div className="section-label">{entry.kind === 'sink' ? 'Send incidents to' : entry.kind === 'cloud' ? 'Cloud source' : entry.kind === 'identity' ? 'Identity / SaaS source' : 'SIEM source'}</div>
           <h3 id={titleId} ref={heading} tabIndex={-1} className="headline mt-0.5 text-[18px] outline-none">
             {entry.name}
           </h3>

@@ -11,6 +11,10 @@ import duckdb
 # Longest line the DuckDB line reader accepts; longer lines are skipped (ingest counts them as line_too_long).
 MAX_LINE_SIZE = 16_777_216
 
+# Source-file pseudo-column of the CSV reader. Never `filename`: DuckDB matches column names case-insensitively, so
+# a header with a FileName column (MDE, proxy, DLP exports) would raise a BinderException and abort the ingest.
+SRC_FILE_COL = "__al_src_file"
+
 # Partition columns are typed explicitly: hive inference would read ts_ok back as VARCHAR.
 HIVE_TYPES = "{'source_type': 'VARCHAR', 'ts_ok': 'BOOLEAN', 'event_day': 'DATE'}"
 
@@ -54,6 +58,8 @@ def line_reader(files: Sequence[str], filename: bool = True, rejects: str | None
                 encoding: str | None = None) -> str:
     """Table function reading files as one VARCHAR column `line` per physical line (no quoting, no parsing).
 
+    - compression='none': DuckDB never gunzips by file extension. Stage 0 (cloud_unpack) decompresses, so profile
+      (raw bytes) and ingest always read the same bytes; a compressed file left in place stays binary / unrecognized.
     - Empty lines come back as NULL; a UTF-8 BOM and CR/LF/CRLF endings (also mixed) are stripped.
     - Delimiter chr(1) (SOH, a control byte text logs never carry): the whole line lands in one column.
       NUL bytes (corrupt / preallocated tails) stay in the line, so a NUL run is a kept unparseable row and
@@ -71,6 +77,7 @@ def line_reader(files: Sequence[str], filename: bool = True, rejects: str | None
     rj += f", encoding={sql_str(encoding)}" if encoding else ""
     return (f"read_csv({sql_list([str(f).replace(chr(92), '/') for f in files])}, columns={{'line': 'VARCHAR'}}, "
             f"header=false, delim=chr(1), quote='', escape='', auto_detect=false, max_line_size={MAX_LINE_SIZE}, "
+            f"compression='none', "
             f"strict_mode=false, ignore_errors=true{fn}{rj})")
 
 

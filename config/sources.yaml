@@ -37,6 +37,225 @@ json_sources:
   # source_profile.json records, per file, which alias set ts, the naive values ignored and the measured skew of every
   # alias against the utc alias (warning above skew_warn_s). Sources without ts_policy read their aliases as before.
 
+  # ---- EDR / IDS / Linux journal JSON (reports/robust/SUMMARY.md item 8; tests: backend/tests/test_ingest_jsonpack.py) --
+  # Detected by detect_signatures only (pass 1, before any detect_any): every signature names keys that the generator
+  # ECS, Winlogbeat and the cloud sources never carry together, so the ecs_json routing of the generator is unchanged.
+  # ts_policy: every alias is `explicit` (Z / offset / epoch digits; epoch us / ns cut to ms); naive values never count.
+  # action_map (ingest_maps.py): the vendor verb -> canonical action; unmapped verbs pass to the global map (-> other).
+  # Microsoft Defender for Endpoint advanced hunting: streaming API / Event Hub envelope (properties.*) and the flat
+  # API / portal JSON export. For process events InitiatingProcess* is the parent; for network / file / registry
+  # events it is the acting process (process_* fall back to it).
+  mde_json:
+    detect_signatures:
+      - [properties.ActionType, properties.DeviceName]
+      - [ActionType, DeviceName, Timestamp]
+    ts_policy: {zones: {}, naive_tz: null}
+    max_len: {command_line: 32768}
+    fields:
+      ts:            ['$.properties.Timestamp', '$.Timestamp', '$.time']
+      event_action:  ['$.properties.ActionType', '$.ActionType']
+      host:          ['$.properties.DeviceName', '$.DeviceName']
+      logon_id:      ['$.properties.LogonId', '$.LogonId']
+      logon_type:    ['$.properties.LogonType', '$.LogonType']
+      user:          ['$.properties.AccountName', '$.AccountName', '$.properties.InitiatingProcessAccountName',
+                      '$.InitiatingProcessAccountName']
+      src_ip:        ['$.properties.LocalIP', '$.LocalIP']
+      src_port:      ['$.properties.LocalPort', '$.LocalPort']
+      dst_ip:        ['$.properties.RemoteIP', '$.RemoteIP']
+      dst_port:      ['$.properties.RemotePort', '$.RemotePort']
+      dst_domain:    ['$.properties.RemoteUrl', '$.RemoteUrl']
+      process_name:  ['$.properties.FileName', '$.FileName', '$.properties.InitiatingProcessFileName',
+                      '$.InitiatingProcessFileName']
+      process_path:  ['$.properties.FolderPath', '$.FolderPath', '$.properties.InitiatingProcessFolderPath',
+                      '$.InitiatingProcessFolderPath']
+      parent_process: ['$.properties.InitiatingProcessFileName', '$.InitiatingProcessFileName']
+      command_line:  ['$.properties.ProcessCommandLine', '$.ProcessCommandLine',
+                      '$.properties.InitiatingProcessCommandLine', '$.InitiatingProcessCommandLine']
+      registry_path: ['$.properties.RegistryKey', '$.RegistryKey']
+    action_map:
+      processcreated: proc_start
+      connectionsuccess: conn_out
+      connectionattempt: conn_out
+      connectionfailed: conn_out
+      dnsqueryresponse: dns_query
+      logonsuccess: login_success
+      logonfailed: login_failed
+      filecreated: file_write
+      filemodified: file_write
+      filerenamed: file_rename
+      registryvalueset: reg_set
+      serviceinstalled: service_installed
+      scheduledtaskcreated: scheduled_task
+      useraccountcreated: user_created
+      useraccountaddedtolocalgroup: group_member_added
+    ip_fields: [src_ip, dst_ip]
+
+  # CrowdStrike Falcon Data Replicator (one event per line, values are strings). ContextTimeStamp / ProcessStartTime
+  # are the endpoint's epoch seconds; `timestamp` (epoch ms) is the cloud receipt time, so it is the last resort.
+  crowdstrike_fdr_json:
+    detect_signatures:
+      - [event_simpleName, aid]
+    ts_policy: {zones: {}, naive_tz: null}
+    max_len: {command_line: 32768}
+    fields:
+      ts:            ['$.ContextTimeStamp', '$.ProcessStartTime', '$.timestamp']
+      event_action:  ['$.event_simpleName']
+      logon_type:    ['$.LogonType']
+      host:          ['$.ComputerName', '$.aid']
+      host_ip:       ['$.aip']
+      user:          ['$.UserName']
+      src_ip:        ['$.LocalAddressIP4']
+      src_port:      ['$.LocalPort']
+      dst_ip:        ['$.RemoteAddressIP4']
+      dst_port:      ['$.RemotePort']
+      dst_domain:    ['$.DomainName']
+      process_path:  ['$.ImageFileName']
+      parent_process: ['$.ParentBaseFileName']
+      command_line:  ['$.CommandLine']
+      file_path:     ['$.TargetFileName']
+      registry_path: ['$.RegObjectName']
+    action_map:
+      processrollup2: proc_start
+      syntheticprocessrollup2: proc_start
+      networkconnectip4: conn_out
+      networkconnectip6: conn_out
+      dnsrequest: dns_query
+      userlogon: login_success
+      userlogonfailed: login_failed
+      userlogonfailed2: login_failed
+      newexecutablewritten: file_write
+      newscriptwritten: file_write
+      asepvalueupdate: reg_set
+      reggenericvalueupdate: reg_set
+      serviceinstalled: service_installed
+      scheduledtaskregistered: scheduled_task
+      useraccountcreated: user_created
+      useraccountaddedtogroup: group_member_added
+    ip_fields: [src_ip, dst_ip, host_ip]
+
+  # SentinelOne Deep Visibility export (camelCase) and Cloud Funnel / Singularity Data Lake (dotted keys, which are
+  # literal key names: quoted JSONPath). tgt.process = the created process; for network / DNS / file events the
+  # src.process is the actor (process_* fall back to it).
+  sentinelone_json:
+    detect_signatures:
+      - [agentUuid, eventType]
+      - [endpoint.name, event.type]
+    ts_policy: {zones: {}, naive_tz: null}
+    max_len: {command_line: 32768}
+    fields:
+      ts:            ['$.eventTime', '$."event.time"', '$.createdAt']
+      event_action:  ['$.eventType', '$."event.type"']
+      host:          ['$.agentName', '$."endpoint.name"']
+      user:          ['$.tgtProcUser', '$."tgt.process.user"', '$.srcProcUser', '$."src.process.user"']
+      src_ip:        ['$.srcIp', '$."src.ip.address"']
+      src_port:      ['$.srcPort', '$."src.port.number"']
+      dst_ip:        ['$.dstIp', '$."dst.ip.address"']
+      dst_port:      ['$.dstPort', '$."dst.port.number"']
+      dst_domain:    ['$.dnsRequest', '$."event.dns.request"']
+      process_name:  ['$.tgtProcName', '$."tgt.process.name"', '$.srcProcName', '$."src.process.name"']
+      process_path:  ['$.tgtProcImagePath', '$."tgt.process.image.path"', '$.srcProcImagePath',
+                      '$."src.process.image.path"']
+      parent_process: ['$.srcProcName', '$."src.process.name"']
+      command_line:  ['$.tgtProcCmdLine', '$."tgt.process.cmdline"', '$.srcProcCmdLine', '$."src.process.cmdline"']
+      file_path:     ['$.tgtFilePath', '$."tgt.file.path"']
+      registry_path: ['$.registryPath', '$."registry.keyPath"']
+    action_map:
+      process creation: proc_start
+      ip connect: conn_out
+      dns resolved: dns_query
+      dns unresolved: dns_query
+      file creation: file_write
+      file modification: file_write
+      file rename: file_rename
+      registry value modified: reg_set
+      registry value create: reg_set
+      scheduled task register: scheduled_task
+    ip_fields: [src_ip, dst_ip]
+
+  # Suricata EVE JSON (eve.json): alert / flow / netflow / dns / http / tls / drop records. host = the sensor.
+  # Same verdict convention as aws_nfw_json: alert -> ips_alert with alert.action (allowed / blocked) as outcome.
+  suricata_eve_json:
+    detect_signatures:
+      - [event_type, flow_id]
+      - [event_type, src_ip, dest_ip]
+    ts_policy: {zones: {}, naive_tz: null}
+    fields:
+      ts:            ['$.timestamp']
+      event_action:  ['$.event_type']
+      outcome:       ['$.alert.action']
+      host:          ['$.host']
+      src_ip:        ['$.src_ip']
+      src_port:      ['$.src_port']
+      dst_ip:        ['$.dest_ip']
+      dst_port:      ['$.dest_port']
+      dst_domain:    ['$.http.hostname', '$.tls.sni', '$.dns.rrname', '$.dns.queries[0].rrname', '$.dns.query[0].rrname']
+      file_path:     ['$.http.url']
+      bytes:         ['$.flow.bytes_toserver', '$.netflow.bytes']
+      bytes_in:      ['$.flow.bytes_toclient']
+      signature:     ['$.alert.signature']
+      vendor_severity: ['$.alert.severity']
+      app:           ['$.app_proto', '$.proto']
+    scalar_fields: [host]
+    action_map: {alert: ips_alert, flow: conn_allowed, netflow: conn_allowed, dns: dns_query, http: web_access,
+                 tls: web_access, drop: conn_denied}
+    ip_fields: [src_ip, dst_ip]
+
+  # Zeek JSON logs (conn / dns / http / ssl; LogAscii use_json=T). No event-type key unless _path is written, so the
+  # verb is the first present of _path, http method, dns qtype_name, conn_state. ts = epoch seconds or ISO-8601 Z.
+  zeek_json:
+    detect_signatures:
+      - [uid, id.orig_h]
+    ts_policy: {zones: {}, naive_tz: null}
+    fields:
+      ts:            ['$.ts']
+      event_action:  ['$._path', '$.method', '$.qtype_name', '$.conn_state']
+      outcome:       ['$.rcode_name']
+      src_ip:        ['$."id.orig_h"']
+      src_port:      ['$."id.orig_p"']
+      dst_ip:        ['$."id.resp_h"']
+      dst_port:      ['$."id.resp_p"']
+      dst_domain:    ['$.query', '$.host', '$.server_name']
+      file_path:     ['$.uri']
+      bytes:         ['$.orig_bytes', '$.request_body_len']
+      bytes_in:      ['$.resp_bytes', '$.response_body_len']
+      app:           ['$.service', '$.proto']
+    action_map: {conn: conn_out, dns: dns_query, http: web_access, ssl: web_access,
+                 get: web_access, post: web_access, put: web_access, head: web_access, delete: web_access,
+                 options: web_access, patch: web_access, connect: web_access,
+                 a: dns_query, aaaa: dns_query, cname: dns_query, txt: dns_query, mx: dns_query, ns: dns_query,
+                 ptr: dns_query, srv: dns_query, soa: dns_query, any: dns_query, https: dns_query,
+                 sf: conn_out, s0: conn_out, s1: conn_out, s2: conn_out, s3: conn_out, sh: conn_out, shr: conn_out,
+                 oth: conn_out, rsto: conn_out, rstr: conn_out, rstos0: conn_out, rstrh: conn_out, rej: conn_denied}
+    ip_fields: [src_ip, dst_ip]
+
+  # systemd journal export (journalctl -o json): _SOURCE_REALTIME_TIMESTAMP / __REALTIME_TIMESTAMP are epoch us.
+  # MESSAGE is kept in raw_line; the syslog.messages parsers do not run on it yet (needs a message_parser hook in
+  # ingest_sql.py), so sshd / sudo lines land as action 'other' with host / process / ts filled.
+  journald_json:
+    detect_signatures:
+      - [__REALTIME_TIMESTAMP, MESSAGE]
+    ts_policy: {zones: {}, naive_tz: null}
+    fields:
+      ts:            ['$._SOURCE_REALTIME_TIMESTAMP', '$.__REALTIME_TIMESTAMP']
+      host:          ['$._HOSTNAME']
+      process_name:  ['$.SYSLOG_IDENTIFIER', '$._COMM']
+      process_path:  ['$._EXE']
+
+  # rsyslog JSON templates: jsonmesg (programname, timereported, hostname, syslogtag) and the common ELK template
+  # (@timestamp, message, sysloghost, programname). Same message-parser caveat as journald_json.
+  # `host` may be an object in Logstash-enriched shapes: host.name first, and an object value is dropped.
+  rsyslog_json:
+    detect_signatures:
+      - [programname, timereported]
+      - [programname, sysloghost]
+      - [syslogtag, hostname]
+    ts_policy: {zones: {}, naive_tz: null}
+    fields:
+      ts:            ['$.timereported', '$."@timestamp"', '$.timegenerated']
+      host:          ['$.hostname', '$.sysloghost', '$.host.name', '$.host']
+      process_name:  ['$.programname', '$."app-name"']
+    scalar_fields: [host]
+
   # ECS JSON lines: the provided generator (reports/edr_log_generator.py), tools/scenarios.py, Winlogbeat. Raw
   # Winlogbeat without ECS processors carries the EventData under winlog.event_data.*: those are fallbacks after the
   # ECS paths. winlog.computer_name (the machine that logged the event) beats host.name (the beat's host: the
@@ -53,7 +272,9 @@ json_sources:
       host:          ['$.winlog.computer_name', '$.host.name', '$.host.hostname', '$.agent.hostname']
       host_ip:       ['$.host.ip[0]', '$.host.ip']
       user:          ['$.user.name', '$.winlog.event_data.User', '$.winlog.event_data.TargetUserName']
-      subject_user:  ['$.winlog.event_data.SubjectUserName']
+      # 1102 Security log cleared carries the actor under UserData (winlog.user_data); auditbeat: user.audit.name is
+      # the login user behind a sudo / setuid process (user.name is the effective user)
+      subject_user:  ['$.winlog.event_data.SubjectUserName', '$.winlog.user_data.SubjectUserName', '$.user.audit.name']
       target_name:   ['$.user.target.name', '$.winlog.event_data.TargetUserName']
       member_name:   ['$.winlog.event_data.MemberName']
       group:         ['$.group.name', '$.user.target.group.name']
@@ -65,10 +286,12 @@ json_sources:
                       '$.winlog.event_data.DestinationHostname']
       process_name:  ['$.process.name']
       process_path:  ['$.process.executable', '$.winlog.event_data.Image', '$.winlog.event_data.NewProcessName',
-                      '$.winlog.event_data.ImagePath']
+                      '$.winlog.event_data.ImagePath', '$.winlog.event_data.ServiceFileName']
       parent_process: ['$.process.parent.name', '$.process.parent.executable', '$.winlog.event_data.ParentImage',
                        '$.winlog.event_data.ParentProcessName']
-      command_line:  ['$.process.command_line', '$.winlog.event_data.CommandLine']
+      # 4104 / 4103 script text: Winlogbeat ECS (powershell.file.script_block_text) or raw event_data
+      command_line:  ['$.process.command_line', '$.winlog.event_data.CommandLine', '$.powershell.file.script_block_text',
+                      '$.winlog.event_data.ScriptBlockText', '$.winlog.event_data.Payload']
       file_path:     ['$.file.path', '$.winlog.event_data.TargetFilename']
       file_ext:      ['$.file.extension']
       registry_path: ['$.registry.path', '$.winlog.event_data.TargetObject']
@@ -77,6 +300,34 @@ json_sources:
       service_name:  ['$.service.name', '$.winlog.event_data.ServiceName']
       auth_package:  ['$.winlog.event_data.AuthenticationPackageName', '$.winlog.event_data.LmPackageName']
       ticket_encryption: ['$.winlog.event_data.TicketEncryptionType']
+    max_len: {command_line: 32768}
+    # IPv4-mapped IPv6 (Windows 4624 / 4769 "::ffff:203.0.113.57") -> the IPv4 address
+    value_regex:
+      src_ip: ['^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$']
+      dst_ip: ['^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$']
+    # ECS events whose event.action is a generic verb (Elastic Defend 'start' / 'exec', auditbeat 'executed') or
+    # missing: event.category + event.type decide (ingest_maps.action_fallback). Named verbs (the generator's
+    # process_created, network_connection, ...) never reach it, so their actions are unchanged. The result is a
+    # vocabulary verb of action_map.event_actions (user_logon splits on the outcome: never login_success on failure).
+    action_fallback:
+      when_action_in: [start, exec, fork, executed, process_started, connection_attempted, connection_accepted,
+                       lookup_requested, creation, modification, change, info, authenticated]
+      paths: {category: '$.event.category', type: '$.event.type'}
+      rules:
+        - {category: process, type: start, action: proc_start}
+        - {category: network, type: protocol, require: [dst_domain], action: dns_query}
+        - {category: network, type: start, action: conn_out}
+        - {category: network, type: connection, action: conn_out}
+        - {category: file, type: creation, action: file_write}
+        - {category: file, type: change, action: file_write}
+        - {category: registry, type: change, action: reg_set}
+        - {category: authentication, type: start, action: user_logon}
+    # command_line for auditbeat / Elastic Defend rows without process.command_line: process.args joined, then
+    # process.title (read only on process verbs, so other ECS rows never pay the extra JSON read)
+    json_fallbacks:
+      command_line:
+        when_action_in: [start, exec, executed, process_started, process_created, process_start]
+        paths: [{path: '$.process.args[*]', join: ' '}, {path: '$.process.title'}]
 
   # Windows EVTX exported as JSON (flat, or nested Event.System / Event.EventData), and flat collector JSON: NXLog
   # im_msvistalog / Logstash (OTRF Security-Datasets "Mordor" shape: top-level EventID, Channel, SourceName,
@@ -92,6 +343,7 @@ json_sources:
       - [EventID, Provider_Name]
       - [EventID, Computer]
       - [EventID, Hostname]
+      - [Id, ProviderName, MachineName]       # PowerShell Get-WinEvent | ConvertTo-Json (5.1 and 7)
     detect_min_share: 0.5
     detect_any: ["EventID", "TimeCreated", "Event.System.EventID", "System.EventID", "TimeCreated.SystemTime"]
     # Timestamp precedence (see the json_sources header): Sysmon UtcTime (UTC by definition) > the event's own
@@ -110,46 +362,88 @@ json_sources:
       skew_warn_s: 300
     # Text caps (characters) applied at ingest: a PowerShell 4104 script block is up to 32 KB per record.
     max_len: {command_line: 32768}
+    # Shapes: flat (NXLog), Event.System / Event.EventData (EVTX -> JSON), System / EventData (Velociraptor), evtx_dump
+    # (TimeCreated."#attributes".SystemTime, EventID."#text" when EventID has Qualifiers), xmltodict ("@SystemTime"),
+    # Get-WinEvent (Id, MachineName, TimeCreated /Date(ms)/ or ISO with offset, positional Properties: properties_map).
+    # An EventID object member alias comes BEFORE the plain EventID alias (the object itself is not a number).
+    # Each EventData alias is written for the 3 prefixes ($, $.Event.EventData, $.EventData).
     fields:
       ts:            ['$.UtcTime', '$.Event.EventData.UtcTime', '$.EventData.UtcTime', '$.TimeCreated.SystemTime',
                       '$.TimeCreated', '$.Event.System.TimeCreated.SystemTime', '$.System.TimeCreated.SystemTime',
+                      '$.Event.System.TimeCreated."#attributes".SystemTime',
+                      '$.Event.System.TimeCreated."@SystemTime"', '$.System.TimeCreated."@SystemTime"',
                       '$."@timestamp"', '$.EventTime']
-      event_id:      ['$.EventID', '$.Event.System.EventID', '$.System.EventID', '$.EventID.value']
+      event_id:      ['$.EventID.value', '$.EventID.Value', '$.EventID."#text"', '$.EventID', '$.Event.System.EventID."#text"',
+                      '$.Event.System.EventID.Value', '$.Event.System.EventID', '$.System.EventID.Value',
+                      '$.System.EventID."#text"', '$.System.EventID', '$.Id']
       event_action:  ['$.Action']
       outcome:       ['$.Keywords']
       logon_id:      ['$.TargetLogonId', '$.SubjectLogonId', '$.Event.EventData.TargetLogonId',
-                      '$.Event.EventData.SubjectLogonId', '$.EventData.TargetLogonId']
+                      '$.Event.EventData.SubjectLogonId', '$.EventData.TargetLogonId', '$.EventData.SubjectLogonId']
       logon_type:    ['$.LogonType', '$.Event.EventData.LogonType', '$.EventData.LogonType']
-      host:          ['$.Computer', '$.Event.System.Computer', '$.System.Computer', '$.Hostname']
+      host:          ['$.Computer', '$.Event.System.Computer', '$.System.Computer', '$.Hostname', '$.MachineName']
       host_ip:       ['$.HostIp']
-      user:          ['$.User']
-      subject_user:  ['$.SubjectUserName', '$.Event.EventData.SubjectUserName', '$.EventData.SubjectUserName']
+      user:          ['$.User', '$.Event.EventData.User', '$.EventData.User']
+      # 1102 Security log cleared: the actor is under UserData.LogFileCleared
+      subject_user:  ['$.SubjectUserName', '$.Event.EventData.SubjectUserName', '$.EventData.SubjectUserName',
+                      '$.Event.UserData.LogFileCleared.SubjectUserName', '$.UserData.LogFileCleared.SubjectUserName']
       target_name:   ['$.TargetUserName', '$.Event.EventData.TargetUserName', '$.EventData.TargetUserName']
       member_name:   ['$.MemberName', '$.Event.EventData.MemberName', '$.EventData.MemberName']
       group:         ['$.GroupName', '$.TargetGroupName']
-      src_ip:        ['$.IpAddress', '$.SourceIp', '$.Event.EventData.IpAddress', '$.EventData.IpAddress']
-      src_port:      ['$.IpPort', '$.SourcePort', '$.Event.EventData.IpPort']
-      dst_ip:        ['$.DestinationIp', '$.Event.EventData.DestinationIp']
-      dst_port:      ['$.DestinationPort', '$.Event.EventData.DestinationPort']
-      dst_domain:    ['$.QueryName', '$.DestinationHostname', '$.Event.EventData.QueryName']
+      src_ip:        ['$.IpAddress', '$.SourceIp', '$.Event.EventData.IpAddress', '$.EventData.IpAddress',
+                      '$.Event.EventData.SourceIp', '$.EventData.SourceIp']
+      src_port:      ['$.IpPort', '$.SourcePort', '$.Event.EventData.IpPort', '$.EventData.IpPort',
+                      '$.Event.EventData.SourcePort', '$.EventData.SourcePort']
+      dst_ip:        ['$.DestinationIp', '$.Event.EventData.DestinationIp', '$.EventData.DestinationIp']
+      dst_port:      ['$.DestinationPort', '$.Event.EventData.DestinationPort', '$.EventData.DestinationPort']
+      dst_domain:    ['$.QueryName', '$.DestinationHostname', '$.Event.EventData.QueryName', '$.EventData.QueryName',
+                      '$.Event.EventData.DestinationHostname', '$.EventData.DestinationHostname']
       process_name:  ['$.ProcessName', '$.NewProcessName']
-      process_path:  ['$.Image', '$.NewProcessName', '$.Event.EventData.Image', '$.ImagePath']
-      parent_process: ['$.ParentImage', '$.ParentProcessName', '$.Event.EventData.ParentImage']
+      # 4697 (Security service install): ServiceFileName is the binary
+      process_path:  ['$.Image', '$.NewProcessName', '$.Event.EventData.Image', '$.ImagePath', '$.EventData.Image',
+                      '$.Event.EventData.NewProcessName', '$.EventData.NewProcessName', '$.Event.EventData.ImagePath',
+                      '$.EventData.ImagePath', '$.ServiceFileName', '$.Event.EventData.ServiceFileName',
+                      '$.EventData.ServiceFileName']
+      parent_process: ['$.ParentImage', '$.ParentProcessName', '$.Event.EventData.ParentImage', '$.EventData.ParentImage',
+                       '$.Event.EventData.ParentProcessName', '$.EventData.ParentProcessName']
       # PowerShell/Operational 4104 ScriptBlockText and 4103 Payload: the script text (action 'script_exec', see
       # action_map.event_ids; only the command_line content rules in rules.yaml read script_exec rows)
-      command_line:  ['$.CommandLine', '$.Event.EventData.CommandLine', '$.ScriptBlockText',
+      command_line:  ['$.CommandLine', '$.Event.EventData.CommandLine', '$.EventData.CommandLine', '$.ScriptBlockText',
                       '$.Event.EventData.ScriptBlockText', '$.EventData.ScriptBlockText', '$.Payload',
-                      '$.Event.EventData.Payload']
-      file_path:     ['$.TargetFilename', '$.Event.EventData.TargetFilename', '$.Path', '$.Event.EventData.Path']
+                      '$.Event.EventData.Payload', '$.EventData.Payload']
+      file_path:     ['$.TargetFilename', '$.Event.EventData.TargetFilename', '$.EventData.TargetFilename', '$.Path',
+                      '$.Event.EventData.Path']
       file_ext:      ['$.FileExtension']
-      registry_path: ['$.TargetObject', '$.Event.EventData.TargetObject']
+      registry_path: ['$.TargetObject', '$.Event.EventData.TargetObject', '$.EventData.TargetObject']
       bytes:         ['$.BytesSent']
       direction:     ['$.Direction']
       service_name:  ['$.ServiceName', '$.Event.EventData.ServiceName', '$.EventData.ServiceName']
       auth_package:  ['$.AuthenticationPackageName', '$.LmPackageName', '$.Event.EventData.AuthenticationPackageName',
-                      '$.Event.EventData.LmPackageName', '$.EventData.AuthenticationPackageName']
+                      '$.Event.EventData.LmPackageName', '$.EventData.AuthenticationPackageName',
+                      '$.EventData.LmPackageName']
       ticket_encryption: ['$.TicketEncryptionType', '$.Event.EventData.TicketEncryptionType',
                           '$.EventData.TicketEncryptionType']
+    value_regex:     # IPv4-mapped IPv6 ("::ffff:203.0.113.57") -> the IPv4 address
+      src_ip: ['^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$']
+      dst_ip: ['^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$']
+    # Get-WinEvent ConvertTo-Json: EventData only as positional Properties[n].Value (0-based, the event's manifest
+    # order). Read only when the field's aliases are all NULL (ingest_maps.properties_sql).
+    properties_map:
+      path: '$.Properties[{i}].Value'
+      ids:
+        4624: {subject_user: 1, target_name: 5, logon_id: 7, logon_type: 8, auth_package: 10, src_ip: 18, src_port: 19}
+        4625: {subject_user: 1, target_name: 5, logon_type: 10, auth_package: 12, src_ip: 19, src_port: 20}
+        4648: {subject_user: 1, target_name: 5, src_ip: 12, src_port: 13}
+        4688: {subject_user: 1, process_path: 5, command_line: 8, parent_process: 13}
+        4720: {target_name: 0, subject_user: 4}
+        4728: {member_name: 0, target_name: 2, subject_user: 6}
+        4732: {member_name: 0, target_name: 2, subject_user: 6}
+        4756: {member_name: 0, target_name: 2, subject_user: 6}
+        4769: {target_name: 0, service_name: 2, ticket_encryption: 5, src_ip: 6, src_port: 7}
+        4697: {subject_user: 1, service_name: 4, process_path: 5}
+        7045: {service_name: 0, process_path: 1}
+        1102: {subject_user: 1}
+        4104: {command_line: 2}
 
   # ---- Cloud audit logs (connectors aws_cloudtrail / azure_monitor / gcp_logging, or exported JSON lines) ----------
   # Entity conventions: host = the cloud account / subscription resource / project (lower-case), user = the calling
@@ -640,8 +934,9 @@ json_sources:
   # Same entity conventions as the cloud logs above: user = the person (@domain stripped, so alice@corp.example in
   # Okta, Workspace, M365, Auth0 and Duo is the same user:alice as in Entra / AWS SSO sessions), host = the tenant
   # (or the protected application for Duo), signature = the vendor event name, app = the product / client.
-  # Okta System Log (/api/v1/logs LogEvent), bare or in an EventBridge envelope (detail.*). No org field exists in a
-  # LogEvent: host = the EventBridge partner source org, else the actor's e-mail domain (tenant proxy).
+  # Okta System Log (/api/v1/logs LogEvent), bare or in an EventBridge envelope (detail.*; Stage 0 cloud_unpack
+  # normally lifts detail first). No org field exists in a LogEvent: host = the actor's e-mail domain (tenant proxy),
+  # or the partner source org of an EventBridge record that reaches ingest un-lifted.
   okta_json:
     detect_any: ["legacyEventType", "authenticationContext", "detail.legacyEventType", "detail.authenticationContext"]
     fields:
@@ -759,6 +1054,13 @@ json_sources:
       authentication: {success: login_success, failure: login_failed, default: other}
     ip_fields: [src_ip]
 
+# CSV dialect for every csv_sources entry (a source may override quote / escape). Explicit RFC 4180: with
+# strict_mode=false DuckDB does not apply a sniffed '"' escape, so doubled quotes ("" inside a quoted field: Excel,
+# Purview AuditData JSON) cut the field and its extra pieces were dropped. quote: '' turns quoting off.
+csv_dialect:
+  quote: '"'
+  escape: '"'
+
 csv_sources:
   # Firewall exports (any extension). Detected when >= min_matches header names below are present.
   firewall_csv:
@@ -803,20 +1105,39 @@ csv_sources:
       app:           [protocol]
 
   # Microsoft Purview audit search export (RecordId, CreationDate, RecordType, Operation, UserId, AuditData, ...; the
-  # classic export: CreationDate, UserIds, Operations, AuditData). AuditData is the UAL record as a JSON string: CSV
-  # ingest maps header columns only, so src_ip / host / file_path stay NULL here; the cloud rules read AuditData
-  # from raw_line (cloud.yaml m3_csv). Full mapping needs a CSV json-column decoder (reports/cloud/patches).
+  # classic export: CreationDate, UserIds, Operations, AuditData). AuditData is the UAL record as a JSON string
+  # (RFC 4180 doubled quotes): json_columns reads it per field after the header aliases (attacklens/ingest_csv.py);
+  # the cloud rules also read it from raw_line (cloud.yaml m3_csv). Value maps as json_sources.m365_ual_json.
   m365_purview_csv:
     detect_any: ["AuditData", "CreationDate", "RecordType", "Operations", "UserIds", "RecordId"]
     min_matches: 3
-    quote: '"'       # explicit: the sniffed '"' escape is not applied with strict_mode=false (AuditData is JSON with
-    escape: '"'      # doubled quotes); read by csv_select once reports/cloud/patches/identity-saas-ingest_sql.diff lands
+    quote: '"'
+    escape: '"'
     fields:
       ts:            [CreationDate, CreationTime]
       user:          [UserId, UserIds]
       event_action:  [Operation, Operations]
       signature:     [Operation, Operations]
       app:           [Workload, RecordType]
+    json_columns:    # column -> {intermediate field: [JSONPath inside the column's JSON]}
+      AuditData:
+        ts:          ['$.CreationTime']
+        event_action: ['$.Operation']
+        outcome:     ['$.ResultStatus']
+        host:        ['$.OrganizationId']
+        user:        ['$.UserId']
+        src_ip:      ['$.ClientIP', '$.ClientIPAddress', '$.ActorIpAddress']
+        file_path:   ['$.ObjectId']
+        app:         ['$.Workload']
+    outcome_map:
+      values: {succeeded: success, success: success, "true": success, partiallysucceeded: success, failed: failure,
+               failure: failure, "false": failure}
+    action_map:
+      userloggedin: {success: login_success, failure: login_failed, default: login_success}
+      userloginfailed: login_failed
+    value_regex:     # "1.2.3.4:5678" -> 1.2.3.4, "[2001:db8::1]:443" -> 2001:db8::1, "::ffff:1.2.3.4" -> 1.2.3.4
+      src_ip: ['^(\d{1,3}(?:\.\d{1,3}){3}):\d+$', '^\[([0-9A-Fa-f:.]+)\](?::\d+)?$', '^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$']
+    ip_fields: [src_ip]
 
   # Google Workspace Admin console audit export (Reporting > Audit > Download: Date, Event, Description, Actor,
   # IP address). Display names ("Assign role"), not API event names: ingested and searchable, the gws_* rules read
@@ -852,12 +1173,79 @@ cef:
     bytes:         [out]
 
 syslog:
-  # RFC 3164 / ISO-prefixed syslog. Timestamp is optional so a line without one still yields host/process.
-  # Year: RFC 3164 has none, so pipeline.yaml baseline_year is used for every line. LIMITATION: a Dec -> Jan
-  # rollover inside one file is not corrected (it would need a window over the whole input); split such
-  # files or use ISO-timestamped syslog.
-  # Groups: 1 bsd ts, 2 iso ts, 3 host, 4 process, 5 pid, 6 message. The process is anchored after the host.
-  line_regex: '^(?:<\d+>)?(?:(?:([A-Z][a-z]{2}\s+\d{1,2}\s+\d\d:\d\d:\d\d)|(\d{4}-\d\d-\d\dT\S+))\s+)?(\S+)\s+([^\s\[:]+)(?:\[(\d+)\])?:\s*(.*)$'
+  # Syslog header grammar (attacklens/ingest_syslog.py). `headers` is an ORDERED list; the first regex that matches
+  # a line decides its header. profile.py sniffs with the SAME list (entries with sniff: false are parse-only), so
+  # sniff and parse cannot disagree. Named groups (RE2 and Python share the (?P<name>...) syntax and numbering):
+  #   ts_bsd 'Oct 30 08:15:02' (no year: pipeline.yaml baseline_year), ts_bsd_year 'Oct 30 2026 08:15:02',
+  #   ts_iso RFC 3339, host, proc, pid, msgid, sd (RFC 5424 structured data, kept), msg. NILVALUE '-' -> NULL.
+  # A line that matches no header is malformed (action=malformed, ts_ok=false) and counted, never a silent NULL ts.
+  # Year: RFC 3164 has none, so baseline_year is used for every ts_bsd line. LIMITATION: a Dec -> Jan rollover inside
+  # one file is not corrected (it would need a window over the whole input); split such files or use ISO syslog.
+  # host must not end with ':' so 'Oct 30 08:15:02 sshd[1]: error: x' is read as no-host, not host='sshd[1]:'.
+  headers:
+    - name: auditd_raw              # raw audit.log line (optionally node= prefixed); ts comes from msg=audit(epoch)
+      regex: '^(?:node=(?P<host>\S+) )?(?P<msg>type=[A-Z_]+ msg=audit\(\d+\.\d+:\d+\):.*)$'
+    - name: rfc5424
+      regex: '^(?:<\d{1,3}>)?1 (?P<ts_iso>\d{4}-\d\d-\d\dT\S+|-) (?P<host>\S+) (?P<proc>\S+) (?P<pid>\S+) (?P<msgid>\S+) (?P<sd>-|(?:\[(?:[^\]"]|"[^"]*")*\])+)(?: (?P<msg>.*))?$'
+    - name: bsd_year_colon          # Cisco ASA 'Oct 31 2026 10:00:00 asa01 : %ASA-6-...'
+      regex: '^(?:<\d{1,3}>)?(?P<ts_bsd_year>[A-Z][a-z]{2} +\d{1,2} \d{4} \d\d:\d\d:\d\d) (?P<host>\S*[^\s:]) : (?P<msg>.*)$'
+    - name: bsd_year
+      regex: '^(?:<\d{1,3}>)?(?P<ts_bsd_year>[A-Z][a-z]{2} +\d{1,2} \d{4} \d\d:\d\d:\d\d) (?P<host>\S*[^\s:]) (?P<proc>[^\s\[:]+)(?:\[(?P<pid>\d+)\])?: ?(?P<msg>.*)$'
+    - name: bsd
+      regex: '^(?:<\d{1,3}>)?(?P<ts_bsd>[A-Z][a-z]{2} +\d{1,2} \d\d:\d\d:\d\d) (?P<host>\S*[^\s:]) (?P<proc>[^\s\[:]+)(?:\[(?P<pid>\d+)\])?: ?(?P<msg>.*)$'
+    - name: bsd_nohost              # 'Oct 30 08:15:02 sshd[2211]: ...' (local socket / pfSense)
+      regex: '^(?:<\d{1,3}>)?(?P<ts_bsd>[A-Z][a-z]{2} +\d{1,2} \d\d:\d\d:\d\d) (?P<proc>[^\s\[:]+)(?:\[(?P<pid>\d+)\])?: ?(?P<msg>.*)$'
+    - name: iso
+      regex: '^(?:<\d{1,3}>)?(?P<ts_iso>\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\S*) (?P<host>\S*[^\s:]) (?P<proc>[^\s\[:]+)(?:\[(?P<pid>\d+)\])?: ?(?P<msg>.*)$'
+    - name: bsd_year_notag
+      regex: '^(?:<\d{1,3}>)?(?P<ts_bsd_year>[A-Z][a-z]{2} +\d{1,2} \d{4} \d\d:\d\d:\d\d) (?P<host>\S*[^\s:]) (?P<msg>.*)$'
+    - name: bsd_notag               # no tag: PAN-OS / GlobalProtect CSV, relayed FortiGate kv (keeps ts and host)
+      regex: '^(?:<\d{1,3}>)?(?P<ts_bsd>[A-Z][a-z]{2} +\d{1,2} \d\d:\d\d:\d\d) (?P<host>\S*[^\s:]) (?P<msg>.*)$'
+    - name: iso_notag
+      regex: '^(?:<\d{1,3}>)?(?P<ts_iso>\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\S*) (?P<host>\S*[^\s:]) (?P<msg>.*)$'
+    - name: header_only_bsd         # ts only (continuation or one-word lines); parse-only
+      sniff: false
+      regex: '^(?:<\d{1,3}>)?(?P<ts_bsd>[A-Z][a-z]{2} +\d{1,2} \d\d:\d\d:\d\d)(?:\s+(?P<msg>.*))?$'
+    - name: header_only_iso
+      sniff: false
+      regex: '^(?:<\d{1,3}>)?(?P<ts_iso>\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\S*)(?:\s+(?P<msg>.*))?$'
+  ts_bsd_year_format: '%b %d %Y %H:%M:%S'
+  nil_value: '-'
+  # rsyslog "message repeated N times: [ msg]": the inner message is parsed (group 2). The count is not expanded
+  # into extra rows (rows in == rows out); see the open issue in the B2 report.
+  pre_unwrap: '^message repeated (\d+) times: \[ ?(.*?) ?\]$'
+  # process name normalisation, first match wins (lower-cased name tested), applied at ingest
+  normalise_process:
+    - {regex: '^sshd(?:-session|-auth)?$', name: sshd}
+    - {regex: '^crond?$', name: cron}
+    - {regex: '^(?:audisp-syslog|audispd|auditd)$', name: auditd}
+  # Payload dispatch (profile.py): a header whose msg is CEF goes to the cef parser; a msg matching a kv source's
+  # detect_regex goes to that kv source (dispatched_from: syslog). kv dispatch needs kv_select to strip the header
+  # (ingest_syslog.strip_header_sql); keep false until that is wired.
+  dispatch_kv: false
+  # auditd (raw audit.log, ENRICHED, and via audisp-syslog): a line whose msg matches detect_regex is parsed here
+  # as source_type auditd. Checked before kv_sources in profile, so audit lines never reach fortigate_kv.
+  auditd:
+    source_type: auditd
+    detect_regex: '^(?:node=\S+ )?type=[A-Z_]+ msg=audit\(\d+\.\d+:\d+\):'
+    ts_regex: 'msg=audit\((\d+)\.(\d+):'      # epoch seconds . fraction (UTC by definition)
+    # one key = '(?:^|[ ''\x1d])key=("..."|[^ ''\x1d]*)'; enriched upper-case names first
+    null_values: ['?', '(null)', '4294967295', '-1', 'unset']
+    fields:
+      host:          [node]
+      process_name:  [comm, a0]
+      process_path:  [exe]
+      user:          [acct, UID]
+      subject_user:  [AUID, auid]
+      src_ip:        [addr]
+    argv_regex: ' a\d+=("[^"]*"|\S+)'           # EXECVE argv -> command_line (joined with ' ')
+    argv_types: [EXECVE]                        # SYSCALL a0..a3 are registers, not argv
+    hex_fields: [proctitle]                     # proctitle=636174002F... -> 'cat /etc/shadow' (when unquoted hex)
+    actions:                                    # first match wins; when: key -> allowed lower-case values
+      - {when: {type: [user_login, user_auth], res: [success]}, action: login_success, outcome: success}
+      - {when: {type: [user_login, user_auth], res: [failed, failure]}, action: login_failed, outcome: failure}
+      - {when: {type: [add_user]}, action: user_created}
+      - {when: {type: [execve]}, action: proc_start, outcome: success}
   # Message patterns (tried in order, first match wins). fields: intermediate field -> regex group.
   messages:
     - process: sshd
@@ -893,11 +1281,87 @@ syslog:
       action: group_member_added
       outcome: success
       fields: {member_name: 1, subject_user: 2, group: 3}
+    - process: sshd
+      regex: '^(?:error: )?maximum authentication attempts exceeded for (?:invalid user )?(\S+) from (\S+) port (\d+)'
+      action: login_failed
+      outcome: failure
+      fields: {user: 1, src_ip: 2, src_port: 3}
+      const: {dst_port: "22", logon_type: "10"}
+    - process: sshd
+      regex: '^(?:Connection closed by|Disconnected from) (?:authenticating|invalid) user (\S*) (\S+) port (\d+)'
+      action: login_failed
+      outcome: failure
+      fields: {user: 1, src_ip: 2, src_port: 3}
+      const: {dst_port: "22", logon_type: "10"}
+    # pam_unix auth failure: outcome failure but action other, so it is not double-counted with the
+    # 'Failed password' line sshd / sudo write for the same attempt
+    - process_regex: '^(?:sshd|sudo|su|login)$'
+      regex: '^pam_unix\([^)]*:auth\): authentication failure;.*?rhost=(\S*)\s+user=(\S+)'
+      action: other
+      outcome: failure
+      fields: {src_ip: 1, user: 2}
+    # sudo failure FIRST: these lines also carry USER= ; COMMAND= and must never become proc_start success
     - process: sudo
-      regex: '^\s*(\S+) : .*USER=(\S+) ; COMMAND=(.*)$'
+      regex: '^\s*(\S+) : (?:\d+ incorrect password attempts?|user NOT in sudoers|command not allowed|a password is required|user NOT authorized on host) ; .*?USER=(\S+) ; (?:.*? ; )?COMMAND=(.*)$'
+      action: other
+      outcome: failure
+      fields: {user: 1, target_name: 2, command_line: 3}
+    - process: sudo
+      regex: '^\s*(\S+) : .*?USER=(\S+) ; (?:(?:ENV|GROUP|TSID)=[^;]* ; )*COMMAND=(.*)$'
       action: proc_start
       outcome: success
       fields: {user: 1, target_name: 2, command_line: 3}
+    - process: su
+      regex: '^pam_unix\(su(?:-l)?:session\): session opened for user ([^\s(]+)(?:\(uid=\d+\))? by ([^\s(]*)'
+      action: login_success
+      outcome: success
+      fields: {target_name: 1, subject_user: 2}
+    - process: su
+      regex: '^FAILED SU \(to (\S+)\) (\S+) on'
+      action: login_failed
+      outcome: failure
+      fields: {target_name: 1, subject_user: 2}
+    - process: cron
+      regex: '^\((\S+)\) CMD \((.*)\)$'
+      action: proc_start
+      outcome: success
+      fields: {user: 1, command_line: 2}
+      const: {parent_process: cron}
+    - process: crontab
+      regex: '^\((\S+)\) REPLACE \((\S+)\)'
+      action: scheduled_task
+      outcome: success
+      fields: {subject_user: 1, target_name: 2}
+    - process: kernel
+      regex: '\[UFW (?:BLOCK|AUDIT)\] .*?SRC=(\S+) DST=(\S+) .*?SPT=(\d+) DPT=(\d+)'
+      action: conn_denied
+      outcome: failure
+      fields: {src_ip: 1, dst_ip: 2, src_port: 3, dst_port: 4}
+    - process: kernel
+      regex: '\[UFW ALLOW\] .*?SRC=(\S+) DST=(\S+) .*?SPT=(\d+) DPT=(\d+)'
+      action: conn_allowed
+      outcome: success
+      fields: {src_ip: 1, dst_ip: 2, src_port: 3, dst_port: 4}
+    - process: openvpn
+      regex: '^(\S+?):(\d+) TLS: Username/Password authentication succeeded for username ''([^'']+)'''
+      action: login_success
+      outcome: success
+      fields: {src_ip: 1, src_port: 2, user: 3}
+    - process: openvpn
+      regex: '^(\S+?):(\d+) TLS Auth Error: Auth Username/Password verification failed'
+      action: login_failed
+      outcome: failure
+      fields: {src_ip: 1, src_port: 2}
+    - process: postgres
+      regex: 'client=([^\s,]+) FATAL:\s+password authentication failed for user "([^"]+)"'
+      action: login_failed
+      outcome: failure
+      fields: {src_ip: 1, user: 2}
+    - process: postgres
+      regex: 'client=([^\s,]+) LOG:\s+connection authorized: user=(\S+)'
+      action: login_success
+      outcome: success
+      fields: {src_ip: 1, user: 2}
 
 # key=value logs (DEVELOPMENT.md §15.9). Each key is read with an anchored regex `(?:^| )key=("..."|[^ ]*)`,
 # unquoted; '' and 'N/A' -> NULL. Lines matching none of line_regex are counted as dropped (unparseable_line).
@@ -1009,6 +1473,10 @@ ingest_checks:
   # ingest_accounting.json notes, never dropped (n30: 4 505 437, all inside the pile-up block).
   duplicates:
     enabled: true
+  # CSV records with a field count different from the header: fewer fields -> rejected by the reader, dropped with
+  # reason field_count_mismatch; more fields -> row kept, extras dropped, counted in notes (field_count_mismatch).
+  # The "more" count is a second quote-aware read of each CSV group (~1 s per 250 MB); false skips it (logged).
+  csv_field_count: true
 
 # Action normalisation (§3.3, §15.5). Precedence: event_id -> event_action -> "other".
 action_map:
@@ -1042,8 +1510,13 @@ action_map:
   event_actions:
     user_logon: {success: login_success, failure: login_failed, default: other}
     logon: {success: login_success, failure: login_failed, default: other}
-    logged-in: login_success
+    # auditbeat 'logged-in' / 'authenticated' / system 'user_login' carry the verdict in event.outcome
+    logged-in: {success: login_success, failure: login_failed, default: login_success}
+    authenticated: {success: other, failure: login_failed, default: other}
+    user_login: {success: login_success, failure: login_failed, default: other}
     logon-failed: login_failed
+    executed: proc_start          # auditbeat auditd execve
+    process_started: proc_start   # auditbeat system/process
     special_privileges_assigned: priv_assigned
     user_created: user_created
     added-user-account: user_created

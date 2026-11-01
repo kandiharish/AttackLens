@@ -217,6 +217,14 @@ def ds(tmp_path_factory: pytest.TempPathFactory):
             if part:
                 (raw / f"{name}{suffix}.log").write_text("\n".join(json.dumps(r) for r in part) + "\n",
                                                           encoding="utf-8")
+    # Purview audit search CSV: AuditData is the UAL record as a JSON string (doubled quotes)
+    ad = json.dumps({"CreationTime": iso(D10)[:19], "Id": "csv-1", "Operation": "New-InboxRule", "OrganizationId": ORG,
+                     "RecordType": 1, "ResultStatus": "True", "UserId": "p_csvfwd@corp.example", "Workload": "Exchange",
+                     "ClientIP": "203.0.113.5:4000", "Parameters": [{"Name": "ForwardTo", "Value": "x@evil.example"}]})
+    (raw / "purview.csv").write_text(
+        "RecordId,CreationDate,RecordType,Operation,UserId,AuditData,AssociatedAdminUnits\r\n"
+        f"csv-1,{iso(D10)},ExchangeAdmin,New-InboxRule,p_csvfwd@corp.example,\"{ad.replace(chr(34), chr(34) * 2)}\",\r\n",
+        encoding="utf-8")
     ctx = run_ingest(raw, tmp)
     ctx.con.close()
     con = db.connect(memory_limit="400MB", threads=2, temp_directory=tmp / "spill")
@@ -274,6 +282,7 @@ def test_no_spray_from_single_user_brute_force(ds) -> None:
     ("gws_admin_role_grant", "p_gadm", "n_gadm", 85, 60),             # Cloud Logging shape vs Reports shape
     ("m365_inbox_forward_rule", "p_fwd", "n_fwd", 85, 45),            # external vs internal forwarding
     ("m365_inbox_forward_rule", "p_fwd2", "n_fwd", 85, 45),           # OfficeActivity Parameters string
+    ("m365_inbox_forward_rule", "p_csvfwd", "n_fwd", 85, 45),         # Purview CSV AuditData
     ("m365_mailbox_delegation", "p_deleg", "n_deleg", 70, 55),
     ("m365_admin_role_grant", "p_m3role", "n_m3role", 85, 55),
     ("m365_oauth_consent", "p_consent", "n_consent", 75, 50),

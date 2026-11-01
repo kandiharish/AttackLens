@@ -2,9 +2,11 @@
 // opens a form generated from the catalog. Every status shown comes from GET /api/integrations/{id}.
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ApiError, getIntegration, getIntegrationCatalog, USE_MOCK } from '../../api'
-import { KIND_GROUPS, tileStatus } from '../../lib/connections'
+import { tileStatus } from '../../lib/connections'
 import type { IntegrationCatalogEntry, IntegrationState } from '../../types_integrations'
 import { Button, EmptyState, ErrorNote, Spinner } from '../ui'
+import { CloudLogsPanel } from './CloudLogsPanel'
+import { groupEntries, PAGE_GROUPS, pullsText, ungrouped, type PageGroup } from './cloudLogs'
 import { ConnectionForm } from './ConnectionForm'
 import { ConnectionsSummary } from './ConnectionsSummary'
 import { StatusDot } from './StatusDot'
@@ -13,7 +15,10 @@ import { StatusDot } from './StatusDot'
 const REFRESH_MS = 15_000
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e))
 
-type Catalog = { kind: 'ok'; entries: IntegrationCatalogEntry[] } | { kind: 'missing' } | { kind: 'error'; message: string }
+/** Kinds a newer backend may add that no page group lists yet: shown, never hidden. */
+const OTHER_GROUP: PageGroup = { id: 'other', kinds: [], title: 'Other', sub: 'More connection types offered by this server' }
+
+type Catalog ={ kind: 'ok'; entries: IntegrationCatalogEntry[] } | { kind: 'missing' } | { kind: 'error'; message: string }
 
 function Tile({
   entry,
@@ -29,6 +34,8 @@ function Tile({
   btnRef: (el: HTMLButtonElement | null) => void
 }) {
   const s = tileStatus(entry.kind, st)
+  // The tile is a button: its accessible name already includes the "pulls" text (name from content).
+  const pulls = pullsText(entry.id)
   return (
     <li>
       <button
@@ -42,7 +49,12 @@ function Tile({
         }`}
       >
         <span className="headline text-[15px]">{entry.name}</span>
-        <span className="flex items-center gap-2 text-[12px] text-ink-2">
+        {pulls && (
+          <span className="text-[12px] leading-snug text-muted">
+            {pulls}
+          </span>
+        )}
+        <span className="mt-auto flex items-center gap-2 pt-0.5 text-[12px] text-ink-2">
           <StatusDot tone={s.tone} />
           {st === undefined ? 'Checking…' : s.label}
         </span>
@@ -149,12 +161,17 @@ export function ConnectionsPage() {
 
   const entries = catalog?.kind === 'ok' ? catalog.entries : []
   const open = entries.find((e) => e.id === openId) ?? null
+  const byId = new Map(entries.map((e) => [e.id, e]))
+  // From the "Supported cloud logs" table: open that connector's form (the form focuses its own heading on mount).
+  const openConnector = (id: string) => setOpenId(id)
 
   return (
     <div className="mx-auto w-full max-w-[1120px] space-y-5 pb-6">
       <header className="pt-1">
         <h2 className="headline text-[24px]">Connections</h2>
-        <p className="mt-1 text-[14px] text-ink-2">Connect the SIEM or cloud account you already use and AttackLens pulls the logs for you. Send finished incidents back the same way.</p>
+        <p className="mt-1 text-[14px] text-ink-2">
+          Connect your cloud and identity accounts (or the SIEM you already use) and AttackLens pulls the logs for you. Send finished incidents back the same way.
+        </p>
       </header>
 
       {USE_MOCK && (
@@ -197,32 +214,45 @@ export function ConnectionsPage() {
                 <EmptyState title="No connections available">The server lists no connection types.</EmptyState>
               </div>
             )}
-            {KIND_GROUPS.map((g) => {
-              const list = entries.filter((e) => e.kind === g.kind)
-              if (!list.length) return null
+            {[...PAGE_GROUPS, OTHER_GROUP].map((g) => {
+              const list = g === OTHER_GROUP ? ungrouped(entries) : groupEntries(entries, g)
+              // The featured group always renders (with its log table) so the supported cloud logs stay visible.
+              if (!list.length && !g.featured) return null
+              const tilesUl = (
+                <ul
+                  className={`grid gap-3 ${
+                    open ? 'grid-cols-1 sm:grid-cols-2' : g.featured ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3' : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4'
+                  }`}
+                >
+                  {list.map((e) => (
+                    <Tile
+                      key={e.id}
+                      entry={e}
+                      st={states[e.id]}
+                      selected={openId === e.id}
+                      onOpen={() => setOpenId((cur) => (cur === e.id ? null : e.id))}
+                      btnRef={(el) => {
+                        if (el) tiles.current.set(e.id, el)
+                        else tiles.current.delete(e.id)
+                      }}
+                    />
+                  ))}
+                </ul>
+              )
               return (
-                <section key={g.kind} aria-labelledby={`conn-group-${g.kind}`}>
-                  <div className="mb-2.5">
-                    <h3 id={`conn-group-${g.kind}`} className="section-label">
+                <section
+                  key={g.id}
+                  aria-labelledby={`conn-group-${g.id}`}
+                  className={g.featured ? 'space-y-3 rounded-[22px] border border-accent/30 bg-accent-tint/60 p-4 sm:p-5' : ''}
+                >
+                  <div className={g.featured ? '' : 'mb-2.5'}>
+                    <h3 id={`conn-group-${g.id}`} className={g.featured ? 'headline text-[17px]' : 'section-label'}>
                       {g.title}
                     </h3>
                     <p className="text-[13px] text-ink-2">{g.sub}</p>
                   </div>
-                  <ul className={`grid gap-3 ${open ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4'}`}>
-                    {list.map((e) => (
-                      <Tile
-                        key={e.id}
-                        entry={e}
-                        st={states[e.id]}
-                        selected={openId === e.id}
-                        onOpen={() => setOpenId((cur) => (cur === e.id ? null : e.id))}
-                        btnRef={(el) => {
-                          if (el) tiles.current.set(e.id, el)
-                          else tiles.current.delete(e.id)
-                        }}
-                      />
-                    ))}
-                  </ul>
+                  {list.length > 0 ? tilesUl : g.featured && <p className="text-[13px] text-muted">This server lists no cloud or identity connectors.</p>}
+                  {g.featured && <CloudLogsPanel byId={byId} onOpenConnector={openConnector} />}
                 </section>
               )
             })}
