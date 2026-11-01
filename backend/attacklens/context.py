@@ -18,6 +18,7 @@ class RunContext:
     con: duckdb.DuckDBPyConnection
     cfg: dict[str, Any]
     ground_truth: Path | None = None
+    siem_alerts: bool = False  # alert-input mode: detect unions the SIEM alert spool (never with ground_truth)
     stats: dict[str, Any] = field(default_factory=dict)
 
     @property

@@ -71,14 +71,30 @@ def test_equal_timestamps_ordered_by_source_seq() -> None:
     assert r.backbone == ["zz", "aa"]  # seq 1 precedes seq 2 even though "aa" < "zz"
 
 
-def test_branch_shares_prefix_and_meets_ratio() -> None:
+def _branch_case(d_sev: float) -> tuple[list[Node], list[Edge]]:
     nodes = [n("a", 0, "Execution", 80), n("b", 1, "Discovery", 80), n("c", 2, "Collection", 80),
-             n("d", 3, "Discovery", 60), n("e", 4, "Discovery", 1)]
-    edges = [Edge("a", "b", "R2", 1.0), Edge("b", "c", "R2", 1.0), Edge("a", "d", "R2", 1.0)]
+             n("d", 3, "Discovery", d_sev), n("e", 4, "Discovery", 1)]
+    return nodes, [Edge("a", "b", "R2", 1.0), Edge("b", "c", "R2", 1.0), Edge("a", "d", "R2", 1.0)]
+
+
+def test_branch_gain_is_measured_past_the_divergence() -> None:
+    # S(a)=80, top S(c)=242. d=60: S(d)=141, own gain 141-80=61 < 0.5*(242-80)=81 -> no branch, although
+    # S(d) >= 0.5*top (the old rule): its score comes from the shared prefix a.
+    nodes, edges = _branch_case(60)
     r = best_path(nodes, edges, branch_min_ratio=0.5)
-    top = r.scores["c"]
-    assert r.backbone == ["a", "b", "c"] and r.scores["d"] == 141.0 >= 0.5 * top
-    assert r.branches == [["d"]]  # e (score 1) is neither linked nor >= 0.5 x max
+    assert r.backbone == ["a", "b", "c"] and r.scores["d"] == 141.0 and r.scores["d"] >= 0.5 * r.scores["c"]
+    assert r.branches == []
+
+
+def test_branch_with_enough_own_gain_qualifies() -> None:
+    nodes, edges = _branch_case(100)  # gain 181-80 = 101 >= 81
+    assert best_path(nodes, edges, branch_min_ratio=0.5).branches == [["d"]]
+
+
+def test_seed_branch_exempt_from_gain_rule() -> None:
+    nodes, edges = _branch_case(60)
+    r = best_path(nodes, edges, branch_min_ratio=0.5, seeds={"d"})
+    assert r.branches == [["d"]]  # seed ends are always shown; e (unlinked, score 1) never is
 
 
 def test_branch_below_ratio_dropped() -> None:
@@ -124,6 +140,36 @@ def test_seed_without_any_link_to_shown_is_left_for_peeling() -> None:
     nodes = [n("a", 0, "Execution", 80), n("b", 1, "Discovery", 80), n("s", 2, "Persistence", 70)]
     r = best_path(nodes, [Edge("a", "b", "R2", 1.0)], EXEMPT, seeds={"s"})
     assert r.backbone == ["a", "b"] and r.branches == []
+
+
+def test_lead_in_seed_linking_into_shown_becomes_branch() -> None:
+    # cloud_small A5: a weak floor-exempt Initial Access chain (w1..w4) out-scores the seed s (Persistence 80) as b's
+    # DP predecessor; s's own chain (x -> s) has no shown step, but s links INTO shown b -> s is still shown.
+    nodes = [n("x", 0, "Persistence", 60), n("s", 1, "Persistence", 80), n("w1", 2, "Initial Access", 51),
+             n("w2", 3, "Initial Access", 30), n("w3", 4, "Initial Access", 51), n("w4", 5, "Initial Access", 26),
+             n("b", 6, "Privilege Escalation", 75), n("c", 7, "Defense Impairment", 85)]
+    edges = [Edge("x", "s", "R3", 1.07), Edge("s", "w1", "R2", 0.86), Edge("w1", "w2", "R2", 1.0),
+             Edge("w2", "w3", "R2", 0.81), Edge("w3", "w4", "R2", 0.86), Edge("w4", "b", "R2", 1.0),
+             Edge("s", "b", "R3", 1.3), Edge("b", "c", "R3", 1.3)]
+    lead = ("R1", "R2", "R3")
+    r = best_path(nodes, edges, EXEMPT, seeds={"s", "b", "c"}, weak={"w2", "w4"}, lead_in_rules=lead)
+    assert r.backbone == ["w1", "w2", "w3", "w4", "b", "c"]
+    assert ["s"] in r.branches and r.back["s"] is None  # its DP predecessor x is not shown: no hidden link drawn
+    assert r.lead_in == ["s"]
+    assert ["s"] not in best_path(nodes, edges, EXEMPT, seeds={"s", "b", "c"}, weak={"w2", "w4"}).branches  # off
+    # host-only R4 links (Collection -> Exfiltration on one cloud account id) do not pull a seed in
+    r4 = [e for e in edges if e.i != "s"] + [Edge("s", "b", "R4", 1.3)]
+    assert ["s"] not in best_path(nodes, r4, EXEMPT, seeds={"s", "b", "c"}, weak={"w2", "w4"},
+                                  lead_in_rules=lead).branches
+
+
+def test_lead_in_seed_does_not_pull_in_another_seed() -> None:
+    # lead-in seed s joins (links into shown b); seed t's only shown-side predecessor is s: t stays for peeling
+    nodes = [n("a", 0, "Execution", 80), n("s", 1, "Persistence", 70), n("b", 2, "Discovery", 80),
+             n("t", 3, "Exfiltration", 85)]
+    edges = [Edge("a", "b", "R2", 1.0), Edge("s", "b", "R2", 0.1), Edge("s", "t", "R2", 0.1)]
+    r = best_path(nodes, edges, EXEMPT, seeds={"s", "t"}, lead_in_rules=("R2",))
+    assert r.backbone == ["a", "b"] and r.branches == [["s"]]
 
 
 def test_non_seed_respects_branch_limits() -> None:

@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any
 
 import yaml
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+# ATTACKLENS_HOME (set by the desktop launcher, attacklens/desktop.py) replaces the repo root for frozen installs:
+# <home>/config, <home>/data, <home>/frontend/dist. Unset -> the repo checkout (editable install), unchanged.
+_HOME = os.environ.get("ATTACKLENS_HOME", "").strip()
+REPO_ROOT = Path(_HOME).resolve() if _HOME else Path(__file__).resolve().parents[2]
 CONFIG_DIR = REPO_ROOT / "config"
 
 

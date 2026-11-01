@@ -1,0 +1,480 @@
+# Sigma -> AttackLens canonical schema (DEVELOPMENT.md §3, §4 Stage 2). Read by attacklens/sigma_rules.py.
+# Vendored rules: config/sigma/ (SigmaHQ, DRL 1.1, see config/sigma/SOURCE.md). Runtime switches: pipeline.yaml sigma.*
+#
+# A Sigma rule is compiled only when (1) its logsource matches one entry of `logsources` (exact product / category /
+# service; an omitted key means the rule must not set it), (2) every field it uses is in `fields` (or in the entry's
+# `assume_true`), (3) every value/modifier is supported. Anything else is skipped with a recorded reason
+# (work/sigma_coverage.json). Field values are SQL expressions over canonical columns (trusted config); Sigma rule
+# values are third-party text and are only ever emitted as escaped SQL literals.
+
+# Sigma `level` -> AttackLens severity (0-100). Scoring context (§6): Confidence = sev x max(rarity, 0.65 if sev>=80),
+# a component needs max Confidence >= 65 (with >= 2 tactics) or >= 90 to become an incident, and episodes below
+# gate.min_tactic_confidence (40) do not count as a tactic. So: informational/low can never seed or add a tactic on
+# their own; medium can add a tactic only when rare; high (75) seeds only when rare (75 x rarity >= 65); critical (90)
+# is just below our hand-written high-precision rules (80-95) because it is generic, not tuned to this data.
+level_severity:
+  informational: 20
+  low: 35
+  medium: 55
+  high: 75
+  critical: 90
+
+# Sigma tactic tag (lower case, '-'/'_' -> ' ') -> ATT&CK v20 tactic name(s). v20 split Defense Evasion into Stealth
+# (TA0005) and Defense Impairment (TA0112): the one the rule's technique belongs to (attack_v20.json `tactics`) wins.
+tactic_aliases:
+  defense evasion: [Stealth, Defense Impairment]
+  command and control: [Command and Control]
+
+# Unmapped field policy. skip: a rule using any field not in `fields` is skipped (reason unmapped_field:<Field>).
+# narrow: the unknown leaf is replaced by the constant that can only REMOVE matches (FALSE in positive position, TRUE
+# under NOT); a rule that becomes constant FALSE is skipped (reason unsatisfiable_without_unmapped). Never adds matches.
+unmapped_field_policy: skip
+
+# Sigma field -> canonical SQL. Either a string (a canonical column or SQL expression) or a mapping:
+#   expr: SQL expression (path-like value)      type: VARCHAR | INTEGER | BIGINT (default: canonical column type)
+#   name: column holding the lower-case basename; `endswith '\x.exe'` / `'/x'` then also matches name = 'x.exe'
+#   user: true -> literal values are normalized like ingest users (DOMAIN\ and @domain stripped, lower case)
+fields:
+  Image: {expr: process_path, name: process_name}
+  ParentImage: {expr: parent_process, name: parent_process}    # ECS: parent name; EVTX: ParentImage path
+  CommandLine: command_line
+  # Approximation (no PE header data in the events): OriginalFileName equals the image basename unless the binary was
+  # renamed. Remove this line to skip such rules instead.
+  OriginalFileName: process_name
+  User: {expr: src_user, user: true}
+  SubjectUserName: {expr: src_user, user: true}
+  TargetUserName: {expr: target_user, user: true}
+  SamAccountName: {expr: target_user, user: true}
+  ProcessName: {expr: process_path, name: process_name}       # 4624/4688 ProcessName / NewProcessName
+  NewProcessName: {expr: process_path, name: process_name}
+  ParentProcessName: {expr: parent_process, name: parent_process}
+  DestinationIp: dst_ip
+  DestinationPort: dst_port
+  DestinationHostname: dst_domain
+  SourceIp: src_ip
+  SourcePort: src_port
+  IpAddress: src_ip
+  IpPort: src_port
+  # Sysmon 3 Initiated=true is an outbound connection the host opened = our conn_out
+  Initiated: {expr: "CASE WHEN action = 'conn_out' THEN 'true' WHEN action IS NOT NULL THEN 'false' END", type: VARCHAR}
+  QueryName: dst_domain
+  query: dst_domain                  # category dns
+  TargetFilename: file_path
+  TargetObject: registry_path
+  EventType: {expr: "CASE WHEN action = 'reg_set' THEN 'SetValue' END", type: VARCHAR}
+  EventID: event_id
+  LogonType: logon_type
+  TargetLogonId: logon_id
+  SubjectLogonId: logon_id
+  ServiceName: service_name
+  ImagePath: process_path            # 7045: ingest maps ImagePath / process.executable to process_path
+  TicketEncryptionType: ticket_encryption
+  AuthenticationPackageName: auth_package
+  Computer: host
+  # proxy / web (FortiGate webfilter: url -> file_path, hostname -> dst_domain)
+  c-uri: file_path
+  cs-uri: file_path
+  cs-uri-stem: file_path
+  cs-uri-query: file_path            # FortiGate url keeps the query string
+  c-uri-query: file_path
+  cs-host: dst_domain
+  c-uri-extension: {expr: "NULLIF(regexp_extract(file_path, '\\.([A-Za-z0-9]{1,8})(?:[?#]|$)', 1), '')", type: VARCHAR}
+  # FortiGate config / event records (no canonical column): key=value fields read from the label-free kv line,
+  # only on fortigate_kv rows (anchored on ' key=' so a quoted value cannot easily spoof it)
+  action: {expr: "CASE WHEN source_type = 'fortigate_kv' THEN NULLIF(regexp_extract(raw_line, '(?:^| )action=\"?([^\" ]+)', 1), '') END", type: VARCHAR}
+  cfgpath: {expr: "CASE WHEN source_type = 'fortigate_kv' THEN NULLIF(regexp_extract(raw_line, '(?:^| )cfgpath=\"?([^\" ]+)', 1), '') END", type: VARCHAR}
+  # firewall / antivirus
+  src_ip: src_ip
+  dst_ip: dst_ip
+  src_port: src_port
+  dst_port: dst_port
+  Signature: signature
+  Filename: file_path
+
+# Product -> extra gate ANDed onto every rule of that product (there is no OS column: the path style decides).
+# Without it Windows rules such as "Image does not contain '\'" fire on every Linux process.
+product_gates:
+  windows: >-
+    NOT (starts_with(coalesce(process_path, ''), '/') OR starts_with(coalesce(file_path, ''), '/')
+         OR coalesce(source_type, '') = 'syslog')
+  linux: >-
+    NOT (contains(coalesce(process_path, ''), '\') OR contains(coalesce(file_path, ''), '\')
+         OR registry_path IS NOT NULL)
+  macos: >-
+    NOT (contains(coalesce(process_path, ''), '\') OR contains(coalesce(file_path, ''), '\')
+         OR registry_path IS NOT NULL)
+
+# Logsource -> the canonical rows a rule may match (gate, SQL over canonical columns) and the column for Sigma
+# keyword (field-less) searches (omit = keyword rules are skipped). assume_true: fields implied by the gate itself.
+logsources:
+  - {name: process_creation, product: [windows, linux, macos], category: process_creation,
+     gate: "action = 'proc_start'"}
+  - {name: network_connection, product: [windows, linux, macos], category: network_connection,
+     gate: "action IN ('conn_out', 'conn_allowed')"}
+  - {name: dns_query, product: windows, category: dns_query, gate: "action = 'dns_query'"}
+  - {name: dns, category: dns, gate: "action = 'dns_query'"}
+  - {name: file_event, product: [windows, linux, macos], category: file_event, gate: "action = 'file_write'"}
+  - {name: file_rename, product: windows, category: file_rename, gate: "action = 'file_rename'"}
+  - {name: registry, product: windows, category: [registry_set, registry_event, registry_add],
+     gate: "action = 'reg_set'"}
+  # No canonical channel / provider column: only the channel the logsource itself names is implied (Channel: Security
+  # on service security). Any other Channel value and every Provider_Name constraint (rules use it to disambiguate an
+  # EventID shared by providers, e.g. System 7045 vs others) -> skipped as unmapped_field, never assumed true.
+  - {name: win_security, product: windows, service: security,
+     gate: "event_id IS NOT NULL AND source_type IN ('ecs_json', 'win_json')", assume_true: {Channel: [Security]}}
+  - {name: win_system, product: windows, service: system,
+     gate: "event_id IS NOT NULL AND source_type IN ('ecs_json', 'win_json')", assume_true: {Channel: [System]}}
+  - {name: proxy, category: proxy, gate: "action IN ('web_access', 'web_blocked')"}
+  - {name: firewall, category: firewall, gate: "action IN ('conn_allowed', 'conn_denied', 'conn_out')"}
+  # Sigma `antivirus` rules describe an ENDPOINT AV finding (the file is on the host, e.g. hacktool -> T1204). A
+  # gateway AV verdict that stopped the transfer (FortiGate utm/virus blocked) never reached the host, so it is out
+  # of scope here; the native av_blocked rule scores those as prevented detections. Same outcome list as
+  # rules.yaml thresholds.blocked_outcomes. Measured n30: sigma_fa0c05b6 matched 15 976 rows, every one blocked.
+  - {name: antivirus, category: antivirus, keywords: signature,
+     gate: "action = 'av_alert' AND coalesce(lower(outcome), '') NOT IN ('failure', 'blocked', 'dropped', 'reset', 'deny')"}
+  - {name: linux_syslog, product: linux, service: [null, sshd, auth, syslog, sudo],
+     gate: "source_type = 'syslog'", keywords: {expr: raw_line, source_types: [syslog]}}
+  # keyword search on raw_line is only ever allowed with source_types (label-free sources; generator JSON/CEF raw
+  # lines may carry ground-truth labels). The compiler refuses an unguarded raw_line keyword column. A raw_line guard
+  # also excludes lines whose payload is a JSON object or CEF (keywords.exclude_regex, default
+  # sigma_rules.RAW_LINE_EXCLUDE): the generator's syslog sink wraps full ECS JSON (threat / rule / labels) in a
+  # syslog frame that profile.sniff classifies as syslog.
+  - {name: fortigate_event, product: fortigate, service: event,
+     gate: "source_type = 'fortigate_kv' AND action = 'config_change'"}
+  # webserver rules describe attacks AGAINST our servers: only inbound web records (external client -> internal)
+  - {name: webserver, category: webserver,
+     gate: "action IN ('web_access', 'web_blocked') AND src_ip IS NOT NULL AND NOT al_is_internal_ip(src_ip) AND al_is_internal_ip(dst_ip)"}
+
+# Rules switched off for this deployment (id or SigmaHQ uuid), each with the measured reason. Prefer fixing the
+# mapping; disable only what fires on a data artifact. Overflow of the rest is bounded by pipeline.yaml
+# sigma.max_alerts_per_rule.
+disable:
+  - id: sigma_f17211f1   # Uncommon Svchost Command Line Parameter: the provided generator appends random flags
+    reason: generator_artifact   # (' --type=renderer', ' /safe') to every benign process, svchost included:
+                                 # 26 923 alerts on 26 hosts in g1x, none of them an attack
+
+
+# =====================================================================================================================
+# Cloud audit logs: SigmaHQ rules/cloud/{aws,azure,gcp} (DRAFT, reports/cloud/rule_catalog.md §6).
+# Append this whole block to the END of config/sigma_map.yaml, then apply reports/cloud/sigma_patch.md.
+#
+# Why new top-level keys (cloud_logsources / technique_override / cloud_disable / level_override) instead of more
+# `logsources:` / `disable:` entries: config.load_config uses yaml.safe_load, where a repeated top-level key silently
+# REPLACES the earlier one, so an appended `logsources:` or `disable:` would drop every existing entry. Until the
+# patch is applied the current compiler ignores these four keys (no behaviour change; the Sigma cache key changes
+# once).
+#
+# Measured with the patch (reports/cloud/sigma_patch.md §3): 226 cloud files -> 134 compile; running 71 = 33 at own
+# level + 38 level_override (37 context low + 1 raised to medium); 63 compiled but disabled (11 of the 16 noisy, 52
+# catalog §6.6); 92 skipped (55 unmapped_logsource, 25 no_attack_technique_tag, 12 unmapped_field).
+#
+# Rules of this block (CLAUDE.md, DEVELOPMENT.md §11):
+# - Every gate is `source_type = '<one cloud type>'` (types from config/sources.yaml json_sources): no cloud field
+#   or keyword is ever evaluated on another source type, and test_sigma3's gate regex can read the source type.
+# - Each entry has its OWN `fields` (patch: they replace the global `fields` for that logsource), so cloud names such
+#   as Status / category / userAgent never leak into windows / proxy rules, and windows names (Image, User ...)
+#   never compile into a cloud rule.
+# - JSON reads use DuckDB's `raw_line->>'$.path'` inside
+#   CASE WHEN source_type = '<type>' AND action <> 'malformed' THEN ... END: never on another source type, never on a
+#   malformed line (json_extract on invalid JSON raises). raw_line of these JSON sources is label-stripped at ingest
+#   (sources.yaml label_keys / label_nested_keys). No path names a label key (threat, rule, labels, labels_extra,
+#   event.kind, event.severity); GCP resource.labels is not read either.
+# - Keyword search (raw_line) only for azure_activity / gcp_audit, guarded by source_types; exclude_regex: false
+#   switches the JSON/CEF exclusion off for these entries only (patch), because every cloud line is JSON.
+# - riskdetection / pim / google_workspace / m365: NOT added (no ingested source; their rules stay
+#   unmapped_logsource).
+# =====================================================================================================================
+cloud_logsources:
+  # ---- AWS CloudTrail (management events; one record per line) ----------------------------------------------------
+  - name: aws_cloudtrail
+    product: aws
+    service: cloudtrail
+    gate: "source_type = 'cloudtrail_json'"
+    fields:
+      eventName: signature
+      eventSource: app
+      status: outcome                       # aws_delete_saml_provider: status 'success'
+      errorCode: "CASE WHEN source_type = 'cloudtrail_json' AND action <> 'malformed' THEN raw_line->>'$.errorCode' END"
+      errorMessage: "CASE WHEN source_type = 'cloudtrail_json' AND action <> 'malformed' THEN raw_line->>'$.errorMessage' END"
+      eventType: "CASE WHEN source_type = 'cloudtrail_json' AND action <> 'malformed' THEN raw_line->>'$.eventType' END"
+      # raw sourceIPAddress ('AWS Internal', '*.amazonaws.com' stay visible; canonical src_ip is NULL for them)
+      sourceIPAddress: "CASE WHEN source_type = 'cloudtrail_json' AND action <> 'malformed' THEN raw_line->>'$.sourceIPAddress' END"
+      userAgent: "CASE WHEN source_type = 'cloudtrail_json' AND action <> 'malformed' THEN raw_line->>'$.userAgent' END"
+      userIdentity.type: "CASE WHEN source_type = 'cloudtrail_json' AND action <> 'malformed' THEN raw_line->>'$.userIdentity.type' END"
+      userIdentity.arn: "CASE WHEN source_type = 'cloudtrail_json' AND action <> 'malformed' THEN raw_line->>'$.userIdentity.arn' END"
+      userIdentity.sessionContext.sessionIssuer.type: "CASE WHEN source_type = 'cloudtrail_json' AND action <> 'malformed' THEN raw_line->>'$.userIdentity.sessionContext.sessionIssuer.type' END"
+      additionalEventData.MFAUsed: "CASE WHEN source_type = 'cloudtrail_json' AND action <> 'malformed' THEN raw_line->>'$.additionalEventData.MFAUsed' END"
+      # objects / arrays come back as JSON text: only |contains rules use these
+      requestParameters: "CASE WHEN source_type = 'cloudtrail_json' AND action <> 'malformed' THEN raw_line->>'$.requestParameters' END"
+      responseElements: "CASE WHEN source_type = 'cloudtrail_json' AND action <> 'malformed' THEN raw_line->>'$.responseElements' END"
+      requestParameters.attribute: "CASE WHEN source_type = 'cloudtrail_json' AND action <> 'malformed' THEN raw_line->>'$.requestParameters.attribute' END"
+      requestParameters.enable: "CASE WHEN source_type = 'cloudtrail_json' AND action <> 'malformed' THEN raw_line->>'$.requestParameters.enable' END"
+      requestParameters.layers: "CASE WHEN source_type = 'cloudtrail_json' AND action <> 'malformed' THEN raw_line->>'$.requestParameters.layers' END"
+      # containerDefinitions is an array: the whole array as JSON text (the only rule uses |contains)
+      requestParameters.containerDefinitions.command: "CASE WHEN source_type = 'cloudtrail_json' AND action <> 'malformed' THEN raw_line->>'$.requestParameters.containerDefinitions' END"
+      requestParameters.PublicAccessBlockConfiguration.BlockPublicAcls: "CASE WHEN source_type = 'cloudtrail_json' AND action <> 'malformed' THEN raw_line->>'$.requestParameters.PublicAccessBlockConfiguration.BlockPublicAcls' END"
+      requestParameters.PublicAccessBlockConfiguration.BlockPublicPolicy: "CASE WHEN source_type = 'cloudtrail_json' AND action <> 'malformed' THEN raw_line->>'$.requestParameters.PublicAccessBlockConfiguration.BlockPublicPolicy' END"
+      requestParameters.PublicAccessBlockConfiguration.IgnorePublicAcls: "CASE WHEN source_type = 'cloudtrail_json' AND action <> 'malformed' THEN raw_line->>'$.requestParameters.PublicAccessBlockConfiguration.IgnorePublicAcls' END"
+      requestParameters.PublicAccessBlockConfiguration.RestrictPublicBuckets: "CASE WHEN source_type = 'cloudtrail_json' AND action <> 'malformed' THEN raw_line->>'$.requestParameters.PublicAccessBlockConfiguration.RestrictPublicBuckets' END"
+      responseElements.ConsoleLogin: "CASE WHEN source_type = 'cloudtrail_json' AND action <> 'malformed' THEN raw_line->>'$.responseElements.ConsoleLogin' END"
+      responseElements.publiclyAccessible: "CASE WHEN source_type = 'cloudtrail_json' AND action <> 'malformed' THEN raw_line->>'$.responseElements.publiclyAccessible' END"
+      responseElements.pendingModifiedValues.masterUserPassword: "CASE WHEN source_type = 'cloudtrail_json' AND action <> 'malformed' THEN raw_line->>'$.responseElements.pendingModifiedValues.masterUserPassword' END"
+      # NOT mapped: requestParameters.userName (fieldref target of aws_update_login_profile, disabled below)
+
+  # ---- Azure Activity Log (ARM operations: signature = OperationNameValue 'MICROSOFT.<RP>/<TYPE>/<VERB>') ----------
+  # azure_activity_json also carries Entra AuditLogs; the ARM operation name prefix splits the two without JSON.
+  # (REST / Event Grid shape, operationName {value: ...}: needs the ingest alias $.operationName.value first,
+  # rule_catalog.md §2.1 item 1; until then those rows fall to azure_audit and match nothing there.)
+  - name: azure_activity
+    product: azure
+    service: activitylogs
+    gate: "source_type = 'azure_activity_json' AND starts_with(lower(signature), 'microsoft.')"
+    keywords: {expr: raw_line, source_types: [azure_activity_json], exclude_regex: false}
+    fields:
+      operationName: signature
+      resourceId: host                      # full _ResourceId, lower case (rules use |contains)
+      category: "CASE WHEN source_type = 'azure_activity_json' AND action <> 'malformed' THEN coalesce(raw_line->>'$.CategoryValue', raw_line->>'$.category.value', raw_line->>'$.Category', raw_line->>'$.category') END"
+      # NOT mapped: properties.message (only used by the Intune rule azure_device_or_configuration_modified_or_deleted)
+
+  # ---- Entra ID AuditLogs (Log Analytics columns or diagnostic export properties.*) --------------------------------
+  - name: azure_audit
+    product: azure
+    service: auditlogs
+    gate: "source_type = 'azure_activity_json' AND NOT starts_with(lower(coalesce(signature, '')), 'microsoft.')"
+    fields:
+      OperationName: signature
+      operationName: signature
+      # activity display name (Log Analytics: equals OperationName)
+      properties.message: &au_name "coalesce(CASE WHEN source_type = 'azure_activity_json' AND action <> 'malformed' THEN coalesce(raw_line->>'$.ActivityDisplayName', raw_line->>'$.activityDisplayName', raw_line->>'$.properties.activityDisplayName') END, signature)"
+      ActivityDisplayName: *au_name
+      ActivityType: *au_name
+      activityType: *au_name
+      Category: &au_cat "CASE WHEN source_type = 'azure_activity_json' AND action <> 'malformed' THEN coalesce(raw_line->>'$.Category', raw_line->>'$.category', raw_line->>'$.properties.category') END"
+      category: *au_cat
+      LoggedByService: "CASE WHEN source_type = 'azure_activity_json' AND action <> 'malformed' THEN coalesce(raw_line->>'$.LoggedByService', raw_line->>'$.loggedByService', raw_line->>'$.properties.loggedByService') END"
+      Status: outcome                       # success / failure (Result / resultType at ingest)
+      properties.result: outcome
+      # targetResources (with modifiedProperties) as JSON text: every rule on these uses |contains
+      TargetResources: &au_tr "CASE WHEN source_type = 'azure_activity_json' AND action <> 'malformed' THEN coalesce(raw_line->>'$.TargetResources', raw_line->>'$.targetResources', raw_line->>'$.properties.targetResources') END"
+      properties.targetResources: *au_tr
+      TargetResources.modifiedProperties: *au_tr
+      TargetResources.modifiedProperties.newValue: *au_tr
+      TargetResources.ModifiedProperties.NewValue: *au_tr
+      additionalDetails.additionalInfo: "CASE WHEN source_type = 'azure_activity_json' AND action <> 'malformed' THEN coalesce(raw_line->>'$.AdditionalDetails', raw_line->>'$.additionalDetails', raw_line->>'$.properties.additionalDetails') END"
+      # NOT mapped (rules skipped): ConsentContext.IsAdminConsent, failure_status_reason, targetResources.type (list
+      # equality), TargetResources.ModifiedProperties.DisplayName (equality on a list), Initiatedby / Target ('UPN'
+      # placeholders)
+
+  # ---- Entra ID SigninLogs (Log Analytics columns or diagnostic export properties.*) -------------------------------
+  - name: azure_signin
+    product: azure
+    service: signinlogs
+    gate: "source_type = 'azure_signin_json'"
+    fields:
+      Status: outcome                       # ResultType 0 -> success; MFA interrupts -> NULL; other -> failure
+      ResultType:
+        expr: "TRY_CAST(CASE WHEN source_type = 'azure_signin_json' AND action <> 'malformed' THEN coalesce(raw_line->>'$.ResultType', raw_line->>'$.resultType', raw_line->>'$.Status.errorCode', raw_line->>'$.properties.status.errorCode') END AS INTEGER)"
+        type: INTEGER
+      ResultDescription: "CASE WHEN source_type = 'azure_signin_json' AND action <> 'malformed' THEN coalesce(raw_line->>'$.ResultDescription', raw_line->>'$.resultDescription', raw_line->>'$.Status.failureReason', raw_line->>'$.properties.status.failureReason') END"
+      AuthenticationRequirement: "CASE WHEN source_type = 'azure_signin_json' AND action <> 'malformed' THEN coalesce(raw_line->>'$.AuthenticationRequirement', raw_line->>'$.properties.authenticationRequirement') END"
+      conditionalAccessStatus: "CASE WHEN source_type = 'azure_signin_json' AND action <> 'malformed' THEN coalesce(raw_line->>'$.ConditionalAccessStatus', raw_line->>'$.properties.conditionalAccessStatus') END"
+      ResourceDisplayName: "CASE WHEN source_type = 'azure_signin_json' AND action <> 'malformed' THEN coalesce(raw_line->>'$.ResourceDisplayName', raw_line->>'$.properties.resourceDisplayName') END"
+      RiskState: "CASE WHEN source_type = 'azure_signin_json' AND action <> 'malformed' THEN coalesce(raw_line->>'$.RiskState', raw_line->>'$.properties.riskState') END"
+      userAgent: "CASE WHEN source_type = 'azure_signin_json' AND action <> 'malformed' THEN coalesce(raw_line->>'$.UserAgent', raw_line->>'$.userAgent', raw_line->>'$.properties.userAgent') END"
+      DeviceDetail.isCompliant: "CASE WHEN source_type = 'azure_signin_json' AND action <> 'malformed' THEN coalesce(raw_line->>'$.DeviceDetail.isCompliant', raw_line->>'$.properties.deviceDetail.isCompliant') END"
+      DeviceDetail.trusttype: "CASE WHEN source_type = 'azure_signin_json' AND action <> 'malformed' THEN coalesce(raw_line->>'$.DeviceDetail.trustType', raw_line->>'$.properties.deviceDetail.trustType') END"
+      DeviceDetail.deviceId: "CASE WHEN source_type = 'azure_signin_json' AND action <> 'malformed' THEN coalesce(raw_line->>'$.DeviceDetail.deviceId', raw_line->>'$.properties.deviceDetail.deviceId') END"
+      NetworkLocationDetails: "CASE WHEN source_type = 'azure_signin_json' AND action <> 'malformed' THEN coalesce(raw_line->>'$.NetworkLocationDetails', raw_line->>'$.properties.networkLocationDetails') END"
+      # NOT mapped (rules skipped): properties.message (device-code / ROPC: native rules), ActivityDetails,
+      # ClientApp, Username ('UPN' placeholder)
+
+  # ---- GCP Cloud Audit Logs ----------------------------------------------------------------------------------------
+  - name: gcp_audit
+    product: gcp
+    service: gcp.audit
+    gate: "source_type = 'gcp_audit_json'"
+    keywords: {expr: raw_line, source_types: [gcp_audit_json], exclude_regex: false}
+    fields:
+      gcp.audit.method_name: signature
+      data.protoPayload.methodName: signature
+      data.protoPayload.serviceName: app
+      # the rule's path is wrong (logName / resource are top level): read the right place; the log id after
+      # '/logs/' so 'cloudaudit.googleapis.com%2Factivity' compares as the rule writes it
+      data.protoPayload.logName: "CASE WHEN source_type = 'gcp_audit_json' AND action <> 'malformed' THEN NULLIF(regexp_extract(raw_line->>'$.logName', '/logs/(.+)$', 1), '') END"
+      data.protoPayload.resource.type: "CASE WHEN source_type = 'gcp_audit_json' AND action <> 'malformed' THEN raw_line->>'$.resource.type' END"
+      # NOT mapped (rule skipped): data.protoPayload.authorizationInfo.* (list of {permission, granted})
+
+# ATT&CK technique for rules that carry tactic tags only (otherwise skipped as no_attack_technique_tag). Compile-time
+# (part of the Sigma cache key); used only when the rule has no technique tag of its own. v20 ids (attack_v20.json).
+technique_override:
+  - {id: e386b9b5-af12-450e-afff-761730fb8a98, technique: T1685.002}   # aws_cloudtrail_vpc_flow_logs_deleted: Disable or Modify Cloud Log
+  - {id: 92cc3e5d-eb57-419d-8c16-5c63f325a401, technique: T1685}       # azure_suppression_rule_created: Disable or Modify Tools
+  - {id: d4c7758e-9417-4f2e-9109-6125d66dabef, technique: T1556.006}   # azure_update_risk_and_mfa_registration_policy: MFA
+  - {id: 39c9f26d-6e3b-4dbb-9c7a-4154b0281112, technique: T1485}       # aws_cloudtrail_bucket_deleted: Data Destruction
+  - {id: a5ffb6ea-c784-4e01-b30a-deb6e58ca2ab, technique: T1535}       # aws_cloudtrail_region_enabled: Unused/Unsupported Cloud Regions
+  - {id: d22b4df4-5a67-4859-a578-8c9a0b5af9df, technique: T1686.001}   # azure_network_security_modified_or_deleted: Cloud Firewall
+  # not given (stay skipped, technique unclear): aws_lambda_function_url, aws_new_lambda_layer_attached
+
+# Cloud rules switched off (SigmaHQ uuid). Merged with `disable:` by the patch (runtime filter, no recompile).
+cloud_disable:
+  # -- rule_catalog.md §6.5: noisy or broken against real data (16) --
+  - {id: 905d389b-b853-46d0-9d3d-dea0d3a3cd49, reason: noisy_every_role_session}     # aws_sts_assumerole_misuse
+  - {id: b45ab1d2-712f-4f01-a751-df3826969807, reason: noisy_every_mfa_cli_user}     # aws_sts_getsessiontoken_misuse
+  - {id: f305fd62-beca-47da-ad95-7690a0620084, reason: noisy_every_listbuckets}      # aws_enum_buckets
+  - {id: 055fb148-60f8-462d-ad16-26926ce050f1, reason: broken_fieldref_arn_vs_username}   # aws_update_login_profile
+  - {id: 0a5177f4-6ca9-44c2-aacf-d3f3d8b6e4d2, reason: broken_fieldref_contains}     # aws_iam_backdoor_users_keys
+  - {id: db014773-7375-4f4e-b83b-133337c0ffee, reason: placeholder_bucket_name}      # aws_iam_s3browser_templated_s3_bucket_policy_creation
+  - {id: 33d50d03-20ec-4b74-a74e-1e65a38af1c0, reason: admin_noise}                  # aws_eks_cluster_created_or_deleted
+  - {id: 4ae68615-866f-4304-b24b-ba048dfa5ca7, reason: admin_noise}                  # aws_elasticache_security_group_created
+  - {id: 7c797da2-9cf2-4523-ba64-33b06339f0cc, reason: admin_noise}                  # aws_elasticache_security_group_modified_or_deleted
+  - {id: 25cb1ba1-8a19-4a23-a198-d252664c8cef, reason: admin_noise}                  # aws_efs_fileshare_modified_or_deleted
+  - {id: 6a7ba45c-63d8-473e-9736-2eaabff79964, reason: admin_noise}                  # aws_efs_fileshare_mount_modified_or_deleted
+  - {id: 4990c2e3-f4b8-45e3-bc3c-30b14ff0ed26, reason: admin_noise}                  # aws_passed_role_to_glue_development_endpoint
+  - {id: d2d901db-7a75-45a1-bc39-0cbf00812192, reason: noisy_every_vm_write}         # azure_creating_number_of_resources_detection
+  - {id: 28eea407-28d7-4e42-b0be-575d5ba60b2c, reason: noisy_every_single_factor_signin}  # azure_ad_only_single_factor_auth_required
+  - {id: 4d136857-6a1a-432a-82fc-5dd497ee5e7c, reason: noisy_every_unmanaged_device}  # azure_ad_sign_ins_from_unknown_devices
+  - {id: e2feb918-4e77-4608-9697-990a1aaf74c3, reason: noisy_every_bucket_list}      # gcp_bucket_enumeration
+  # -- compile with this mapping but rule_catalog.md §6.6 keeps them off (dead mapping or a native rule is planned).
+  #    Delete a line to run that rule at its own level, or move it to level_override as context. --
+  - {id: 48739819-8230-4ee3-a8ea-e0289d1fb0ff, reason: catalog_not_selected}   # azure_aadhybridhealth_adfs_service_delete
+  - {id: 93e0ef48-37c8-49ed-a02c-038aab23628e, reason: catalog_not_selected}   # azure_container_registry_created_or_deleted
+  - {id: af6925b0-8826-47f1-9324-337507a0babd, reason: catalog_not_selected}   # azure_dns_zone_modified_or_deleted
+  - {id: 025c9fe7-db72-49f9-af0d-31341dd7dd57, reason: catalog_not_selected}   # azure_firewall_rule_collection_modified_or_deleted
+  - {id: a61a3c56-4ce2-4351-a079-88ae4cbd2b58, reason: aks_data_plane_rare}   # azure_kubernetes_admission_controller
+  - {id: 9541f321-7cba-4b43-80fc-fbd1fb922808, reason: aks_data_plane_rare}   # azure_kubernetes_cluster_created_or_deleted
+  - {id: 1c71e254-6655-42c1-b2d6-5e4718d7fc0a, reason: aks_data_plane_rare}   # azure_kubernetes_cronjob
+  - {id: 225d8b09-e714-479c-a0e4-55e6f29adf35, reason: aks_data_plane_rare}   # azure_kubernetes_events_deleted
+  - {id: 08d6ac24-c927-4469-b3b7-2e422d6e3c43, reason: aks_data_plane_rare}   # azure_kubernetes_network_policy_change
+  - {id: 818fee0c-e0ec-4e45-824e-83e4817b0887, reason: aks_data_plane_rare}   # azure_kubernetes_role_access
+  - {id: 25cb259b-bbdc-4b87-98b7-90d7c72f8743, reason: aks_data_plane_rare}   # azure_kubernetes_rolebinding_modified_or_deleted
+  - {id: 7ee0b4aa-d8d4-4088-b661-20efdf41a04c, reason: aks_data_plane_rare}   # azure_kubernetes_secret_or_config_object_access
+  - {id: 12d027c3-b48c-4d9d-8bb6-a732200034b2, reason: aks_data_plane_rare}   # azure_kubernetes_service_account_modified_or_deleted
+  - {id: 83c17918-746e-4bd9-920b-8e098bf88c23, reason: catalog_not_selected}   # azure_network_firewall_policy_modified_or_deleted
+  - {id: 26e7c5e2-6545-481e-b7e6-050143459635, reason: catalog_not_selected}   # azure_aad_secops_ca_policy_removedby_bad_actor
+  - {id: 50a3c7aa-ec29-44a4-92c1-fce229eef6fc, reason: catalog_not_selected}   # azure_aad_secops_ca_policy_updatedby_bad_actor
+  - {id: 0922467f-db53-4348-b7bf-dee8d0d348c6, reason: catalog_not_selected}   # azure_aad_secops_new_ca_policy_addedby_bad_actor
+  - {id: 6f583da0-3a90-4566-a4ed-83c09fe18bbf, reason: catalog_not_selected}   # azure_ad_account_created_deleted
+  - {id: 9494bff8-959f-4440-bbce-fb87a208d517, reason: catalog_not_selected}   # azure_ad_device_registration_policy_changes
+  - {id: ebbeb024-5b1d-4e16-9c0c-917f86c708a7, reason: catalog_not_selected}   # azure_ad_user_added_to_admin_role
+  - {id: 1b45b0d1-773f-4f23-aedc-814b759563b1, reason: catalog_not_selected}   # azure_app_appid_uri_changes
+  - {id: cbb67ecc-fb70-4467-9350-c910bdf7c628, reason: catalog_not_selected}   # azure_app_credential_added
+  - {id: a6355fbe-f36f-45d8-8efc-ab42465cbc52, reason: catalog_not_selected}   # azure_app_delegated_permissions_all_users
+  - {id: c1d147ae-a951-48e5-8b41-dcd0170c7213, reason: catalog_not_selected}   # azure_app_permissions_msft
+  - {id: 5aecf3d5-f8a0-48e7-99be-3a759df7358f, reason: catalog_not_selected}   # azure_app_privileged_permissions
+  - {id: 0055ad1f-be85-4798-83cf-a6da17c993b3, reason: dead_value_typo_sucess}   # azure_app_uri_modifications
+  - {id: 410d2a41-1e6d-452f-85e5-abdd8257a823, reason: catalog_not_selected}   # azure_application_deleted
+  - {id: 4d78a000-ab52-4564-88a5-7ab5242b20c7, reason: catalog_not_selected}   # azure_change_to_authentication_method
+  - {id: 91c95675-1f27-46d0-bead-d1ae96b97cd3, reason: catalog_not_selected}   # azure_group_user_addition_ca_modification
+  - {id: 665e2d43-70dc-4ccc-9d27-026c9dd7ed9c, reason: catalog_not_selected}   # azure_group_user_removal_ca_modification
+  - {id: 0b4b72e3-4c53-4d5b-b198-2c58cfef39a9, reason: catalog_not_selected}   # azure_guest_invite_failure
+  - {id: 8dee7a0d-43fd-4b3c-8cd1-605e189d195e, reason: catalog_unmappable}   # azure_guest_to_member
+  - {id: 039a7469-0296-4450-84c0-f6966b16dc6d, reason: catalog_not_selected}   # azure_pim_activation_approve_deny
+  - {id: db6c06c4-bf3b-421c-aa88-15672b88c743, reason: catalog_not_selected}   # azure_pim_change_settings
+  - {id: 49a268a4-72f4-4e38-8a7b-885be690c5b5, reason: catalog_not_selected}   # azure_priviledged_role_assignment_add
+  - {id: 102e11e3-2db5-4c9e-bc26-357d42585d21, reason: catalog_not_selected}   # azure_priviledged_role_assignment_bulk_change
+  - {id: f7b5b004-dece-46e4-a4a5-f6fd0e1c6947, reason: dead_contains_all_two_activity_names}   # azure_privileged_account_creation
+  - {id: fa84aaf5-8142-43cd-9ec2-78cfebf878ce, reason: dead_mapping_status_text}   # azure_tap_added
+  - {id: 2b7d6fc0-71ac-4cf7-8ed1-b5788ee5257a, reason: catalog_not_selected}   # azure_account_lockout
+  - {id: 5afa454e-030c-4ab4-9253-a90aa7fcc581, reason: catalog_not_selected}   # azure_ad_device_registration_or_join_without_mfa
+  - {id: 572b12d4-9062-11ed-a1eb-0242ac120002, reason: catalog_not_selected}   # azure_ad_risky_sign_ins_with_singlefactorauth_from_unknown_devices
+  - {id: 4f77e1d7-3982-4ee0-8489-abf2d6b75284, reason: catalog_not_selected}   # azure_ad_sign_ins_from_noncompliant_devices
+  - {id: 4afac85c-224a-4dd7-b1af-8da40e1c60bd, reason: catalog_not_selected}   # azure_blocked_account_attempt
+  - {id: b4a6d707-9430-4f5f-af68-0337f52d5c42, reason: catalog_not_selected}   # azure_conditional_access_failure
+  - {id: 908655e0-25cf-4ae1-b775-1c8ce9cf43d8, reason: catalog_not_selected}   # azure_login_to_disabled_account
+  - {id: e40f4962-b02b-4192-9bfe-245f7ece1f99, reason: dead_mapping_status_text}   # azure_mfa_denies
+  - {id: 5496ff55-42ec-4369-81cb-00f417029e25, reason: catalog_not_selected}   # azure_mfa_interrupted
+  - {id: 8366030e-7216-476b-9927-271d79f13cf3, reason: catalog_not_selected}   # azure_unusual_authentication_interruption
+  - {id: 9a60e676-26ac-44c3-814b-0c2a8b977adf, reason: catalog_not_selected}   # azure_user_login_blocked_by_conditional_access
+  - {id: 234f9f48-904b-4736-a34c-55d23919e4b7, reason: catalog_not_selected}   # gcp_dlp_re_identifies_sensitive_information
+  - {id: fe513c69-734c-4d4a-8548-ac5f609be82b, reason: catalog_not_selected}   # gcp_firewall_rule_modified_or_deleted
+  - {id: 6ad91e31-53df-4826-bd27-0166171c8040, reason: catalog_not_selected}   # gcp_kubernetes_admission_controller
+  # -- measured noise after go-live (cloud_small: 98 of 127 Sigma alerts, routine admin / SP NSG rule writes, also
+  #    linked as context into unrelated incidents). Fires on EVERY NSG / security-rule write (SigmaHQ falsepositives:
+  #    admins); the risky variant (allow inbound from any to a sensitive port) is native cl_firewall_open_world
+  #    (T1686.001), rarity is cl_first_seen_api / cl_rare_api_account, NSG deletes in bulk cl_mass_destruction.
+  #    Same call as aws elasticache/efs SG rules (admin_noise) and gcp_firewall_rule_modified_or_deleted above. --
+  - {id: d22b4df4-5a67-4859-a578-8c9a0b5af9df, reason: admin_noise_every_nsg_rule_write_native_open_world}   # azure_network_security_modified_or_deleted
+  # -- SigmaHQ tags azure_rare_operations attack.t1003 (OS Credential Dumping), wrong for Azure control-plane
+  #    listKeys / snapshots / NSG writes. label_override could relabel it, but no single label fits: its main case
+  #    (listKeys on storage / Cosmos / Cognitive Services) is native az_key_listing (T1552), and it also matches
+  #    noisy routine NSG writes (see d22b4df4 above). So it stays off. --
+  - {id: c1182e02-49a3-481c-b3de-0fadc4091488, reason: mislabelled_t1003_main_case_native_az_key_listing_t1552_also_noisy_nsg_writes}   # azure_rare_operations
+
+# Sigma level overrides (SigmaHQ uuid -> level), applied at load time like `disable` (no recompile). Severity follows
+# level_severity (low = 35: never seeds an incident, never adds a tactic alone; the alert still links and explains).
+level_override:
+  # -- rule_catalog.md §6.3: enabled at its own level, raised (account takeover of a domain) --
+  - {id: b056de1a-6e6e-4e40-a67e-97c9808cf41b, level: medium, reason: catalog_raise}   # aws_route_53_domain_transferred_to_another_account
+  # -- rule_catalog.md §6.4: context only (37; azure_network_security_modified_or_deleted, azure_rare_operations moved to cloud_disable) --
+  - {id: e1f7febb-7b94-4234-b5c6-00fb8500f5dd, level: low, reason: context}   # aws_cloudtrail_new_acl_entries
+  - {id: c803b2ce-c4a2-4836-beae-b112010390b1, level: low, reason: context}   # aws_cloudtrail_new_route_added
+  - {id: 6fb77778-040f-4015-9440-572aa9b6b580, level: low, reason: context}   # aws_cloudtrail_security_group_change_ingress_egress
+  - {id: 7a4409fc-f8ca-45f6-8006-127d779eaad9, level: low, reason: context}   # aws_cloudtrail_security_group_change_loadbalancer
+  - {id: 14f3f1c8-02d5-43a2-a191-91ffb52d3015, level: low, reason: context}   # aws_cloudtrail_security_group_change_rds
+  - {id: abae8fec-57bd-4f87-aff6-6e3db989843d, level: low, reason: context}   # aws_snapshot_backup_exfiltration
+  - {id: 38e7f511-3f74-41d4-836e-f57dfa18eead, level: low, reason: context}   # aws_cloudtrail_ssm_malicious_usage (any SendCommand)
+  - {id: a607e1fe-74bf-4440-a3ec-b059b9103157, level: low, reason: context}   # aws_securityhub_finding_evasion (BatchUpdateFindings is routine)
+  - {id: 457cc9ac-d8e6-4d1d-8c0e-251d0f11a74c, level: low, reason: context}   # aws_rds_dbcluster_actions
+  - {id: 39c9f26d-6e3b-4dbb-9c7a-4154b0281112, level: low, reason: context}   # aws_cloudtrail_bucket_deleted
+  - {id: 92f84194-8d9a-4ee0-8699-c30bfac59780, level: low, reason: context}   # aws_ec2_import_key_pair_activity
+  - {id: 352a918a-34d8-4882-8470-44830c507aa3, level: low, reason: context}   # aws_cloudtrail_imds_malicious_usage
+  - {id: 8ad1600d-e9dc-4251-b0ee-a65268f29add, level: low, reason: context}   # aws_root_account_usage
+  - {id: a5ffb6ea-c784-4e01-b30a-deb6e58ca2ab, level: low, reason: context}   # aws_cloudtrail_region_enabled
+  - {id: f8103686-e3e8-46f3-be72-65f7fcb4aa53, level: low, reason: context}   # aws_console_getsignintoken
+  - {id: f43f5d2f-3f2a-4cc8-b1af-81fde7dbaf0e, level: low, reason: context}   # aws_susp_saml_activity
+  - {id: 8a63cdd4-6207-414a-85bc-7e032bd3c1a2, level: low, reason: context}   # aws_rds_change_master_password
+  - {id: 59b70e4d-dd17-44a9-b740-acf07ae3eb6a, level: low, reason: context}   # aws_cloudtrail_bedrock_guardrail_deleted
+  - {id: 1c722651-254a-4b04-a9f4-99b62a2d0a1f, level: low, reason: context}   # aws_cloudtrail_bedrock_guardrail_updated
+  - {id: 78b3756a-7804-4ef7-8555-7b9024a02e2d, level: low, reason: context}   # aws_s3_data_management_tampering
+  - {id: ec541962-c05a-4420-b9ea-84de072d18f4, level: low, reason: context}   # aws_lambda_function_url
+  - {id: 97fbabf8-8e1b-47a2-b7d5-a418d2b95e3d, level: low, reason: context}   # aws_new_lambda_layer_attached
+  - {id: 6393e346-1977-46ef-8987-ad414a145fad, level: low, reason: context}   # aws_cloudtrail_console_login_failed_authentication
+  - {id: 54b9a76a-3c71-4673-b4b3-2edb4566ea7b, level: low, reason: context}   # aws_ec2_vm_export_failure
+  - {id: 20f754db-d025-4a8f-9d74-e0037e999a9a, level: low, reason: context}   # aws_delete_identity
+  - {id: 3940b5f1-3f46-44aa-b746-ebe615b879e0, level: low, reason: context}   # aws_route_53_domain_transferred_lock_disabled
+  - {id: a622fcd2-4b5a-436a-b8a2-a4171161833c, level: low, reason: context}   # azure_granting_permission_detection (keyword roleAssignments/write)
+  - {id: 459a2970-bb84-4e6a-a32e-ff0fbd99448d, level: low, reason: context}   # azure_keyvault_modified_or_deleted
+  - {id: 80eeab92-0979-4152-942d-96749e11df40, level: low, reason: context}   # azure_keyvault_key_modified_or_deleted
+  - {id: b831353c-1971-477b-abb6-2828edc3bca1, level: low, reason: context}   # azure_keyvault_secrets_modified_or_deleted
+  - {id: 72af37e2-ec32-47dc-992b-bc288a2708cb, level: low, reason: context}   # azure_new_cloudshell_created
+  - {id: 512cf937-ea9b-4332-939c-4c2c94baadcd, level: low, reason: context}   # azure_firewall_modified_or_deleted
+  - {id: 74298991-9fc4-460e-a92e-511aa60baec1, level: low, reason: context}   # azure_app_owner_added
+  - {id: a0413867-daf3-43dd-9245-734b3a787942, level: low, reason: context}   # azure_ad_bitlocker_key_retrieval
+  - {id: a4b25073-8947-489c-a8dd-93b41c23f26d, level: low, reason: context}   # azure_auditlogs_laps_credential_dumping
+  - {id: 980a7598-1e7f-4962-9372-2d754c930d0e, level: low, reason: context}   # gcp_full_network_traffic_packet_capture
+  - {id: 13f81a90-a69c-4fab-8f07-b5bb55416a9f, level: low, reason: context}   # gcp_service_account_disabled_or_deleted
+
+# Compile-time relabel of running cloud Sigma rules (part of the Sigma cache key; COMPILER_VERSION 7). Unlike
+# technique_override (fills in only when a rule has NO technique tag), `technique` REPLACES the rule's tagged
+# techniques; `tactic` (optional) must be one of that technique's v20 tactics (config error otherwise); without it the
+# tactic comes from the rule's own tactic tags (earliest valid in kill-chain order), else the technique's default.
+# Each entry is justified by the rule's OWN detection logic (eventName / operationName it matches) against ATT&CK v20
+# (attack_v20.json), never by a dataset's ground truth. Audit of all running cloud rules: reports/cloud/sigma_patch.md §5.
+label_override:
+  # ---- AWS CloudTrail ----
+  - {id: 6fb77778-040f-4015-9440-572aa9b6b580, technique: T1686.001, reason: "Authorize/Revoke SecurityGroup Ingress/Egress is a cloud firewall change, not an exploit of a public app (tag T1190)"}   # aws_cloudtrail_security_group_change_ingress_egress
+  - {id: 7a4409fc-f8ca-45f6-8006-127d779eaad9, technique: T1686.001, reason: "ApplySecurityGroupsToLoadBalancer / SetSecurityGroups is a cloud firewall change (tag T1190)"}   # aws_cloudtrail_security_group_change_loadbalancer
+  - {id: 14f3f1c8-02d5-43a2-a191-91ffb52d3015, technique: T1686.001, reason: "RDS DB security group create/delete/authorize/revoke is a cloud firewall change (tag T1190)"}   # aws_cloudtrail_security_group_change_rds
+  - {id: 38e7f511-3f74-41d4-836e-f57dfa18eead, technique: T1651, reason: "ssm SendCommand runs commands on managed instances = Cloud Administration Command, not Spearphishing Link (tag T1566.002)"}   # aws_cloudtrail_ssm_malicious_usage
+  - {id: 352a918a-34d8-4882-8470-44830c507aa3, technique: T1078.004, reason: "an assumed-role/aws:* instance identity is a cloud account, not a Domain Account (tag T1078.002)"}   # aws_cloudtrail_imds_malicious_usage
+  - {id: 54b9a76a-3c71-4673-b4b3-2edb4566ea7b, technique: T1537, reason: "CreateInstanceExportTask exports a VM image to S3 (rule also tags T1537); T1005 Data from Local System is host-local"}   # aws_ec2_vm_export_failure
+  - {id: ccd6a6c8-bb4e-4a91-9d2a-07e632819374, technique: T1531, reason: "DeleteSAMLProvider removes federated access (rule also tags T1531 / impact); no valid account is used (T1078.004)"}   # aws_delete_saml_provider
+  - {id: 1ab3c5ed-5baf-417b-bb6b-78ca33f6c3df, technique: T1059, reason: "ModifyInstanceAttribute userData cannot tell the interpreter; the first tagged sub T1059.001 (PowerShell) is arbitrary"}   # aws_ec2_startup_script_change
+  - {id: 1279262f-1464-422f-ac0d-5b545320c526, technique: T1486, reason: "KMS Import/DeleteImportedKeyMaterial is the ransomware pattern (rule also tags T1486 / impact); not Install Digital Certificate (T1608.003)"}   # aws_kms_import_key_material
+  - {id: 8a63cdd4-6207-414a-85bc-7e032bd3c1a2, technique: T1098, tactic: Persistence, reason: "ModifyDBInstance with a new masterUserPassword changes an account credential; nothing is exfiltrated automatically (tag T1020)"}   # aws_rds_change_master_password
+  - {id: 92f84194-8d9a-4ee0-8699-c30bfac59780, technique: T1098.004, reason: "ImportKeyPair registers an SSH public key for instances (ATT&CK T1098.004 cloud procedure); no account is used (tag T1078)"}   # aws_ec2_import_key_pair_activity
+  # ---- Azure Activity Log ----
+  - {id: b831353c-1971-477b-abb6-2828edc3bca1, technique: T1555.006, reason: "Key Vault secret backup/recover/restore/set acts on a cloud secrets store; T1552.001 is credentials in files"}   # azure_keyvault_secrets_modified_or_deleted
+  - {id: 80eeab92-0979-4152-942d-96749e11df40, technique: T1552, reason: "Key Vault key operations are not files: keep the rule's own parent tag T1552, drop sub T1552.001 (Credentials In Files)"}   # azure_keyvault_key_modified_or_deleted
+  - {id: 459a2970-bb84-4e6a-a32e-ff0fbd99448d, technique: T1552, reason: "Key Vault write / delete / access policy is not a file search: keep parent tag T1552, drop sub T1552.001"}   # azure_keyvault_modified_or_deleted
+  - {id: 09438caa-07b1-4870-8405-1dbafe3dad95, technique: T1098.003, tactic: Privilege Escalation, reason: "Microsoft.Authorization/elevateAccess grants User Access Administrator at root scope: a role grant by an already signed-in user, not Initial Access"}   # azure_subscription_permissions_elevation_via_activitylogs
+  # ---- Entra ID AuditLogs ----
+  - {id: ca9bf243-465e-494a-9e54-bf9fc239057d, technique: T1098.003, tactic: Privilege Escalation, reason: "User has elevated their access to User Access Administrator: a role grant, not Initial Access"}   # azure_subscription_permissions_elevation_via_auditlogs
+  - {id: 11c767ae-500b-423b-bae3-b234450736ed, technique: T1098.003, tactic: Privilege Escalation, reason: "Add member to role for the device admin role ids is a role grant, not use of a valid account (T1078.004)"}   # azure_ad_users_added_to_device_admin_roles
+  - {id: 352a54e1-74ba-4929-9d47-8193d67aba1e, technique: T1484.002, reason: "Set federation settings on domain is the ATT&CK Trust Modification procedure (tag T1078)"}   # azure_federation_modified
+  - {id: aeaef14c-e5bf-4690-a9c8-835caad458bd, technique: T1685, reason: "Disable PIM Alert switches off a security alert = Disable or Modify Tools (tag T1078)"}   # azure_pim_alerts_disabled
+  - {id: a0413867-daf3-43dd-9245-734b3a787942, technique: T1555, reason: "Read BitLocker key reads a stored recovery secret = credential access from a store (tag T1078.004)"}   # azure_ad_bitlocker_key_retrieval
+  - {id: a4b25073-8947-489c-a8dd-93b41c23f26d, technique: T1555, reason: "Recover device local administrator password (LAPS) reads a stored password (tag T1098.005 Device Registration)"}   # azure_auditlogs_laps_credential_dumping
+  - {id: 74298991-9fc4-460e-a92e-511aa60baec1, technique: T1098, tactic: Persistence, reason: "Add owner to application grants control of an app; no credential is read (tag T1552)"}   # azure_app_owner_added
+  # ---- GCP Cloud Audit Logs ----
+  - {id: 980a7598-1e7f-4962-9372-2d754c930d0e, technique: T1040, reason: "Compute PacketMirrorings is traffic mirroring; ATT&CK T1040 names GCP Packet Mirroring (tag T1074 Data Staged)"}   # gcp_full_network_traffic_packet_capture

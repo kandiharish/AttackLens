@@ -1,0 +1,261 @@
+[
+  {
+    "id": "elastic",
+    "kind": "siem",
+    "name": "Elastic / OpenSearch",
+    "modes": ["events", "alerts"],
+    "fields": [
+      {"label": "Elasticsearch URL", "required": false, "key": "base_url", "type": "url", "placeholder": "https://es.example:9200", "help": "Or Elastic Cloud ID below."},
+      {"label": "Elastic Cloud ID", "required": false, "key": "cloud_id", "type": "text", "placeholder": "deployment:ZXUtd2VzdC0xLmF3cy5mb3VuZC5pbyRhYmMkZGVm"},
+      {"label": "API key", "required": false, "key": "api_key", "type": "secret", "env_key": "api_key_env", "help": "Encoded API key, or id:key (encoded for you)."},
+      {"label": "Username (basic auth)", "required": false, "key": "user", "type": "secret", "env_key": "user_env", "advanced": true},
+      {"label": "Password (basic auth)", "required": false, "key": "password", "type": "secret", "env_key": "password_env", "advanced": true},
+      {"label": "Flavor", "required": false, "key": "flavor", "type": "select", "advanced": true, "options": ["elastic", "opensearch"], "default": "elastic"},
+      {"label": "Events index pattern", "required": false, "key": "events.index", "type": "text", "advanced": true, "default": "logs-*"},
+      {"label": "Alerts index pattern", "required": false, "key": "alerts.index", "type": "text", "advanced": true, "default": ".alerts-security.alerts-*"},
+      {"label": "Poll interval (seconds)", "required": false, "key": "poll_interval_s", "type": "number", "advanced": true, "default": 10, "min": 1, "max": 86400},
+      {"label": "First pull covers", "required": false, "key": "default_since", "type": "select", "advanced": true, "options": ["1h", "24h", "7d", "30d"], "default": "24h", "help": "Used only on the first pull (no checkpoint yet)."},
+      {"label": "Verify TLS certificate", "required": false, "key": "verify_tls", "type": "bool", "advanced": true, "default": true},
+      {"label": "Extra CA bundle (PEM file path)", "required": false, "key": "ca_file", "type": "text", "advanced": true, "placeholder": "C:/certs/corp-ca.pem"}
+    ],
+    "docs_url": "https://www.elastic.co/guide/en/elasticsearch/reference/current/security-api-create-api-key.html",
+    "help": "Minimum permission: read on the index patterns (read also allows point-in-time search)."
+  },
+  {
+    "id": "splunk",
+    "kind": "siem",
+    "name": "Splunk",
+    "modes": ["events", "alerts"],
+    "fields": [
+      {"label": "Splunk management URL", "required": true, "key": "base_url", "type": "url", "placeholder": "https://splunk.example:8089"},
+      {"label": "Auth token", "required": true, "key": "token", "type": "secret", "env_key": "token_env"},
+      {"label": "Token scheme", "required": false, "key": "auth_scheme", "type": "select", "advanced": true, "options": ["Bearer", "Splunk"], "default": "Bearer", "help": "Bearer for authentication tokens, Splunk for session keys."},
+      {"label": "Events search", "required": false, "key": "events.search", "type": "text", "advanced": true, "default": "search index=main"},
+      {"label": "Alerts (notables) search", "required": false, "key": "alerts.search", "type": "text", "advanced": true, "default": "search index=notable"},
+      {"label": "Poll interval (seconds)", "required": false, "key": "poll_interval_s", "type": "number", "advanced": true, "default": 10, "min": 1, "max": 86400},
+      {"label": "First pull covers", "required": false, "key": "default_since", "type": "select", "advanced": true, "options": ["1h", "24h", "7d", "30d"], "default": "24h", "help": "Used only on the first pull (no checkpoint yet)."},
+      {"label": "Verify TLS certificate", "required": false, "key": "verify_tls", "type": "bool", "advanced": true, "default": true},
+      {"label": "Extra CA bundle (PEM file path)", "required": false, "key": "ca_file", "type": "text", "advanced": true, "placeholder": "C:/certs/corp-ca.pem"}
+    ],
+    "docs_url": "https://docs.splunk.com/Documentation/Splunk/latest/Security/CreateAuthTokens",
+    "help": "Minimum permission: a role with the search capability on the index you pull (events and notables)."
+  },
+  {
+    "id": "sentinel",
+    "kind": "siem",
+    "name": "Microsoft Sentinel",
+    "modes": ["events", "alerts"],
+    "fields": [
+      {"label": "Workspace ID", "required": true, "key": "workspace_id", "type": "text", "placeholder": "00000000-0000-0000-0000-000000000000", "help": "Env var SENTINEL_WORKSPACE_ID wins if set."},
+      {"label": "Tenant ID", "required": true, "key": "tenant_id", "type": "text", "placeholder": "00000000-0000-0000-0000-000000000000"},
+      {"label": "Client (application) ID", "required": true, "key": "client_id", "type": "text", "placeholder": "00000000-0000-0000-0000-000000000000"},
+      {"label": "Client secret", "required": true, "key": "client_secret", "type": "secret", "env_key": "client_secret_env"},
+      {"label": "Static bearer token (override)", "required": false, "key": "token", "type": "secret", "env_key": "token_env", "advanced": true, "help": "Expires after about 1 hour; leave empty to sign in with tenant / client / secret."},
+      {"label": "Log Analytics API URL override", "required": false, "key": "base_url", "type": "url", "advanced": true, "help": "Empty = https://api.loganalytics.azure.com (Azure public cloud)."},
+      {"label": "Entra ID login URL override", "required": false, "key": "login_url", "type": "url", "advanced": true, "help": "Empty = https://login.microsoftonline.com."},
+      {"label": "Poll interval (seconds)", "required": false, "key": "poll_interval_s", "type": "number", "advanced": true, "default": 30, "min": 1, "max": 86400},
+      {"label": "First pull covers", "required": false, "key": "default_since", "type": "select", "advanced": true, "options": ["1h", "24h", "7d", "30d"], "default": "24h", "help": "Used only on the first pull (no checkpoint yet)."},
+      {"label": "Verify TLS certificate", "required": false, "key": "verify_tls", "type": "bool", "advanced": true, "default": true},
+      {"label": "Extra CA bundle (PEM file path)", "required": false, "key": "ca_file", "type": "text", "advanced": true, "placeholder": "C:/certs/corp-ca.pem"}
+    ],
+    "docs_url": "https://learn.microsoft.com/en-us/azure/azure-monitor/logs/api/register-app-for-token",
+    "help": "Minimum permission: the app registration needs the Log Analytics Reader role on the Sentinel workspace."
+  },
+  {
+    "id": "syslog",
+    "kind": "siem",
+    "name": "Syslog / CEF listener (QRadar, ArcSight, ...)",
+    "modes": ["events", "alerts"],
+    "fields": [
+      {"label": "Listen address", "required": false, "key": "bind", "type": "select", "options": ["127.0.0.1", "0.0.0.0"], "default": "127.0.0.1", "help": "0.0.0.0 only on a trusted network segment."},
+      {"label": "UDP port", "required": false, "key": "udp_port", "type": "number", "default": 5514, "min": 1, "max": 65535},
+      {"label": "TCP port", "required": false, "key": "tcp_port", "type": "number", "default": 5514, "min": 1, "max": 65535}
+    ],
+    "docs_url": "https://datatracker.ietf.org/doc/html/rfc6587",
+    "help": "No credentials: point the SIEM's syslog / CEF forwarder at this host and port."
+  },
+  {
+    "id": "aws_cloudtrail",
+    "kind": "cloud",
+    "name": "AWS CloudTrail",
+    "modes": ["events"],
+    "fields": [
+      {"label": "Region", "required": true, "key": "region", "type": "text", "default": "us-east-1", "placeholder": "us-east-1", "help": "CloudTrail LookupEvents is regional; the endpoint is derived from the region."},
+      {"label": "Access key ID", "required": false, "key": "access_key_id", "type": "secret", "env_key": "access_key_id_env", "help": "Leave empty to use a profile or the default AWS chain."},
+      {"label": "Secret access key", "required": false, "key": "secret_access_key", "type": "secret", "env_key": "secret_access_key_env"},
+      {"label": "AWS profile (instead of keys)", "required": false, "key": "profile", "type": "text", "placeholder": "security-audit"},
+      {"label": "Session token (temporary keys only)", "required": false, "key": "session_token", "type": "secret", "env_key": "session_token_env", "advanced": true},
+      {"label": "Role to assume", "required": false, "key": "role_arn", "type": "text", "advanced": true, "placeholder": "arn:aws:iam::123456789012:role/AttackLensRead"},
+      {"label": "External ID for the role", "required": false, "key": "external_id", "type": "text", "advanced": true},
+      {"label": "Use the default AWS credential chain", "required": false, "key": "use_default_chain", "type": "bool", "advanced": true, "default": false, "help": "Environment, SSO, instance or task role."},
+      {"label": "Read from", "required": false, "key": "events.source", "type": "select", "advanced": true, "options": ["lookup", "s3"], "default": "lookup", "help": "lookup: LookupEvents API (management events, 90 days). s3: CloudTrail log files."},
+      {"label": "S3 bucket (s3 mode)", "required": false, "key": "events.s3_bucket", "type": "text", "advanced": true, "placeholder": "my-cloudtrail-logs"},
+      {"label": "S3 prefix (s3 mode)", "required": false, "key": "events.s3_prefix", "type": "text", "advanced": true, "placeholder": "AWSLogs/{account}/CloudTrail/{region}/{yyyy}/{mm}/{dd}/"},
+      {"label": "Account ID in the S3 path (s3 mode)", "required": false, "key": "account_id", "type": "text", "advanced": true, "placeholder": "123456789012", "help": "Empty = the account of the credentials (STS GetCallerIdentity)."},
+      {"label": "Endpoint URL override", "required": false, "key": "endpoint_url", "type": "url", "advanced": true, "help": "Empty = the public regional endpoint (VPC endpoints / GovCloud only)."},
+      {"label": "Poll interval (seconds)", "required": false, "key": "poll_interval_s", "type": "number", "advanced": true, "default": 300, "min": 1, "max": 86400},
+      {"label": "First pull covers", "required": false, "key": "default_since", "type": "select", "advanced": true, "options": ["1h", "24h", "7d", "30d", "90d"], "default": "24h", "help": "Used only on the first pull (no checkpoint yet)."}
+    ],
+    "docs_url": "https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html",
+    "help": "Minimum permission: cloudtrail:LookupEvents (S3 mode: s3:ListBucket + s3:GetObject on the trail bucket, + kms:Decrypt if the trail uses SSE-KMS)."
+  },
+  {
+    "id": "azure_monitor",
+    "kind": "cloud",
+    "name": "Azure (Activity Log + Entra ID sign-in / audit)",
+    "modes": ["events", "alerts"],
+    "fields": [
+      {"label": "Tenant ID", "required": true, "key": "tenant_id", "type": "text", "placeholder": "00000000-0000-0000-0000-000000000000"},
+      {"label": "Client (application) ID", "required": true, "key": "client_id", "type": "text", "placeholder": "00000000-0000-0000-0000-000000000000"},
+      {"label": "Client secret", "required": true, "key": "client_secret", "type": "secret", "env_key": "client_secret_env"},
+      {"label": "Log Analytics workspace ID", "required": true, "key": "workspace_id", "type": "text", "placeholder": "00000000-0000-0000-0000-000000000000", "help": "The workspace that receives the Activity Log and Entra ID diagnostic settings."},
+      {"label": "Tables", "required": false, "key": "events.tables", "type": "text", "advanced": true, "default": "AzureActivity, SigninLogs, AuditLogs, AADNonInteractiveUserSignInLogs, AADServicePrincipalSignInLogs, AADManagedIdentitySignInLogs", "help": "Comma-separated Log Analytics tables to pull."},
+      {"label": "Optional tables", "required": false, "key": "events.optional_tables", "type": "text", "advanced": true, "default": "", "help": "Comma-separated extra tables, e.g. StorageBlobLogs (blob data plane: GetBlob / DeleteBlob, high volume; needs the storage account diagnostic setting)."},
+      {"label": "Log Analytics API URL override", "required": false, "key": "base_url", "type": "url", "advanced": true, "help": "Empty = https://api.loganalytics.azure.com (Azure public cloud)."},
+      {"label": "Entra ID login URL override", "required": false, "key": "login_url", "type": "url", "advanced": true, "help": "Empty = https://login.microsoftonline.com (sovereign clouds only)."},
+      {"label": "Poll interval (seconds)", "required": false, "key": "poll_interval_s", "type": "number", "advanced": true, "default": 60, "min": 1, "max": 86400},
+      {"label": "First pull covers", "required": false, "key": "default_since", "type": "select", "advanced": true, "options": ["1h", "24h", "7d", "30d"], "default": "24h", "help": "Used only on the first pull (no checkpoint yet)."},
+      {"label": "Verify TLS certificate", "required": false, "key": "verify_tls", "type": "bool", "advanced": true, "default": true},
+      {"label": "Extra CA bundle (PEM file path)", "required": false, "key": "ca_file", "type": "text", "advanced": true, "placeholder": "C:/certs/corp-ca.pem"}
+    ],
+    "docs_url": "https://learn.microsoft.com/en-us/azure/azure-monitor/logs/api/register-app-for-token",
+    "help": "Minimum permission: the app registration needs the Log Analytics Reader role on the workspace."
+  },
+  {
+    "id": "gcp_logging",
+    "kind": "cloud",
+    "name": "Google Cloud Audit Logs (Cloud Logging)",
+    "modes": ["events"],
+    "fields": [
+      {"label": "Project ID(s)", "required": true, "key": "project_ids", "type": "text", "placeholder": "my-project-1, my-project-2"},
+      {"label": "Service-account JSON key", "required": true, "key": "service_account_json", "type": "secret", "env_key": "service_account_json_env", "help": "Paste the whole JSON key file content."},
+      {"label": "Log filter", "required": false, "key": "events.filter", "type": "text", "advanced": true, "default": "logName:\"cloudaudit.googleapis.com\"", "help": "Cloud Logging query; the timestamp window is added automatically."},
+      {"label": "entries:list URL override", "required": false, "key": "base_url", "type": "url", "advanced": true, "help": "Empty = https://logging.googleapis.com/v2/entries:list."},
+      {"label": "OAuth token URI override", "required": false, "key": "token_uri", "type": "url", "advanced": true, "help": "Empty = the key's token_uri (https://oauth2.googleapis.com/token)."},
+      {"label": "Poll interval (seconds)", "required": false, "key": "poll_interval_s", "type": "number", "advanced": true, "default": 60, "min": 1, "max": 86400},
+      {"label": "First pull covers", "required": false, "key": "default_since", "type": "select", "advanced": true, "options": ["1h", "24h", "7d", "30d"], "default": "24h", "help": "Used only on the first pull (no checkpoint yet)."},
+      {"label": "Verify TLS certificate", "required": false, "key": "verify_tls", "type": "bool", "advanced": true, "default": true},
+      {"label": "Extra CA bundle (PEM file path)", "required": false, "key": "ca_file", "type": "text", "advanced": true, "placeholder": "C:/certs/corp-ca.pem"}
+    ],
+    "docs_url": "https://cloud.google.com/iam/docs/keys-create-delete",
+    "help": "Minimum permission: roles/logging.viewer (add roles/logging.privateLogViewer for Data Access logs)."
+  },
+  {
+    "id": "okta",
+    "kind": "identity",
+    "name": "Okta System Log",
+    "modes": ["events"],
+    "fields": [
+      {"label": "Okta org URL", "required": true, "key": "base_url", "type": "url", "placeholder": "https://your-org.okta.com"},
+      {"label": "API token (SSWS)", "required": false, "key": "token", "type": "secret", "env_key": "token_env", "help": "Admin > Security > API > Tokens. Leave empty to use OAuth."},
+      {"label": "OAuth service app client ID (instead of a token)", "required": false, "key": "client_id", "type": "text", "advanced": true, "placeholder": "0oa1b2c3d4e5f6g7h8i9"},
+      {"label": "OAuth service app private key (PEM)", "required": false, "key": "private_key", "type": "secret", "env_key": "private_key_env", "advanced": true, "help": "Paste the PEM; line breaks may be written as \\n. The app needs the okta.logs.read scope and 'Require DPoP' off."},
+      {"label": "System Log filter", "required": false, "key": "events.filter", "type": "text", "advanced": true, "placeholder": "eventType sw \"user.session\"", "help": "Okta filter expression; the time window is added automatically."},
+      {"label": "Poll interval (seconds)", "required": false, "key": "poll_interval_s", "type": "number", "advanced": true, "default": 60, "min": 1, "max": 86400},
+      {"label": "First pull covers", "required": false, "key": "default_since", "type": "select", "advanced": true, "options": ["1h", "24h", "7d", "30d", "90d"], "default": "24h", "help": "Used only on the first pull (no checkpoint yet)."},
+      {"label": "Verify TLS certificate", "required": false, "key": "verify_tls", "type": "bool", "advanced": true, "default": true},
+      {"label": "Extra CA bundle (PEM file path)", "required": false, "key": "ca_file", "type": "text", "advanced": true, "placeholder": "C:/certs/corp-ca.pem"}
+    ],
+    "docs_url": "https://developer.okta.com/docs/api/openapi/okta-management/management/tag/SystemLog/",
+    "help": "Minimum permission: an API token of a Read-only Administrator, or an API service app granted the okta.logs.read scope."
+  },
+  {
+    "id": "m365_ual",
+    "kind": "identity",
+    "name": "Microsoft 365 audit log (Management Activity API)",
+    "modes": ["events"],
+    "fields": [
+      {"label": "Tenant ID", "required": true, "key": "tenant_id", "type": "text", "placeholder": "00000000-0000-0000-0000-000000000000"},
+      {"label": "Client (application) ID", "required": true, "key": "client_id", "type": "text", "placeholder": "00000000-0000-0000-0000-000000000000"},
+      {"label": "Client secret", "required": true, "key": "client_secret", "type": "secret", "env_key": "client_secret_env"},
+      {"label": "Content types", "required": false, "key": "events.content_types", "type": "text", "advanced": true, "default": "Audit.AzureActiveDirectory, Audit.Exchange, Audit.SharePoint, Audit.General", "help": "Comma-separated: Audit.AzureActiveDirectory, Audit.Exchange, Audit.SharePoint, Audit.General, DLP.All."},
+      {"label": "Start missing subscriptions", "required": false, "key": "auto_start_subscriptions", "type": "bool", "advanced": true, "default": true, "help": "POST subscriptions/start for a content type that is not enabled yet."},
+      {"label": "Management API URL override", "required": false, "key": "base_url", "type": "url", "advanced": true, "help": "Empty = https://manage.office.com (GCC: https://manage-gcc.office.com, GCC High: https://manage.office365.us)."},
+      {"label": "Entra ID login URL override", "required": false, "key": "login_url", "type": "url", "advanced": true, "help": "Empty = https://login.microsoftonline.com."},
+      {"label": "Poll interval (seconds)", "required": false, "key": "poll_interval_s", "type": "number", "advanced": true, "default": 300, "min": 1, "max": 86400},
+      {"label": "First pull covers", "required": false, "key": "default_since", "type": "select", "advanced": true, "options": ["1h", "24h", "7d"], "default": "24h", "help": "Used only on the first pull (no checkpoint yet)."},
+      {"label": "Verify TLS certificate", "required": false, "key": "verify_tls", "type": "bool", "advanced": true, "default": true},
+      {"label": "Extra CA bundle (PEM file path)", "required": false, "key": "ca_file", "type": "text", "advanced": true, "placeholder": "C:/certs/corp-ca.pem"}
+    ],
+    "docs_url": "https://learn.microsoft.com/en-us/office/office-365-management-api/get-started-with-office-365-management-apis",
+    "help": "Minimum permission: an app registration with the Office 365 Management APIs application permission ActivityFeed.Read (admin consent). Auditing must be on in Microsoft Purview."
+  },
+  {
+    "id": "gws_reports",
+    "kind": "identity",
+    "name": "Google Workspace audit (Reports API)",
+    "modes": ["events"],
+    "fields": [
+      {"label": "Service-account JSON key", "required": true, "key": "service_account_json", "type": "secret", "env_key": "service_account_json_env", "help": "Paste the whole JSON key file content."},
+      {"label": "Admin user to impersonate", "required": true, "key": "delegated_admin", "type": "text", "placeholder": "admin@example.com", "help": "Domain-wide delegation subject: a Workspace admin allowed to read audit reports."},
+      {"label": "Applications", "required": false, "key": "events.applications", "type": "text", "advanced": true, "default": "login, admin, token, drive", "help": "Comma-separated Reports API applications, e.g. login, admin, token, drive, saml."},
+      {"label": "Customer ID", "required": false, "key": "customer_id", "type": "text", "advanced": true, "placeholder": "C01234567", "help": "Empty = the admin's own customer (my_customer)."},
+      {"label": "Reports API URL override", "required": false, "key": "base_url", "type": "url", "advanced": true, "help": "Empty = https://admin.googleapis.com."},
+      {"label": "OAuth token URI override", "required": false, "key": "token_uri", "type": "url", "advanced": true, "help": "Empty = the key's token_uri (https://oauth2.googleapis.com/token)."},
+      {"label": "Poll interval (seconds)", "required": false, "key": "poll_interval_s", "type": "number", "advanced": true, "default": 300, "min": 1, "max": 86400},
+      {"label": "First pull covers", "required": false, "key": "default_since", "type": "select", "advanced": true, "options": ["1h", "24h", "7d", "30d"], "default": "24h", "help": "Used only on the first pull (no checkpoint yet)."},
+      {"label": "Verify TLS certificate", "required": false, "key": "verify_tls", "type": "bool", "advanced": true, "default": true},
+      {"label": "Extra CA bundle (PEM file path)", "required": false, "key": "ca_file", "type": "text", "advanced": true, "placeholder": "C:/certs/corp-ca.pem"}
+    ],
+    "docs_url": "https://developers.google.com/admin-sdk/reports/v1/guides/delegation",
+    "help": "Minimum permission: a service account with domain-wide delegation for https://www.googleapis.com/auth/admin.reports.audit.readonly, impersonating an admin with the Reports privilege."
+  },
+  {
+    "id": "splunk_hec",
+    "kind": "sink",
+    "name": "Splunk HTTP Event Collector",
+    "fields": [
+      {"label": "HEC URL", "required": true, "key": "base_url", "type": "url", "placeholder": "https://splunk.example:8088"},
+      {"label": "HEC token", "required": true, "key": "token", "type": "secret", "env_key": "token_env"},
+      {"label": "Index (optional)", "required": false, "key": "index", "type": "text", "help": "Empty = the token's default index."},
+      {"label": "Max request body (bytes)", "required": false, "key": "batch_bytes", "type": "number", "advanced": true, "default": 800000, "min": 1024, "max": 100000000},
+      {"label": "Verify TLS certificate", "required": false, "key": "verify_tls", "type": "bool", "advanced": true, "default": true},
+      {"label": "Extra CA bundle (PEM file path)", "required": false, "key": "ca_file", "type": "text", "advanced": true, "placeholder": "C:/certs/corp-ca.pem"}
+    ],
+    "docs_url": "https://docs.splunk.com/Documentation/Splunk/latest/Data/UsetheHTTPEventCollector",
+    "help": "Minimum permission: an HEC token allowed to write to the target index."
+  },
+  {
+    "id": "elastic_bulk",
+    "kind": "sink",
+    "name": "Elasticsearch index / data stream (bulk)",
+    "fields": [
+      {"label": "Elasticsearch URL", "required": true, "key": "base_url", "type": "url", "placeholder": "https://es.example:9200"},
+      {"label": "Index or data stream", "required": true, "key": "index", "type": "text", "default": "attacklens-incidents"},
+      {"label": "API key", "required": false, "key": "api_key", "type": "secret", "env_key": "api_key_env", "help": "Encoded API key, or id:key."},
+      {"label": "Username (basic auth)", "required": false, "key": "user", "type": "secret", "env_key": "user_env", "advanced": true},
+      {"label": "Password (basic auth)", "required": false, "key": "password", "type": "secret", "env_key": "password_env", "advanced": true},
+      {"label": "Bulk operation", "required": false, "key": "op_type", "type": "select", "advanced": true, "options": ["auto", "create", "index"], "default": "auto", "help": "auto: create for data streams (logs-*), index (overwrite updates) for a plain index."},
+      {"label": "Verify TLS certificate", "required": false, "key": "verify_tls", "type": "bool", "advanced": true, "default": true},
+      {"label": "Extra CA bundle (PEM file path)", "required": false, "key": "ca_file", "type": "text", "advanced": true, "placeholder": "C:/certs/corp-ca.pem"}
+    ],
+    "docs_url": "https://www.elastic.co/guide/en/elasticsearch/reference/current/security-api-create-api-key.html",
+    "help": "Minimum permission: create_doc (data stream) or index (plain index) on the target, plus auto_configure if the target does not exist yet."
+  },
+  {
+    "id": "webhook",
+    "kind": "sink",
+    "name": "Webhook (SOAR, Logic App, Slack, Teams)",
+    "fields": [
+      {"label": "Webhook URL", "required": true, "key": "url", "type": "url", "placeholder": "https://soar.example/hooks/attacklens"},
+      {"label": "Bearer token (optional)", "required": false, "key": "token", "type": "secret", "env_key": "token_env"},
+      {"label": "Payload", "required": false, "key": "payload", "type": "select", "options": ["incident", "summary", "slack"], "default": "incident"},
+      {"label": "Verify TLS certificate", "required": false, "key": "verify_tls", "type": "bool", "advanced": true, "default": true},
+      {"label": "Extra CA bundle (PEM file path)", "required": false, "key": "ca_file", "type": "text", "advanced": true, "placeholder": "C:/certs/corp-ca.pem"}
+    ],
+    "docs_url": "https://api.slack.com/messaging/webhooks",
+    "help": "Minimum permission: a webhook URL (and optional bearer token) that accepts JSON POSTs."
+  },
+  {
+    "id": "syslog_cef",
+    "kind": "sink",
+    "name": "Syslog CEF",
+    "fields": [
+      {"label": "Host", "required": true, "key": "host", "type": "text", "placeholder": "siem.example"},
+      {"label": "Port", "required": true, "key": "port", "type": "number", "default": 5515, "min": 1, "max": 65535},
+      {"label": "Protocol", "required": false, "key": "protocol", "type": "select", "options": ["udp", "tcp"], "default": "udp"}
+    ],
+    "docs_url": "https://www.microfocus.com/documentation/arcsight/arcsight-smartconnectors/pdfdoc/common-event-format-v25/common-event-format-v25.pdf",
+    "help": "No credentials: the receiving syslog / SIEM collector must accept CEF on this host and port."
+  }
+]

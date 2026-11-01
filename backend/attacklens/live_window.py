@@ -45,14 +45,12 @@ def longest_ms(node: Any, suffixes: tuple[str, ...]) -> int:
 
 @dataclass
 class BatchStats:
-    watermark: int | None = None                                  # robust batch watermark (ms)
     future: dict[str, int] = field(default_factory=dict)          # source_type -> rows beyond now + skew
-    late: dict[str, int] = field(default_factory=dict)            # source_type -> rows older than the cutoff
+    sample: list[int] = field(default_factory=list)               # <= sample_n usable ts_ms values
 
 
-def batch_stats(con: Any, batch_dir: Path, limit_ms: int, min_rows_quantile: int) -> BatchStats:
-    """Future-dated rows (ts > limit) are rejected; the batch watermark is p99 of the rest when the batch has
-    >= min_rows_quantile rows (one bad timestamp cannot move it), else max."""
+def batch_stats(con: Any, batch_dir: Path, limit_ms: int, sample_n: int) -> BatchStats:
+    """Future-dated rows (ts > limit) are rejected; a reservoir sample of the rest feeds robust_watermark."""
     st = BatchStats()
     glob = parquet_glob(batch_dir)
     if not glob:
@@ -60,11 +58,34 @@ def batch_stats(con: Any, batch_dir: Path, limit_ms: int, min_rows_quantile: int
     for stype, n in con.execute(f"SELECT source_type, count(*) FROM {_src(glob)} WHERE ts_ok AND ts_ms > {limit_ms} "
                                 f"GROUP BY 1").fetchall():
         st.future[str(stype)] = int(n)
-    n, mx, p99 = con.execute(f"SELECT count(*), max(ts_ms), quantile_disc(ts_ms, 0.99) FROM {_src(glob)} "
-                             f"WHERE ts_ok AND ts_ms <= {limit_ms}").fetchone()
-    if n:
-        st.watermark = int(p99 if n >= min_rows_quantile else mx)
+    st.sample = [int(r[0]) for r in con.execute(
+        f"SELECT ts_ms FROM (SELECT ts_ms FROM {_src(glob)} WHERE ts_ok AND ts_ms <= {limit_ms}) "
+        f"USING SAMPLE reservoir({int(sample_n)} ROWS) REPEATABLE (42)").fetchall()]
     return st
+
+
+def robust_watermark(prev: int | None, hist: list[int], batch: list[int], cfg: dict[str, Any]
+                     ) -> tuple[int | None, list[int]]:
+    """Watermark from a rolling sample of recent timestamps (across batches), never decreasing.
+
+    - >= watermark_min_rows samples: candidate = p99 of the sample (one stray timestamp cannot move it), else max.
+    - a jump of more than watermark_jump_ms beyond the previous watermark needs >= watermark_jump_min_rows sampled
+      rows beyond that point; otherwise the far-ahead rows are ignored for the watermark (they are still ingested).
+    Returns (watermark, new rolling sample).
+    """
+    n = int(cfg.get("watermark_sample", 1000))
+    hist = [*hist, *batch][-n:]
+    if not hist:
+        return prev, hist
+    ordered = sorted(hist)
+    big = len(ordered) >= int(cfg.get("watermark_min_rows", 100))
+    q = ordered[int(0.99 * (len(ordered) - 1))] if big else ordered[-1]
+    if prev is not None:
+        edge = prev + int(cfg.get("watermark_jump_ms", 3_600_000))
+        if q > edge and sum(1 for t in hist if t > edge) < int(cfg.get("watermark_jump_min_rows", 5)):
+            q = max((t for t in ordered if t <= edge), default=prev)
+        q = max(prev, q)
+    return q, hist
 
 
 @dataclass
@@ -149,12 +170,42 @@ def compact(con: Any, window: Path, max_files: int) -> None:
     glob = parquet_glob(window)
     tmp = window.parent / "window.compact"
     shutil.rmtree(tmp, ignore_errors=True)
+    tmp.mkdir(parents=True, exist_ok=True)  # DuckDB COPY creates only the last path component
     con.execute(f"COPY (SELECT * FROM {_src(glob)}) TO {sql_path(tmp / 'events')} "  # type: ignore[arg-type]
                 f"(FORMAT PARQUET, PARTITION_BY (source_type, ts_ok, event_day))")
     old = window.parent / "window.old"
     shutil.rmtree(old, ignore_errors=True)
     os.replace(ev, old)
-    os.replace(tmp / "events", ev)
+    try:
+        os.replace(tmp / "events", ev)
+    except OSError:
+        os.replace(old, ev)  # put the uncompacted window back
+        raise
     shutil.rmtree(old, ignore_errors=True)
     shutil.rmtree(tmp, ignore_errors=True)
     log.info("live: window compacted")
+
+
+def recover(window: Path, trash: Path, committed: int) -> None:
+    """Startup after a killed process: (1) files added by an uncommitted batch (tag b<n> with n > committed)
+    are removed, (2) day partitions it moved to trash go back, (3) an interrupted compaction is undone."""
+    ev, old = window / "events", window.parent / "window.old"
+    for f in list(ev.rglob("b*_*.parquet")) if ev.exists() else []:
+        tag = f.name.split("_", 1)[0][1:]
+        if tag.isdigit() and int(tag) > committed:
+            f.unlink(missing_ok=True)
+            log.warning("live: removed uncommitted window file %s", f.name)
+    if trash.exists():
+        for d in sorted(trash.glob("*/*/event_day=*")):
+            dst = ev / d.relative_to(trash)
+            if not dst.exists():
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                os.replace(d, dst)
+                log.warning("live: restored pruned partition %s from an uncommitted cycle", d.name)
+        shutil.rmtree(trash, ignore_errors=True)
+    if not ev.exists() and old.exists():
+        window.mkdir(parents=True, exist_ok=True)
+        os.replace(old, ev)
+        log.warning("live: restored window from an interrupted compaction")
+    for d in (old, window.parent / "window.compact"):
+        shutil.rmtree(d, ignore_errors=True)

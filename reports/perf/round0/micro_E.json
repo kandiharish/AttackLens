@@ -1,0 +1,47 @@
+{
+ "rows": 0,
+ "threads": 4,
+ "memory": "2GB",
+ "duckdb": "2.0.0",
+ "cases": {
+  "B_count_sum_range": [],
+  "C_range_join_vs_asof": [],
+  "E_tied_vs_spread_one_partition": [
+   {
+    "n": 2000,
+    "tied_distinct_s": 0.121,
+    "tied_count_s": 0.015,
+    "spread_distinct_s": 0.096,
+    "spread_count_s": 0.004
+   },
+   {
+    "n": 4000,
+    "tied_distinct_s": 0.072,
+    "tied_count_s": 0.01,
+    "spread_distinct_s": 0.057,
+    "spread_count_s": 0.009
+   },
+   {
+    "n": 8000,
+    "tied_distinct_s": 0.154,
+    "tied_count_s": 0.016,
+    "spread_distinct_s": 0.109,
+    "spread_count_s": 0.013
+   },
+   {
+    "n": 16000,
+    "tied_distinct_s": 0.154,
+    "tied_count_s": 0.048,
+    "spread_distinct_s": 0.11,
+    "spread_count_s": 0.057
+   },
+   {
+    "n": 24000,
+    "tied_distinct_s": 0.137,
+    "tied_count_s": 0.054,
+    "spread_distinct_s": 0.106,
+    "spread_count_s": 0.074
+   }
+  ]
+ }
+}

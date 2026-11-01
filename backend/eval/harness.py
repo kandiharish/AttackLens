@@ -246,6 +246,9 @@ def evaluate(out_dir: Path, ground_truth: Path) -> dict[str, Any]:
     matched_steps = len(chosen)
     labels_correct = sum(1 for c in chosen if c.label)
     tech_only = sum(1 for c in chosen if technique_ok(c.gt.technique, c.pred.technique, c.pred.sub_technique))
+    # step precision: of the steps we show inside incidents matched to an attack, how many are that attack's steps
+    in_matched = [p for p in preds if p.incident_id in attack_of_inc]
+    own = [c for c in chosen if attack_of_inc.get(c.pred.incident_id) == c.gt.attack_id]
     metrics = {
         "detection_pct": _pct(matched_steps, len(gts)),
         "labels_pct": _pct(labels_correct, matched_steps),
@@ -254,6 +257,8 @@ def evaluate(out_dir: Path, ground_truth: Path) -> dict[str, Any]:
         "false_alarms_strict_pct": _pct(len(unmatched), n_inc),
         "false_alarms_lenient_pct": _pct(len(unmatched) - len(noise_only), n_inc - len(noise_only)),
         "singleton_recall_pct": _pct(detected, len(detectable)),
+        "step_precision_pct": _pct(len(own), len(in_matched)),
+        "step_precision_all_pct": _pct(matched_steps, len(preds)),
     }
 
     top3 = []
@@ -273,9 +278,14 @@ def evaluate(out_dir: Path, ground_truth: Path) -> dict[str, Any]:
                   "rebuilt": "all steps in the one matched incident AND LCS ratio == 1.0 (time order) "
                              "AND backbone positions in GT order",
                   "false_alarms_lenient": "(unmatched - noise_only) / (incidents - noise_only)",
+                  "step_precision": "steps matched (one-to-one, same tolerance) to their own incident's attack / "
+                                    "all predicted steps in incidents matched to an attack",
+                  "step_precision_all": "all matched steps / all predicted steps (every incident)",
                   "null": "a metric whose denominator is 0 is null and passes no target"},
         **metrics,
         "targets": {m: _passes(m, metrics[m]) for m in TARGETS},
+        "predicted_steps": len(preds),
+        "gt_steps": len(gts),
         "counts": {
             "attacks": len(per_attack), "gt_steps": len(gts), "incidents": n_inc,
             "predicted_steps": len(preds), "duplicate_episode_ids": dup_eps,
@@ -283,6 +293,7 @@ def evaluate(out_dir: Path, ground_truth: Path) -> dict[str, Any]:
             "incidents_matched": len(attack_of_inc), "incidents_unmatched": len(unmatched),
             "incidents_noise_only": len(noise_only), "noise_alerts": len(noise),
             "noise_detectable": len(detectable), "noise_detected": detected,
+            "predicted_steps_in_matched_incidents": len(in_matched), "steps_matched_to_own_attack": len(own),
         },
         "singleton_recall_source": recall_src if detectable else None,
         "per_attack": per_attack,

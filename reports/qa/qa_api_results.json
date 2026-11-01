@@ -1,0 +1,8040 @@
+{
+ "commit": "6fbfe3c",
+ "probe": {
+  "checks": 178,
+  "failed": [
+   "S11"
+  ],
+  "results": [
+   {
+    "id": "R01",
+    "ok": true,
+    "what": "GET /api/health 200 + exact key set"
+   },
+   {
+    "id": "R02",
+    "ok": true,
+    "what": "health.incidents == rows in served incidents_index.json"
+   },
+   {
+    "id": "R03",
+    "ok": true,
+    "what": "health.out_dir_source == env, served_out_dir == ATTACKLENS_OUT"
+   },
+   {
+    "id": "R04",
+    "ok": true,
+    "what": "GET /api/incidents 200 application/json list"
+   },
+   {
+    "id": "R05",
+    "ok": true,
+    "what": "every index row validates models.IncidentSummary"
+   },
+   {
+    "id": "R06",
+    "ok": true,
+    "what": "index sorted risk desc (tie: id asc)"
+   },
+   {
+    "id": "R07",
+    "ok": true,
+    "what": "index ids == served file ids"
+   },
+   {
+    "id": "R08:inc-853d956b",
+    "ok": true,
+    "what": "GET /api/incidents/{id} 200, == file on disk, validates Incident"
+   },
+   {
+    "id": "R09:inc-853d956b",
+    "ok": true,
+    "what": "/path 200, keys exactly id/backbone/branches/edges, values == incident"
+   },
+   {
+    "id": "R10:inc-853d956b",
+    "ok": true,
+    "what": "/pivots 200, id + one step per backbone step"
+   },
+   {
+    "id": "R08:inc-098b8fea",
+    "ok": true,
+    "what": "GET /api/incidents/{id} 200, == file on disk, validates Incident"
+   },
+   {
+    "id": "R09:inc-098b8fea",
+    "ok": true,
+    "what": "/path 200, keys exactly id/backbone/branches/edges, values == incident"
+   },
+   {
+    "id": "R10:inc-098b8fea",
+    "ok": true,
+    "what": "/pivots 200, id + one step per backbone step"
+   },
+   {
+    "id": "R08:inc-a58413a0",
+    "ok": true,
+    "what": "GET /api/incidents/{id} 200, == file on disk, validates Incident"
+   },
+   {
+    "id": "R09:inc-a58413a0",
+    "ok": true,
+    "what": "/path 200, keys exactly id/backbone/branches/edges, values == incident"
+   },
+   {
+    "id": "R10:inc-a58413a0",
+    "ok": true,
+    "what": "/pivots 200, id + one step per backbone step"
+   },
+   {
+    "id": "R08:inc-9c911297",
+    "ok": true,
+    "what": "GET /api/incidents/{id} 200, == file on disk, validates Incident"
+   },
+   {
+    "id": "R09:inc-9c911297",
+    "ok": true,
+    "what": "/path 200, keys exactly id/backbone/branches/edges, values == incident"
+   },
+   {
+    "id": "R10:inc-9c911297",
+    "ok": true,
+    "what": "/pivots 200, id + one step per backbone step"
+   },
+   {
+    "id": "R08:inc-ff130ce9",
+    "ok": true,
+    "what": "GET /api/incidents/{id} 200, == file on disk, validates Incident"
+   },
+   {
+    "id": "R09:inc-ff130ce9",
+    "ok": true,
+    "what": "/path 200, keys exactly id/backbone/branches/edges, values == incident"
+   },
+   {
+    "id": "R10:inc-ff130ce9",
+    "ok": true,
+    "what": "/pivots 200, id + one step per backbone step"
+   },
+   {
+    "id": "R11a",
+    "ok": true,
+    "what": "unknown/bad id inc-00000000 -> 404 JSON"
+   },
+   {
+    "id": "R11a/path",
+    "ok": true,
+    "what": "unknown/bad id inc-00000000/path -> 404 JSON"
+   },
+   {
+    "id": "R11a/pivots",
+    "ok": true,
+    "what": "unknown/bad id inc-00000000/pivots -> 404 JSON"
+   },
+   {
+    "id": "R11b",
+    "ok": true,
+    "what": "unknown/bad id INC-853D956B -> 404 JSON"
+   },
+   {
+    "id": "R11b/path",
+    "ok": true,
+    "what": "unknown/bad id INC-853D956B/path -> 404 JSON"
+   },
+   {
+    "id": "R11b/pivots",
+    "ok": true,
+    "what": "unknown/bad id INC-853D956B/pivots -> 404 JSON"
+   },
+   {
+    "id": "R11c",
+    "ok": true,
+    "what": "unknown/bad id inc-853d956b0 -> 404 JSON"
+   },
+   {
+    "id": "R11c/path",
+    "ok": true,
+    "what": "unknown/bad id inc-853d956b0/path -> 404 JSON"
+   },
+   {
+    "id": "R11c/pivots",
+    "ok": true,
+    "what": "unknown/bad id inc-853d956b0/pivots -> 404 JSON"
+   },
+   {
+    "id": "R11d",
+    "ok": true,
+    "what": "unknown/bad id ..%2f..%2fREADME.md -> 404 JSON"
+   },
+   {
+    "id": "R11d/path",
+    "ok": true,
+    "what": "unknown/bad id ..%2f..%2fREADME.md/path -> 404 JSON"
+   },
+   {
+    "id": "R11d/pivots",
+    "ok": true,
+    "what": "unknown/bad id ..%2f..%2fREADME.md/pivots -> 404 JSON"
+   },
+   {
+    "id": "R11e",
+    "ok": true,
+    "what": "unknown/bad id inc-zzzzzzzz -> 404 JSON"
+   },
+   {
+    "id": "R11e/path",
+    "ok": true,
+    "what": "unknown/bad id inc-zzzzzzzz/path -> 404 JSON"
+   },
+   {
+    "id": "R11e/pivots",
+    "ok": true,
+    "what": "unknown/bad id inc-zzzzzzzz/pivots -> 404 JSON"
+   },
+   {
+    "id": "R12",
+    "ok": true,
+    "what": "GET /api/metrics keys exact and == the three files"
+   },
+   {
+    "id": "R13",
+    "ok": true,
+    "what": "POST /api/reload 200 {incidents, out_dir}"
+   },
+   {
+    "id": "R14",
+    "ok": true,
+    "what": "GET /api/live/status 200, enabled is bool (no live engine on this out dir)"
+   },
+   {
+    "id": "R15",
+    "ok": true,
+    "what": "GET /api/integrations/status 200, shape, auth_env_set only bool/None/dict-of-bool"
+   },
+   {
+    "id": "R16/api/nope",
+    "ok": true,
+    "what": "GET /api/nope -> 404 JSON"
+   },
+   {
+    "id": "R16/api/incidents/x/y/z",
+    "ok": true,
+    "what": "GET /api/incidents/x/y/z -> 404 JSON"
+   },
+   {
+    "id": "R16/api/runs/zzz",
+    "ok": true,
+    "what": "GET /api/runs/zzz -> 404 JSON"
+   },
+   {
+    "id": "R17/api/health",
+    "ok": true,
+    "what": "GET /api/health returns application/json, never HTML"
+   },
+   {
+    "id": "R17/api/incidents",
+    "ok": true,
+    "what": "GET /api/incidents returns application/json, never HTML"
+   },
+   {
+    "id": "R17/api/metrics",
+    "ok": true,
+    "what": "GET /api/metrics returns application/json, never HTML"
+   },
+   {
+    "id": "R17/api/runs",
+    "ok": true,
+    "what": "GET /api/runs returns application/json, never HTML"
+   },
+   {
+    "id": "R17/api/uploads",
+    "ok": true,
+    "what": "GET /api/uploads returns application/json, never HTML"
+   },
+   {
+    "id": "R17/api/live/status",
+    "ok": true,
+    "what": "GET /api/live/status returns application/json, never HTML"
+   },
+   {
+    "id": "R17/api/integrations/status",
+    "ok": true,
+    "what": "GET /api/integrations/status returns application/json, never HTML"
+   },
+   {
+    "id": "S01",
+    "ok": true,
+    "what": "GET / -> 200 text/html (SPA index)"
+   },
+   {
+    "id": "S02",
+    "ok": true,
+    "what": "client route -> SPA index fallback"
+   },
+   {
+    "id": "S03",
+    "ok": true,
+    "what": "static file from dist served"
+   },
+   {
+    "id": "S04",
+    "ok": true,
+    "what": "hashed JS asset 200"
+   },
+   {
+    "id": "S05",
+    "ok": true,
+    "what": "traversal /..%2f..%2fREADME.md never serves a file outside dist"
+   },
+   {
+    "id": "S06",
+    "ok": true,
+    "what": "traversal /%2e%2e/%2e%2e/backend/attacklens/api.py never serves a file outside dist"
+   },
+   {
+    "id": "S07",
+    "ok": true,
+    "what": "traversal /..%5c..%5cREADME.md never serves a file outside dist"
+   },
+   {
+    "id": "S08",
+    "ok": true,
+    "what": "traversal /C:/Windows/win.ini never serves a file outside dist"
+   },
+   {
+    "id": "S09",
+    "ok": true,
+    "what": "traversal /assets/..%2f..%2f..%2fREADME.md never serves a file outside dist"
+   },
+   {
+    "id": "S10",
+    "ok": true,
+    "what": "traversal /../../README.md never serves a file outside dist"
+   },
+   {
+    "id": "S11",
+    "ok": false,
+    "what": "GET /api (bare prefix) -> not HTML (observation)"
+   },
+   {
+    "id": "L01",
+    "ok": true,
+    "what": "/path p95 < 50 ms over 200 sequential requests (TESTING.md \u00a74.6)"
+   },
+   {
+    "id": "L02",
+    "ok": true,
+    "what": "8 concurrent clients x 100 mixed reads: 0 errors"
+   },
+   {
+    "id": "G01/api/uploads|http://evil.example",
+    "ok": true,
+    "what": "POST /api/uploads with Origin http://evil.example -> 403"
+   },
+   {
+    "id": "G01/api/uploads|null",
+    "ok": true,
+    "what": "POST /api/uploads with Origin null -> 403"
+   },
+   {
+    "id": "G01/api/uploads|http://localhost:5174",
+    "ok": true,
+    "what": "POST /api/uploads with Origin http://localhost:5174 -> 403"
+   },
+   {
+    "id": "G01/api/uploads|http://127.0.0.1:8031.evil.example",
+    "ok": true,
+    "what": "POST /api/uploads with Origin http://127.0.0.1:8031.evil.example -> 403"
+   },
+   {
+    "id": "G01/api/uploads/local|http://evil.example",
+    "ok": true,
+    "what": "POST /api/uploads/local with Origin http://evil.example -> 403"
+   },
+   {
+    "id": "G01/api/uploads/local|null",
+    "ok": true,
+    "what": "POST /api/uploads/local with Origin null -> 403"
+   },
+   {
+    "id": "G01/api/uploads/local|http://localhost:5174",
+    "ok": true,
+    "what": "POST /api/uploads/local with Origin http://localhost:5174 -> 403"
+   },
+   {
+    "id": "G01/api/uploads/local|http://127.0.0.1:8031.evil.example",
+    "ok": true,
+    "what": "POST /api/uploads/local with Origin http://127.0.0.1:8031.evil.example -> 403"
+   },
+   {
+    "id": "G01/api/runs|http://evil.example",
+    "ok": true,
+    "what": "POST /api/runs with Origin http://evil.example -> 403"
+   },
+   {
+    "id": "G01/api/runs|null",
+    "ok": true,
+    "what": "POST /api/runs with Origin null -> 403"
+   },
+   {
+    "id": "G01/api/runs|http://localhost:5174",
+    "ok": true,
+    "what": "POST /api/runs with Origin http://localhost:5174 -> 403"
+   },
+   {
+    "id": "G01/api/runs|http://127.0.0.1:8031.evil.example",
+    "ok": true,
+    "what": "POST /api/runs with Origin http://127.0.0.1:8031.evil.example -> 403"
+   },
+   {
+    "id": "G01/api/reload|http://evil.example",
+    "ok": true,
+    "what": "POST /api/reload with Origin http://evil.example -> 403"
+   },
+   {
+    "id": "G01/api/reload|null",
+    "ok": true,
+    "what": "POST /api/reload with Origin null -> 403"
+   },
+   {
+    "id": "G01/api/reload|http://localhost:5174",
+    "ok": true,
+    "what": "POST /api/reload with Origin http://localhost:5174 -> 403"
+   },
+   {
+    "id": "G01/api/reload|http://127.0.0.1:8031.evil.example",
+    "ok": true,
+    "what": "POST /api/reload with Origin http://127.0.0.1:8031.evil.example -> 403"
+   },
+   {
+    "id": "G02",
+    "ok": true,
+    "what": "no partial upload left after refused cross-origin uploads"
+   },
+   {
+    "id": "G03",
+    "ok": true,
+    "what": "GET with foreign Origin -> 200 but no Access-Control-Allow-Origin"
+   },
+   {
+    "id": "G04",
+    "ok": true,
+    "what": "GET with Vite origin -> ACAO echoes http://localhost:5173"
+   },
+   {
+    "id": "G05",
+    "ok": true,
+    "what": "POST with the API's own origin passes (200)"
+   },
+   {
+    "id": "G06|evil.example|GET/api/health",
+    "ok": true,
+    "what": "Host: evil.example GET /api/health -> 400"
+   },
+   {
+    "id": "G06|evil.example|POST/api/uploads/local",
+    "ok": true,
+    "what": "Host: evil.example POST /api/uploads/local -> 400"
+   },
+   {
+    "id": "G06|evil.example|GET/",
+    "ok": true,
+    "what": "Host: evil.example GET / -> 400"
+   },
+   {
+    "id": "G06|evil.example:8031|GET/api/health",
+    "ok": true,
+    "what": "Host: evil.example:8031 GET /api/health -> 400"
+   },
+   {
+    "id": "G06|evil.example:8031|POST/api/uploads/local",
+    "ok": true,
+    "what": "Host: evil.example:8031 POST /api/uploads/local -> 400"
+   },
+   {
+    "id": "G06|evil.example:8031|GET/",
+    "ok": true,
+    "what": "Host: evil.example:8031 GET / -> 400"
+   },
+   {
+    "id": "G06|127.0.0.1.nip.io|GET/api/health",
+    "ok": true,
+    "what": "Host: 127.0.0.1.nip.io GET /api/health -> 400"
+   },
+   {
+    "id": "G06|127.0.0.1.nip.io|POST/api/uploads/local",
+    "ok": true,
+    "what": "Host: 127.0.0.1.nip.io POST /api/uploads/local -> 400"
+   },
+   {
+    "id": "G06|127.0.0.1.nip.io|GET/",
+    "ok": true,
+    "what": "Host: 127.0.0.1.nip.io GET / -> 400"
+   },
+   {
+    "id": "G06|localhost.evil.example|GET/api/health",
+    "ok": true,
+    "what": "Host: localhost.evil.example GET /api/health -> 400"
+   },
+   {
+    "id": "G06|localhost.evil.example|POST/api/uploads/local",
+    "ok": true,
+    "what": "Host: localhost.evil.example POST /api/uploads/local -> 400"
+   },
+   {
+    "id": "G06|localhost.evil.example|GET/",
+    "ok": true,
+    "what": "Host: localhost.evil.example GET / -> 400"
+   },
+   {
+    "id": "G07",
+    "ok": true,
+    "what": "CORS preflight from evil origin not approved (no ACAO)"
+   },
+   {
+    "id": "U01",
+    "ok": true,
+    "what": "POST /api/uploads 2 files -> 201, exact keys, mode upload"
+   },
+   {
+    "id": "U02",
+    "ok": true,
+    "what": "files[] names/bytes exact, total_bytes = sum, other field ignored"
+   },
+   {
+    "id": "U03",
+    "ok": true,
+    "what": "upload written byte-exact under data/raw/uploads/<id>/"
+   },
+   {
+    "id": "U04",
+    "ok": true,
+    "what": "created_at ISO-8601 UTC Z"
+   },
+   {
+    "id": "U05",
+    "ok": true,
+    "what": "POST /api/uploads/local -> 201 mode link, same file (hard link, nlink 2)"
+   },
+   {
+    "id": "U06",
+    "ok": true,
+    "what": "GET /api/uploads lists all three, newest first, same shape"
+   },
+   {
+    "id": "U07|'../evil.log'",
+    "ok": true,
+    "what": "upload name '../evil.log' -> 400"
+   },
+   {
+    "id": "U07|'..\\\\evil.log'",
+    "ok": true,
+    "what": "upload name '..\\\\evil.log' -> 400"
+   },
+   {
+    "id": "U07|'/etc/passwd.log'",
+    "ok": true,
+    "what": "upload name '/etc/passwd.log' -> 400"
+   },
+   {
+    "id": "U07|'\\\\\\\\srv\\\\share\\\\x.log'",
+    "ok": true,
+    "what": "upload name '\\\\\\\\srv\\\\share\\\\x.log' -> 400"
+   },
+   {
+    "id": "U07|'C:\\\\Windows\\\\x.log'",
+    "ok": true,
+    "what": "upload name 'C:\\\\Windows\\\\x.log' -> 400"
+   },
+   {
+    "id": "U07|'C:x.log'",
+    "ok": true,
+    "what": "upload name 'C:x.log' -> 400"
+   },
+   {
+    "id": "U07|'a/../../b.log'",
+    "ok": true,
+    "what": "upload name 'a/../../b.log' -> 400"
+   },
+   {
+    "id": "U07|''",
+    "ok": true,
+    "what": "upload name '' -> 400"
+   },
+   {
+    "id": "U07|'   '",
+    "ok": true,
+    "what": "upload name '   ' -> 400"
+   },
+   {
+    "id": "U07|'.log'",
+    "ok": true,
+    "what": "upload name '.log' -> 415"
+   },
+   {
+    "id": "U07|'evil.exe'",
+    "ok": true,
+    "what": "upload name 'evil.exe' -> 415"
+   },
+   {
+    "id": "U07|'evil.log.exe'",
+    "ok": true,
+    "what": "upload name 'evil.log.exe' -> 415"
+   },
+   {
+    "id": "U07|'evil.log.'",
+    "ok": true,
+    "what": "upload name 'evil.log.' -> 415"
+   },
+   {
+    "id": "U07|'evil'",
+    "ok": true,
+    "what": "upload name 'evil' -> 415"
+   },
+   {
+    "id": "U07|'evil.LOG'",
+    "ok": true,
+    "what": "upload name 'evil.LOG' -> 201"
+   },
+   {
+    "id": "U07|'sub/dir/ok.log'",
+    "ok": true,
+    "what": "upload name 'sub/dir/ok.log' -> 201"
+   },
+   {
+    "id": "U07|'we ird$name.log'",
+    "ok": true,
+    "what": "upload name 'we ird$name.log' -> 201"
+   },
+   {
+    "id": "U07|'\u0430dmin.log'",
+    "ok": true,
+    "what": "upload name '\u0430dmin.log' -> 201"
+   },
+   {
+    "id": "U08",
+    "ok": true,
+    "what": "no partial upload left after rejected names"
+   },
+   {
+    "id": "U09|CON.log",
+    "ok": true,
+    "what": "Windows reserved name CON.log: refused, or stored and readable byte-exact"
+   },
+   {
+    "id": "U09|NUL.log",
+    "ok": true,
+    "what": "Windows reserved name NUL.log: refused, or stored and readable byte-exact"
+   },
+   {
+    "id": "U09|aux.log",
+    "ok": true,
+    "what": "Windows reserved name aux.log: refused, or stored and readable byte-exact"
+   },
+   {
+    "id": "U09|COM1.log",
+    "ok": true,
+    "what": "Windows reserved name COM1.log: refused, or stored and readable byte-exact"
+   },
+   {
+    "id": "U09|nul.txt",
+    "ok": true,
+    "what": "Windows reserved name nul.txt: refused, or stored and readable byte-exact"
+   },
+   {
+    "id": "U10",
+    "ok": true,
+    "what": "JSON body to /api/uploads -> 400"
+   },
+   {
+    "id": "U11",
+    "ok": true,
+    "what": "multipart without boundary -> 400"
+   },
+   {
+    "id": "U12",
+    "ok": true,
+    "what": "no 'files' field -> 400"
+   },
+   {
+    "id": "U13",
+    "ok": true,
+    "what": "truncated multipart (closing boundary missing) -> 400"
+   },
+   {
+    "id": "U14",
+    "ok": true,
+    "what": "multipart cut mid-headers -> 400"
+   },
+   {
+    "id": "U15",
+    "ok": true,
+    "what": "no partial upload left after truncated bodies"
+   },
+   {
+    "id": "U16",
+    "ok": true,
+    "what": "Content-Length 85899345920 -> 413 without streaming the body"
+   },
+   {
+    "id": "U17",
+    "ok": true,
+    "what": "Content-Length 68720525313 -> 413 without streaming the body"
+   },
+   {
+    "id": "U18",
+    "ok": true,
+    "what": "Content-Length 60 GiB (free 70 GiB): accepted then client stalls -> no 2xx"
+   },
+   {
+    "id": "U19",
+    "ok": true,
+    "what": "client disconnect mid-body: partial dir removed within 5 s"
+   },
+   {
+    "id": "U20",
+    "ok": true,
+    "what": "uploads/local 'data/raw/smoke/edr.jsonl' -> 400"
+   },
+   {
+    "id": "U21",
+    "ok": true,
+    "what": "uploads/local 'C:\\\\cyberforge\\\\data\\\\tmp\\\\qa_api\\\\does_not_exist.log' -> 404"
+   },
+   {
+    "id": "U22",
+    "ok": true,
+    "what": "uploads/local 'C:\\\\cyberforge\\\\data\\\\tmp\\\\qa_api' -> 400"
+   },
+   {
+    "id": "U23",
+    "ok": true,
+    "what": "uploads/local 'C:\\\\cyberforge\\\\backend\\\\pyproject.toml' -> 415"
+   },
+   {
+    "id": "U24",
+    "ok": true,
+    "what": "uploads/local '' -> 400"
+   },
+   {
+    "id": "U25",
+    "ok": true,
+    "what": "uploads/local 'C:\\\\cyberforge\\\\data\\\\tmp\\\\qa_api\\\\..\\\\qa_api\\\\local_src\\\\fw_local.log' -> 201"
+   },
+   {
+    "id": "U26",
+    "ok": true,
+    "what": "uploads/local without path -> 422"
+   },
+   {
+    "id": "U27",
+    "ok": true,
+    "what": "no partial upload left after local abuse"
+   },
+   {
+    "id": "X01",
+    "ok": true,
+    "what": "POST /api/runs {'raw_dir': '../../etc'} -> 400, detail never echoes the path"
+   },
+   {
+    "id": "X02",
+    "ok": true,
+    "what": "POST /api/runs {'raw_dir': 'C:/Windows'} -> 400, detail never echoes the path"
+   },
+   {
+    "id": "X03",
+    "ok": true,
+    "what": "POST /api/runs {'raw_dir': 'data/raw'} -> 400, detail never echoes the path"
+   },
+   {
+    "id": "X04",
+    "ok": true,
+    "what": "POST /api/runs {'raw_dir': 'data/raw/uploads'} -> 400, detail never echoes the path"
+   },
+   {
+    "id": "X05",
+    "ok": true,
+    "what": "POST /api/runs {'raw_dir': 'data/raw/uploads/.incoming'} -> 400, detail never echoes the path"
+   },
+   {
+    "id": "X06",
+    "ok": true,
+    "what": "POST /api/runs {'raw_dir': 'data/raw/nope_qa'} -> 400, detail never echoes the path"
+   },
+   {
+    "id": "X07",
+    "ok": true,
+    "what": "POST /api/runs {'raw_dir': 'data/raw/smoke', 'out_dir': 'data/out/a/b'} -> 400, detail never echoes the path"
+   },
+   {
+    "id": "X08",
+    "ok": true,
+    "what": "POST /api/runs {'raw_dir': 'data/raw/smoke', 'out_dir': 'data/out/live'} -> 400, detail never echoes the path"
+   },
+   {
+    "id": "X09",
+    "ok": true,
+    "what": "POST /api/runs {'raw_dir': 'data/raw/smoke', 'out_dir': 'C:/temp/x'} -> 400, detail never echoes the path"
+   },
+   {
+    "id": "X10",
+    "ok": true,
+    "what": "POST /api/runs {'raw_dir': 'data/raw/smoke', 'out_dir': 'data/out/qa_api_smoke', 'ground_truth': 'C:/Windows/win.ini'} -> 400, detail never echoes the path"
+   },
+   {
+    "id": "X11",
+    "ok": true,
+    "what": "POST /api/runs {'raw_dir': 'data/raw/smoke', 'out_dir': 'data/out/qa_api_smoke', 'ground_truth': 'data/raw/smoke/nope.json'} -> 400, detail never echoes the path"
+   },
+   {
+    "id": "X12",
+    "ok": true,
+    "what": "POST /api/runs {'out_dir': 'data/out/qa_api_smoke'} -> 422, detail never echoes the path"
+   },
+   {
+    "id": "X13",
+    "ok": true,
+    "what": "POST /api/runs {'raw_dir': 'data/raw/sm oke'} -> 400, detail never echoes the path"
+   },
+   {
+    "id": "X20",
+    "ok": true,
+    "what": "6 concurrent POST /api/runs -> exactly one 202, five 409"
+   },
+   {
+    "id": "X21",
+    "ok": true,
+    "what": "run_id is 12 hex"
+   },
+   {
+    "id": "X22",
+    "ok": true,
+    "what": "GET /api/runs/{id} exact key set while running"
+   },
+   {
+    "id": "X23",
+    "ok": true,
+    "what": "while the run is running the served dir is unchanged"
+   },
+   {
+    "id": "X24",
+    "ok": true,
+    "what": "a second run (other raw dir) while one runs -> 409"
+   },
+   {
+    "id": "X25",
+    "ok": true,
+    "what": "smoke run succeeded rc 0, stage done, percent 100, error null"
+   },
+   {
+    "id": "X26",
+    "ok": true,
+    "what": "percent is monotonic non-decreasing while polled"
+   },
+   {
+    "id": "X27",
+    "ok": true,
+    "what": "peak_rss_mb > 0 recorded"
+   },
+   {
+    "id": "X28",
+    "ok": true,
+    "what": "served switch: health -> data/out/qa_api_smoke, source api_run, count == its index"
+   },
+   {
+    "id": "X29",
+    "ok": true,
+    "what": "GET /api/incidents now serves the run's index"
+   },
+   {
+    "id": "X30",
+    "ok": true,
+    "what": "POST /api/reload keeps the pinned run output"
+   },
+   {
+    "id": "X31",
+    "ok": true,
+    "what": "run into the served out_dir -> 400"
+   },
+   {
+    "id": "X32",
+    "ok": true,
+    "what": "POST /api/runs on data/raw/uploads/<id> -> 202"
+   },
+   {
+    "id": "X33",
+    "ok": true,
+    "what": "upload run succeeded and the API now serves data/out/<upload_id>"
+   },
+   {
+    "id": "X34",
+    "ok": true,
+    "what": "uploaded FortiGate brute-force-then-success is served as an incident (T1110, attacker ip)"
+   },
+   {
+    "id": "X35",
+    "ok": true,
+    "what": "upload accounting: fortigate_kv rows_in == ok == 281 lines, 0 dropped"
+   },
+   {
+    "id": "X36",
+    "ok": true,
+    "what": "GET /api/runs newest first, same keys as /runs/{id}"
+   },
+   {
+    "id": "X37",
+    "ok": true,
+    "what": "GET /api/runs/000000000000 -> 404"
+   },
+   {
+    "id": "X38",
+    "ok": true,
+    "what": "GET /api/runs/ZZZ -> 404"
+   },
+   {
+    "id": "X39",
+    "ok": true,
+    "what": "GET /api/runs/..%2f..%2fetc -> 404"
+   }
+  ],
+  "numbers": {
+   "latency": {
+    "/api/health": {
+     "n": 200,
+     "p50_ms": 3.8,
+     "p95_ms": 4.44,
+     "p99_ms": 5.94,
+     "max_ms": 7.24
+    },
+    "/api/incidents": {
+     "n": 200,
+     "p50_ms": 3.43,
+     "p95_ms": 4.12,
+     "p99_ms": 4.57,
+     "max_ms": 10.25
+    },
+    "/api/incidents/{id}": {
+     "n": 200,
+     "p50_ms": 3.47,
+     "p95_ms": 4.29,
+     "p99_ms": 8.29,
+     "max_ms": 10.45
+    },
+    "/api/incidents/{id}/path": {
+     "n": 200,
+     "p50_ms": 3.51,
+     "p95_ms": 4.28,
+     "p99_ms": 4.89,
+     "max_ms": 6.59
+    },
+    "/api/metrics": {
+     "n": 200,
+     "p50_ms": 3.54,
+     "p95_ms": 4.27,
+     "p99_ms": 4.65,
+     "max_ms": 6.14
+    },
+    "concurrent_8x100_mixed": {
+     "n": 800,
+     "errors": 0,
+     "p50_ms": 7.03,
+     "p95_ms": 14.02,
+     "p99_ms": 45.73,
+     "rps": 199.3
+    }
+   },
+   "smoke_run": {
+    "elapsed_s": 49.2,
+    "peak_rss_mb": 238.9,
+    "stages_seen": [
+     [
+      0.0,
+      "starting",
+      0
+     ],
+     [
+      5.4,
+      "profile",
+      2
+     ],
+     [
+      8.0,
+      "ingest",
+      5
+     ],
+     [
+      15.4,
+      "lookups",
+      45
+     ],
+     [
+      16.1,
+      "detect",
+      50
+     ],
+     [
+      43.6,
+      "episodes",
+      65
+     ],
+     [
+      44.1,
+      "link",
+      72
+     ],
+     [
+      47.9,
+      "incidents",
+      80
+     ],
+     [
+      48.5,
+      "publish",
+      90
+     ],
+     [
+      49.0,
+      "done",
+      100
+     ]
+    ],
+    "incidents": 0,
+    "run_metrics_total_wall_s": 43.285,
+    "run_metrics_rows_in": 50000,
+    "run_metrics_peak_rss_mb": 236.7
+   },
+   "upload_run": {
+    "elapsed_s": 44.6,
+    "peak_rss_mb": 152.4
+   }
+  }
+ },
+ "live": [
+  {
+   "lines": 2000,
+   "rate_lps": 20.0,
+   "n_fail": 60,
+   "threads": 2,
+   "memory_limit": "1GB",
+   "startup_to_heartbeat_s": 4.43,
+   "feed_s": 100.05,
+   "batches": 10,
+   "rows_final": 2000,
+   "last_error": null,
+   "accounting": [
+    {
+     "source_type": "fortigate_kv",
+     "rows_in": 2000,
+     "rows_ok": 2000,
+     "dropped": 0,
+     "drop_reasons": {},
+     "pruned_outside_window": 0
+    }
+   ],
+   "cycle_s": {
+    "n": 10,
+    "p50": 10.503,
+    "p95": 16.416,
+    "max": 25.32
+   },
+   "delay_success_to_incident_file_s": 16.36,
+   "delay_success_to_incident_api_s": 17.1,
+   "status_disabled_after_kill_s": 9.6,
+   "incident_id": "inc-af67ec01",
+   "live_status_polls": 1066,
+   "live_status_disabled_while_running": 258,
+   "live_status_max_heartbeat_age_s": 27.6
+  },
+  {
+   "lines": 2000,
+   "rate_lps": 20.0,
+   "n_fail": 60,
+   "threads": 2,
+   "memory_limit": "1GB",
+   "startup_to_heartbeat_s": 2.02,
+   "feed_s": 100.04,
+   "batches": 11,
+   "rows_final": 2000,
+   "last_error": null,
+   "accounting": [
+    {
+     "source_type": "fortigate_kv",
+     "rows_in": 2000,
+     "rows_ok": 2000,
+     "dropped": 0,
+     "drop_reasons": {},
+     "pruned_outside_window": 0
+    }
+   ],
+   "cycle_s": {
+    "n": 11,
+    "p50": 9.022,
+    "p95": 10.968,
+    "max": 18.015
+   },
+   "delay_success_to_incident_file_s": 13.06,
+   "delay_success_to_incident_api_s": 13.92,
+   "status_disabled_after_kill_s": 9.3,
+   "incident_id": "inc-8ae01920",
+   "live_status_polls": 1031,
+   "live_status_disabled_while_running": 115,
+   "live_status_max_heartbeat_age_s": 21.3
+  }
+ ],
+ "live_cycles": [
+  [
+   {
+    "batches": 0,
+    "last_cycle_s": null,
+    "ingest_s": null,
+    "window_s": null,
+    "stage_wall_s": null,
+    "rows": 0,
+    "incidents": 0
+   },
+   {
+    "batches": 1,
+    "last_cycle_s": 25.32,
+    "ingest_s": 1.558,
+    "window_s": 0.097,
+    "stage_wall_s": {
+     "lookups": 0.152,
+     "detect": 10.665,
+     "episodes": 0.212,
+     "link": 0.402,
+     "incidents": 0.198,
+     "publish": 0.004
+    },
+    "rows": 36,
+    "incidents": 0
+   },
+   {
+    "batches": 2,
+    "last_cycle_s": 6.986,
+    "ingest_s": 1.42,
+    "window_s": 0.09,
+    "stage_wall_s": {
+     "lookups": 0.177,
+     "detect": 4.27,
+     "episodes": 0.212,
+     "link": 0.479,
+     "incidents": 0.21,
+     "publish": 0.002
+    },
+    "rows": 552,
+    "incidents": 0
+   },
+   {
+    "batches": 3,
+    "last_cycle_s": 8.836,
+    "ingest_s": 1.263,
+    "window_s": 0.057,
+    "stage_wall_s": {
+     "lookups": 0.177,
+     "detect": 5.769,
+     "episodes": 0.287,
+     "link": 0.743,
+     "incidents": 0.401,
+     "publish": 0.003
+    },
+    "rows": 696,
+    "incidents": 0
+   },
+   {
+    "batches": 4,
+    "last_cycle_s": 16.416,
+    "ingest_s": 6.219,
+    "window_s": 0.079,
+    "stage_wall_s": {
+     "lookups": 0.156,
+     "detect": 8.589,
+     "episodes": 0.376,
+     "link": 0.5,
+     "incidents": 0.343,
+     "publish": 0.003
+    },
+    "rows": 876,
+    "incidents": 0
+   },
+   {
+    "batches": 5,
+    "last_cycle_s": 6.453,
+    "ingest_s": 1.061,
+    "window_s": 0.078,
+    "stage_wall_s": {
+     "lookups": 0.138,
+     "detect": 4.025,
+     "episodes": 0.158,
+     "link": 0.358,
+     "incidents": 0.285,
+     "publish": 0.223
+    },
+    "rows": 1214,
+    "incidents": 1
+   },
+   {
+    "batches": 6,
+    "last_cycle_s": 6.425,
+    "ingest_s": 1.308,
+    "window_s": 0.067,
+    "stage_wall_s": {
+     "lookups": 0.158,
+     "detect": 3.817,
+     "episodes": 0.191,
+     "link": 0.517,
+     "incidents": 0.245,
+     "publish": 0.036
+    },
+    "rows": 1350,
+    "incidents": 1
+   },
+   {
+    "batches": 7,
+    "last_cycle_s": 9.871,
+    "ingest_s": 1.388,
+    "window_s": 0.094,
+    "stage_wall_s": {
+     "lookups": 0.286,
+     "detect": 6.503,
+     "episodes": 0.348,
+     "link": 0.582,
+     "incidents": 0.415,
+     "publish": 0.007
+    },
+    "rows": 1490,
+    "incidents": 1
+   },
+   {
+    "batches": 8,
+    "last_cycle_s": 11.508,
+    "ingest_s": 1.951,
+    "window_s": 0.125,
+    "stage_wall_s": {
+     "lookups": 0.288,
+     "detect": 7.509,
+     "episodes": 0.486,
+     "link": 0.595,
+     "incidents": 0.376,
+     "publish": 0.007
+    },
+    "rows": 1694,
+    "incidents": 1
+   },
+   {
+    "batches": 9,
+    "last_cycle_s": 11.135,
+    "ingest_s": 1.547,
+    "window_s": 0.134,
+    "stage_wall_s": {
+     "lookups": 0.309,
+     "detect": 7.137,
+     "episodes": 0.475,
+     "link": 0.749,
+     "incidents": 0.572,
+     "publish": 0.007
+    },
+    "rows": 1934,
+    "incidents": 1
+   },
+   {
+    "batches": 10,
+    "last_cycle_s": 11.326,
+    "ingest_s": 1.804,
+    "window_s": 0.139,
+    "stage_wall_s": {
+     "lookups": 0.467,
+     "detect": 7.354,
+     "episodes": 0.566,
+     "link": 0.574,
+     "incidents": 0.321,
+     "publish": 0.008
+    },
+    "rows": 2000,
+    "incidents": 1
+   }
+  ],
+  [
+   {
+    "batches": 0,
+    "last_cycle_s": null,
+    "ingest_s": null,
+    "window_s": null,
+    "stage_wall_s": null,
+    "rows": 0,
+    "incidents": 0
+   },
+   {
+    "batches": 1,
+    "last_cycle_s": 18.015,
+    "ingest_s": 1.229,
+    "window_s": 0.058,
+    "stage_wall_s": {
+     "lookups": 0.196,
+     "detect": 11.156,
+     "episodes": 0.17,
+     "link": 0.412,
+     "incidents": 0.165,
+     "publish": 0.005
+    },
+    "rows": 36,
+    "incidents": 0
+   },
+   {
+    "batches": 2,
+    "last_cycle_s": 6.474,
+    "ingest_s": 1.191,
+    "window_s": 0.077,
+    "stage_wall_s": {
+     "lookups": 0.138,
+     "detect": 3.784,
+     "episodes": 0.499,
+     "link": 0.408,
+     "incidents": 0.229,
+     "publish": 0.002
+    },
+    "rows": 424,
+    "incidents": 0
+   },
+   {
+    "batches": 3,
+    "last_cycle_s": 9.022,
+    "ingest_s": 1.17,
+    "window_s": 0.088,
+    "stage_wall_s": {
+     "lookups": 0.16,
+     "detect": 5.758,
+     "episodes": 0.491,
+     "link": 0.652,
+     "incidents": 0.586,
+     "publish": 0.002
+    },
+    "rows": 558,
+    "incidents": 0
+   },
+   {
+    "batches": 4,
+    "last_cycle_s": 8.402,
+    "ingest_s": 1.936,
+    "window_s": 0.063,
+    "stage_wall_s": {
+     "lookups": 0.229,
+     "detect": 5.014,
+     "episodes": 0.264,
+     "link": 0.529,
+     "incidents": 0.283,
+     "publish": 0.013
+    },
+    "rows": 744,
+    "incidents": 0
+   },
+   {
+    "batches": 5,
+    "last_cycle_s": 8.105,
+    "ingest_s": 1.119,
+    "window_s": 0.09,
+    "stage_wall_s": {
+     "lookups": 0.16,
+     "detect": 5.212,
+     "episodes": 0.531,
+     "link": 0.482,
+     "incidents": 0.36,
+     "publish": 0.003
+    },
+    "rows": 926,
+    "incidents": 0
+   },
+   {
+    "batches": 6,
+    "last_cycle_s": 9.287,
+    "ingest_s": 1.398,
+    "window_s": 0.088,
+    "stage_wall_s": {
+     "lookups": 0.187,
+     "detect": 5.578,
+     "episodes": 0.397,
+     "link": 0.664,
+     "incidents": 0.402,
+     "publish": 0.409
+    },
+    "rows": 1096,
+    "incidents": 1
+   },
+   {
+    "batches": 7,
+    "last_cycle_s": 10.968,
+    "ingest_s": 1.628,
+    "window_s": 0.071,
+    "stage_wall_s": {
+     "lookups": 0.241,
+     "detect": 7.246,
+     "episodes": 0.544,
+     "link": 0.624,
+     "incidents": 0.434,
+     "publish": 0.007
+    },
+    "rows": 1284,
+    "incidents": 1
+   },
+   {
+    "batches": 8,
+    "last_cycle_s": 8.654,
+    "ingest_s": 1.364,
+    "window_s": 0.106,
+    "stage_wall_s": {
+     "lookups": 0.342,
+     "detect": 5.057,
+     "episodes": 0.433,
+     "link": 0.747,
+     "incidents": 0.467,
+     "publish": 0.007
+    },
+    "rows": 1506,
+    "incidents": 1
+   },
+   {
+    "batches": 9,
+    "last_cycle_s": 9.726,
+    "ingest_s": 1.101,
+    "window_s": 0.085,
+    "stage_wall_s": {
+     "lookups": 0.276,
+     "detect": 6.368,
+     "episodes": 0.519,
+     "link": 0.66,
+     "incidents": 0.481,
+     "publish": 0.008
+    },
+    "rows": 1684,
+    "incidents": 1
+   },
+   {
+    "batches": 10,
+    "last_cycle_s": 9.131,
+    "ingest_s": 1.568,
+    "window_s": 0.121,
+    "stage_wall_s": {
+     "lookups": 0.364,
+     "detect": 5.463,
+     "episodes": 0.424,
+     "link": 0.584,
+     "incidents": 0.382,
+     "publish": 0.007
+    },
+    "rows": 1886,
+    "incidents": 1
+   },
+   {
+    "batches": 11,
+    "last_cycle_s": 8.73,
+    "ingest_s": 1.225,
+    "window_s": 0.107,
+    "stage_wall_s": {
+     "lookups": 0.436,
+     "detect": 5.299,
+     "episodes": 0.363,
+     "link": 0.631,
+     "incidents": 0.477,
+     "publish": 0.007
+    },
+    "rows": 2000,
+    "incidents": 1
+   }
+  ]
+ ],
+ "machine": {
+  "note": "shared machine, heavy n10/n30/n50 analysis running",
+  "cpu_load_pct": [
+   88,
+   100,
+   100,
+   100
+  ],
+  "free_ram_mb": [
+   2401,
+   920,
+   629,
+   810
+  ]
+ },
+ "run3": {
+  "commit": "6fbfe3c + uncommitted working tree",
+  "date": "2026-11-01",
+  "machine": {
+   "cpu_load_pct_at_probe_start": 87,
+   "free_ram_gb_at_probe_start": 0.58,
+   "cpu_load_pct_at_live_start": 100,
+   "free_ram_gb_at_live_start": 0.9,
+   "note": "contended: heavy real-log analysis running",
+   "cpu_load_pct_at_eta_smoke": 96,
+   "free_ram_gb_at_eta_smoke": 2.07,
+   "cpu_load_pct_at_eta_f1": 94,
+   "free_ram_gb_at_eta_f1": 1.59
+  },
+  "probe": {
+   "checks": 197,
+   "failed": [
+    "S11",
+    "I07"
+   ],
+   "results": [
+    {
+     "id": "R01",
+     "what": "GET /api/health 200 + exact key set",
+     "ok": true,
+     "got": [
+      "incidents",
+      "loaded_at",
+      "off_contract",
+      "out_dir",
+      "out_dir_source",
+      "served_out_dir",
+      "status",
+      "uptime_s"
+     ],
+     "expected": null
+    },
+    {
+     "id": "R02",
+     "what": "health.incidents == rows in served incidents_index.json",
+     "ok": true,
+     "got": 5,
+     "expected": 5
+    },
+    {
+     "id": "R03",
+     "what": "health.out_dir_source == env, served_out_dir == ATTACKLENS_OUT",
+     "ok": true,
+     "got": "C:\\cyberforge\\data\\tmp\\qa_api\\out",
+     "expected": null
+    },
+    {
+     "id": "R04",
+     "what": "GET /api/incidents 200 application/json list",
+     "ok": true,
+     "got": null,
+     "expected": null
+    },
+    {
+     "id": "R05",
+     "what": "every index row validates models.IncidentSummary",
+     "ok": true,
+     "got": [],
+     "expected": null
+    },
+    {
+     "id": "R06",
+     "what": "index sorted risk desc (tie: id asc)",
+     "ok": true,
+     "got": [
+      86,
+      82,
+      46,
+      35,
+      32
+     ],
+     "expected": null
+    },
+    {
+     "id": "R07",
+     "what": "index ids == served file ids",
+     "ok": true,
+     "got": null,
+     "expected": null
+    },
+    {
+     "id": "R08:inc-853d956b",
+     "what": "GET /api/incidents/{id} 200, == file on disk, validates Incident",
+     "ok": true,
+     "got": null,
+     "expected": null
+    },
+    {
+     "id": "R09:inc-853d956b",
+     "what": "/path 200, keys exactly id/backbone/branches/edges, values == incident",
+     "ok": true,
+     "got": [
+      "backbone",
+      "branches",
+      "edges",
+      "id"
+     ],
+     "expected": null
+    },
+    {
+     "id": "R10:inc-853d956b",
+     "what": "/pivots 200, id + one step per backbone step",
+     "ok": true,
+     "got": {
+      "id": "inc-853d956b",
+      "window_ms": 900000,
+      "siems": 3,
+      "steps": 5,
+      "branches": 5
+     },
+     "expected": null
+    },
+    {
+     "id": "R08:inc-098b8fea",
+     "what": "GET /api/incidents/{id} 200, == file on disk, validates Incident",
+     "ok": true,
+     "got": null,
+     "expected": null
+    },
+    {
+     "id": "R09:inc-098b8fea",
+     "what": "/path 200, keys exactly id/backbone/branches/edges, values == incident",
+     "ok": true,
+     "got": [
+      "backbone",
+      "branches",
+      "edges",
+      "id"
+     ],
+     "expected": null
+    },
+    {
+     "id": "R10:inc-098b8fea",
+     "what": "/pivots 200, id + one step per backbone step",
+     "ok": true,
+     "got": {
+      "id": "inc-098b8fea",
+      "window_ms": 900000,
+      "siems": 3,
+      "steps": 8,
+      "branches": 0
+     },
+     "expected": null
+    },
+    {
+     "id": "R08:inc-a58413a0",
+     "what": "GET /api/incidents/{id} 200, == file on disk, validates Incident",
+     "ok": true,
+     "got": null,
+     "expected": null
+    },
+    {
+     "id": "R09:inc-a58413a0",
+     "what": "/path 200, keys exactly id/backbone/branches/edges, values == incident",
+     "ok": true,
+     "got": [
+      "backbone",
+      "branches",
+      "edges",
+      "id"
+     ],
+     "expected": null
+    },
+    {
+     "id": "R10:inc-a58413a0",
+     "what": "/pivots 200, id + one step per backbone step",
+     "ok": true,
+     "got": {
+      "id": "inc-a58413a0",
+      "window_ms": 900000,
+      "siems": 3,
+      "steps": 5,
+      "branches": 0
+     },
+     "expected": null
+    },
+    {
+     "id": "R08:inc-9c911297",
+     "what": "GET /api/incidents/{id} 200, == file on disk, validates Incident",
+     "ok": true,
+     "got": null,
+     "expected": null
+    },
+    {
+     "id": "R09:inc-9c911297",
+     "what": "/path 200, keys exactly id/backbone/branches/edges, values == incident",
+     "ok": true,
+     "got": [
+      "backbone",
+      "branches",
+      "edges",
+      "id"
+     ],
+     "expected": null
+    },
+    {
+     "id": "R10:inc-9c911297",
+     "what": "/pivots 200, id + one step per backbone step",
+     "ok": true,
+     "got": {
+      "id": "inc-9c911297",
+      "window_ms": 900000,
+      "siems": 3,
+      "steps": 3,
+      "branches": 0
+     },
+     "expected": null
+    },
+    {
+     "id": "R08:inc-ff130ce9",
+     "what": "GET /api/incidents/{id} 200, == file on disk, validates Incident",
+     "ok": true,
+     "got": null,
+     "expected": null
+    },
+    {
+     "id": "R09:inc-ff130ce9",
+     "what": "/path 200, keys exactly id/backbone/branches/edges, values == incident",
+     "ok": true,
+     "got": [
+      "backbone",
+      "branches",
+      "edges",
+      "id"
+     ],
+     "expected": null
+    },
+    {
+     "id": "R10:inc-ff130ce9",
+     "what": "/pivots 200, id + one step per backbone step",
+     "ok": true,
+     "got": {
+      "id": "inc-ff130ce9",
+      "window_ms": 900000,
+      "siems": 3,
+      "steps": 3,
+      "branches": 0
+     },
+     "expected": null
+    },
+    {
+     "id": "R11a",
+     "what": "unknown/bad id inc-00000000 -> 404 JSON",
+     "ok": true,
+     "got": 404,
+     "expected": null
+    },
+    {
+     "id": "R11a/path",
+     "what": "unknown/bad id inc-00000000/path -> 404 JSON",
+     "ok": true,
+     "got": 404,
+     "expected": null
+    },
+    {
+     "id": "R11a/pivots",
+     "what": "unknown/bad id inc-00000000/pivots -> 404 JSON",
+     "ok": true,
+     "got": 404,
+     "expected": null
+    },
+    {
+     "id": "R11b",
+     "what": "unknown/bad id INC-853D956B -> 404 JSON",
+     "ok": true,
+     "got": 404,
+     "expected": null
+    },
+    {
+     "id": "R11b/path",
+     "what": "unknown/bad id INC-853D956B/path -> 404 JSON",
+     "ok": true,
+     "got": 404,
+     "expected": null
+    },
+    {
+     "id": "R11b/pivots",
+     "what": "unknown/bad id INC-853D956B/pivots -> 404 JSON",
+     "ok": true,
+     "got": 404,
+     "expected": null
+    },
+    {
+     "id": "R11c",
+     "what": "unknown/bad id inc-853d956b0 -> 404 JSON",
+     "ok": true,
+     "got": 404,
+     "expected": null
+    },
+    {
+     "id": "R11c/path",
+     "what": "unknown/bad id inc-853d956b0/path -> 404 JSON",
+     "ok": true,
+     "got": 404,
+     "expected": null
+    },
+    {
+     "id": "R11c/pivots",
+     "what": "unknown/bad id inc-853d956b0/pivots -> 404 JSON",
+     "ok": true,
+     "got": 404,
+     "expected": null
+    },
+    {
+     "id": "R11d",
+     "what": "unknown/bad id ..%2f..%2fREADME.md -> 404 JSON",
+     "ok": true,
+     "got": 404,
+     "expected": null
+    },
+    {
+     "id": "R11d/path",
+     "what": "unknown/bad id ..%2f..%2fREADME.md/path -> 404 JSON",
+     "ok": true,
+     "got": 404,
+     "expected": null
+    },
+    {
+     "id": "R11d/pivots",
+     "what": "unknown/bad id ..%2f..%2fREADME.md/pivots -> 404 JSON",
+     "ok": true,
+     "got": 404,
+     "expected": null
+    },
+    {
+     "id": "R11e",
+     "what": "unknown/bad id inc-zzzzzzzz -> 404 JSON",
+     "ok": true,
+     "got": 404,
+     "expected": null
+    },
+    {
+     "id": "R11e/path",
+     "what": "unknown/bad id inc-zzzzzzzz/path -> 404 JSON",
+     "ok": true,
+     "got": 404,
+     "expected": null
+    },
+    {
+     "id": "R11e/pivots",
+     "what": "unknown/bad id inc-zzzzzzzz/pivots -> 404 JSON",
+     "ok": true,
+     "got": 404,
+     "expected": null
+    },
+    {
+     "id": "R12",
+     "what": "GET /api/metrics keys exact and == the three files",
+     "ok": true,
+     "got": [
+      "eval_scorecard",
+      "ingest_accounting",
+      "run_metrics"
+     ],
+     "expected": null
+    },
+    {
+     "id": "R13",
+     "what": "POST /api/reload 200 {incidents, out_dir}",
+     "ok": true,
+     "got": {
+      "incidents": 5,
+      "out_dir": "C:\\cyberforge\\data\\tmp\\qa_api\\out"
+     },
+     "expected": null
+    },
+    {
+     "id": "R14",
+     "what": "GET /api/live/status 200, enabled is bool (no live engine on this out dir)",
+     "ok": true,
+     "got": false,
+     "expected": null
+    },
+    {
+     "id": "R15",
+     "what": "GET /api/integrations/status 200, shape, auth_env_set only bool/None/dict-of-bool",
+     "ok": true,
+     "got": [
+      "alert_input",
+      "connectors",
+      "pivot_siems",
+      "sinks",
+      "spool",
+      "updated_at"
+     ],
+     "expected": null
+    },
+    {
+     "id": "R16/api/nope",
+     "what": "GET /api/nope -> 404 JSON",
+     "ok": true,
+     "got": 404,
+     "expected": null
+    },
+    {
+     "id": "R16/api/incidents/x/y/z",
+     "what": "GET /api/incidents/x/y/z -> 404 JSON",
+     "ok": true,
+     "got": 404,
+     "expected": null
+    },
+    {
+     "id": "R16/api/runs/zzz",
+     "what": "GET /api/runs/zzz -> 404 JSON",
+     "ok": true,
+     "got": 404,
+     "expected": null
+    },
+    {
+     "id": "R17/api/health",
+     "what": "GET /api/health returns application/json, never HTML",
+     "ok": true,
+     "got": "application/json",
+     "expected": null
+    },
+    {
+     "id": "R17/api/incidents",
+     "what": "GET /api/incidents returns application/json, never HTML",
+     "ok": true,
+     "got": "application/json",
+     "expected": null
+    },
+    {
+     "id": "R17/api/metrics",
+     "what": "GET /api/metrics returns application/json, never HTML",
+     "ok": true,
+     "got": "application/json",
+     "expected": null
+    },
+    {
+     "id": "R17/api/runs",
+     "what": "GET /api/runs returns application/json, never HTML",
+     "ok": true,
+     "got": "application/json",
+     "expected": null
+    },
+    {
+     "id": "R17/api/uploads",
+     "what": "GET /api/uploads returns application/json, never HTML",
+     "ok": true,
+     "got": "application/json",
+     "expected": null
+    },
+    {
+     "id": "R17/api/live/status",
+     "what": "GET /api/live/status returns application/json, never HTML",
+     "ok": true,
+     "got": "application/json",
+     "expected": null
+    },
+    {
+     "id": "R17/api/integrations/status",
+     "what": "GET /api/integrations/status returns application/json, never HTML",
+     "ok": true,
+     "got": "application/json",
+     "expected": null
+    },
+    {
+     "id": "S01",
+     "what": "GET / -> 200 text/html (SPA index)",
+     "ok": true,
+     "got": null,
+     "expected": null
+    },
+    {
+     "id": "S02",
+     "what": "client route -> SPA index fallback",
+     "ok": true,
+     "got": null,
+     "expected": null
+    },
+    {
+     "id": "S03",
+     "what": "static file from dist served",
+     "ok": true,
+     "got": null,
+     "expected": null
+    },
+    {
+     "id": "S04",
+     "what": "hashed JS asset 200",
+     "ok": true,
+     "got": 200,
+     "expected": null
+    },
+    {
+     "id": "S05",
+     "what": "traversal /..%2f..%2fREADME.md never serves a file outside dist",
+     "ok": true,
+     "got": 200,
+     "expected": null
+    },
+    {
+     "id": "S06",
+     "what": "traversal /%2e%2e/%2e%2e/backend/attacklens/api.py never serves a file outside dist",
+     "ok": true,
+     "got": 200,
+     "expected": null
+    },
+    {
+     "id": "S07",
+     "what": "traversal /..%5c..%5cREADME.md never serves a file outside dist",
+     "ok": true,
+     "got": 200,
+     "expected": null
+    },
+    {
+     "id": "S08",
+     "what": "traversal /C:/Windows/win.ini never serves a file outside dist",
+     "ok": true,
+     "got": 200,
+     "expected": null
+    },
+    {
+     "id": "S09",
+     "what": "traversal /assets/..%2f..%2f..%2fREADME.md never serves a file outside dist",
+     "ok": true,
+     "got": 404,
+     "expected": null
+    },
+    {
+     "id": "S10",
+     "what": "traversal /../../README.md never serves a file outside dist",
+     "ok": true,
+     "got": 200,
+     "expected": null
+    },
+    {
+     "id": "S11",
+     "what": "GET /api (bare prefix) -> not HTML (observation)",
+     "ok": false,
+     "got": 200,
+     "expected": "JSON 404"
+    },
+    {
+     "id": "L01",
+     "what": "/path p95 < 50 ms over 200 sequential requests (TESTING.md \u00a74.6)",
+     "ok": true,
+     "got": {
+      "n": 200,
+      "p50_ms": 3.44,
+      "p95_ms": 4.46,
+      "p99_ms": 53.99,
+      "max_ms": 84.09
+     },
+     "expected": null
+    },
+    {
+     "id": "L02",
+     "what": "8 concurrent clients x 100 mixed reads: 0 errors",
+     "ok": true,
+     "got": {
+      "n": 800,
+      "errors": 0,
+      "p50_ms": 5.76,
+      "p95_ms": 32.59,
+      "p99_ms": 113.25,
+      "rps": 105.2
+     },
+     "expected": null
+    },
+    {
+     "id": "G01/api/uploads|http://evil.example",
+     "what": "POST /api/uploads with Origin http://evil.example -> 403",
+     "ok": true,
+     "got": 403,
+     "expected": null
+    },
+    {
+     "id": "G01/api/uploads|null",
+     "what": "POST /api/uploads with Origin null -> 403",
+     "ok": true,
+     "got": 403,
+     "expected": null
+    },
+    {
+     "id": "G01/api/uploads|http://localhost:5174",
+     "what": "POST /api/uploads with Origin http://localhost:5174 -> 403",
+     "ok": true,
+     "got": 403,
+     "expected": null
+    },
+    {
+     "id": "G01/api/uploads|http://127.0.0.1:8031.evil.example",
+     "what": "POST /api/uploads with Origin http://127.0.0.1:8031.evil.example -> 403",
+     "ok": true,
+     "got": 403,
+     "expected": null
+    },
+    {
+     "id": "G01/api/uploads/local|http://evil.example",
+     "what": "POST /api/uploads/local with Origin http://evil.example -> 403",
+     "ok": true,
+     "got": 403,
+     "expected": null
+    },
+    {
+     "id": "G01/api/uploads/local|null",
+     "what": "POST /api/uploads/local with Origin null -> 403",
+     "ok": true,
+     "got": 403,
+     "expected": null
+    },
+    {
+     "id": "G01/api/uploads/local|http://localhost:5174",
+     "what": "POST /api/uploads/local with Origin http://localhost:5174 -> 403",
+     "ok": true,
+     "got": 403,
+     "expected": null
+    },
+    {
+     "id": "G01/api/uploads/local|http://127.0.0.1:8031.evil.example",
+     "what": "POST /api/uploads/local with Origin http://127.0.0.1:8031.evil.example -> 403",
+     "ok": true,
+     "got": 403,
+     "expected": null
+    },
+    {
+     "id": "G01/api/runs|http://evil.example",
+     "what": "POST /api/runs with Origin http://evil.example -> 403",
+     "ok": true,
+     "got": 403,
+     "expected": null
+    },
+    {
+     "id": "G01/api/runs|null",
+     "what": "POST /api/runs with Origin null -> 403",
+     "ok": true,
+     "got": 403,
+     "expected": null
+    },
+    {
+     "id": "G01/api/runs|http://localhost:5174",
+     "what": "POST /api/runs with Origin http://localhost:5174 -> 403",
+     "ok": true,
+     "got": 403,
+     "expected": null
+    },
+    {
+     "id": "G01/api/runs|http://127.0.0.1:8031.evil.example",
+     "what": "POST /api/runs with Origin http://127.0.0.1:8031.evil.example -> 403",
+     "ok": true,
+     "got": 403,
+     "expected": null
+    },
+    {
+     "id": "G01/api/reload|http://evil.example",
+     "what": "POST /api/reload with Origin http://evil.example -> 403",
+     "ok": true,
+     "got": 403,
+     "expected": null
+    },
+    {
+     "id": "G01/api/reload|null",
+     "what": "POST /api/reload with Origin null -> 403",
+     "ok": true,
+     "got": 403,
+     "expected": null
+    },
+    {
+     "id": "G01/api/reload|http://localhost:5174",
+     "what": "POST /api/reload with Origin http://localhost:5174 -> 403",
+     "ok": true,
+     "got": 403,
+     "expected": null
+    },
+    {
+     "id": "G01/api/reload|http://127.0.0.1:8031.evil.example",
+     "what": "POST /api/reload with Origin http://127.0.0.1:8031.evil.example -> 403",
+     "ok": true,
+     "got": 403,
+     "expected": null
+    },
+    {
+     "id": "G02",
+     "what": "no partial upload left after refused cross-origin uploads",
+     "ok": true,
+     "got": null,
+     "expected": null
+    },
+    {
+     "id": "G03",
+     "what": "GET with foreign Origin -> 200 but no Access-Control-Allow-Origin",
+     "ok": true,
+     "got": null,
+     "expected": null
+    },
+    {
+     "id": "G04",
+     "what": "GET with Vite origin -> ACAO echoes http://localhost:5173",
+     "ok": true,
+     "got": "http://localhost:5173",
+     "expected": null
+    },
+    {
+     "id": "G05",
+     "what": "POST with the API's own origin passes (200)",
+     "ok": true,
+     "got": 200,
+     "expected": null
+    },
+    {
+     "id": "G06|evil.example|GET/api/health",
+     "what": "Host: evil.example GET /api/health -> 400",
+     "ok": true,
+     "got": 400,
+     "expected": null
+    },
+    {
+     "id": "G06|evil.example|POST/api/uploads/local",
+     "what": "Host: evil.example POST /api/uploads/local -> 400",
+     "ok": true,
+     "got": 400,
+     "expected": null
+    },
+    {
+     "id": "G06|evil.example|GET/",
+     "what": "Host: evil.example GET / -> 400",
+     "ok": true,
+     "got": 400,
+     "expected": null
+    },
+    {
+     "id": "G06|evil.example:8031|GET/api/health",
+     "what": "Host: evil.example:8031 GET /api/health -> 400",
+     "ok": true,
+     "got": 400,
+     "expected": null
+    },
+    {
+     "id": "G06|evil.example:8031|POST/api/uploads/local",
+     "what": "Host: evil.example:8031 POST /api/uploads/local -> 400",
+     "ok": true,
+     "got": 400,
+     "expected": null
+    },
+    {
+     "id": "G06|evil.example:8031|GET/",
+     "what": "Host: evil.example:8031 GET / -> 400",
+     "ok": true,
+     "got": 400,
+     "expected": null
+    },
+    {
+     "id": "G06|127.0.0.1.nip.io|GET/api/health",
+     "what": "Host: 127.0.0.1.nip.io GET /api/health -> 400",
+     "ok": true,
+     "got": 400,
+     "expected": null
+    },
+    {
+     "id": "G06|127.0.0.1.nip.io|POST/api/uploads/local",
+     "what": "Host: 127.0.0.1.nip.io POST /api/uploads/local -> 400",
+     "ok": true,
+     "got": 400,
+     "expected": null
+    },
+    {
+     "id": "G06|127.0.0.1.nip.io|GET/",
+     "what": "Host: 127.0.0.1.nip.io GET / -> 400",
+     "ok": true,
+     "got": 400,
+     "expected": null
+    },
+    {
+     "id": "G06|localhost.evil.example|GET/api/health",
+     "what": "Host: localhost.evil.example GET /api/health -> 400",
+     "ok": true,
+     "got": 400,
+     "expected": null
+    },
+    {
+     "id": "G06|localhost.evil.example|POST/api/uploads/local",
+     "what": "Host: localhost.evil.example POST /api/uploads/local -> 400",
+     "ok": true,
+     "got": 400,
+     "expected": null
+    },
+    {
+     "id": "G06|localhost.evil.example|GET/",
+     "what": "Host: localhost.evil.example GET / -> 400",
+     "ok": true,
+     "got": 400,
+     "expected": null
+    },
+    {
+     "id": "G07",
+     "what": "CORS preflight from evil origin not approved (no ACAO)",
+     "ok": true,
+     "got": [
+      400,
+      null
+     ],
+     "expected": null
+    },
+    {
+     "id": "I01",
+     "what": "GET /api/integrations/catalog 200 JSON",
+     "ok": true,
+     "got": 200,
+     "expected": null
+    },
+    {
+     "id": "I02",
+     "what": "GET /api/integrations/status is the status route, not shadowed by /{iid}",
+     "ok": true,
+     "got": [
+      "alert_input",
+      "connectors",
+      "pivot_siems",
+      "sinks",
+      "spool",
+      "updated_at"
+     ],
+     "expected": null
+    },
+    {
+     "id": "I03",
+     "what": "GET unknown integration id -> 404 JSON",
+     "ok": true,
+     "got": 404,
+     "expected": null
+    },
+    {
+     "id": "I04 PUT /api/integrations/webhook",
+     "what": "PUT /api/integrations/webhook with Origin evil.example -> 403",
+     "ok": true,
+     "got": 403,
+     "expected": null
+    },
+    {
+     "id": "I05 PUT /api/integrations/webhook",
+     "what": "PUT /api/integrations/webhook with Host evil.example -> 400",
+     "ok": true,
+     "got": 400,
+     "expected": null
+    },
+    {
+     "id": "I04 DELETE /api/integrations/webhook",
+     "what": "DELETE /api/integrations/webhook with Origin evil.example -> 403",
+     "ok": true,
+     "got": 403,
+     "expected": null
+    },
+    {
+     "id": "I05 DELETE /api/integrations/webhook",
+     "what": "DELETE /api/integrations/webhook with Host evil.example -> 400",
+     "ok": true,
+     "got": 400,
+     "expected": null
+    },
+    {
+     "id": "I04 POST /api/integrations/webhook/test",
+     "what": "POST /api/integrations/webhook/test with Origin evil.example -> 403",
+     "ok": true,
+     "got": 403,
+     "expected": null
+    },
+    {
+     "id": "I05 POST /api/integrations/webhook/test",
+     "what": "POST /api/integrations/webhook/test with Host evil.example -> 400",
+     "ok": true,
+     "got": 400,
+     "expected": null
+    },
+    {
+     "id": "I04 POST /api/integrations/webhook/start",
+     "what": "POST /api/integrations/webhook/start with Origin evil.example -> 403",
+     "ok": true,
+     "got": 403,
+     "expected": null
+    },
+    {
+     "id": "I05 POST /api/integrations/webhook/start",
+     "what": "POST /api/integrations/webhook/start with Host evil.example -> 400",
+     "ok": true,
+     "got": 400,
+     "expected": null
+    },
+    {
+     "id": "I04 POST /api/integrations/webhook/stop",
+     "what": "POST /api/integrations/webhook/stop with Origin evil.example -> 403",
+     "ok": true,
+     "got": 403,
+     "expected": null
+    },
+    {
+     "id": "I05 POST /api/integrations/webhook/stop",
+     "what": "POST /api/integrations/webhook/stop with Host evil.example -> 400",
+     "ok": true,
+     "got": 400,
+     "expected": null
+    },
+    {
+     "id": "I06",
+     "what": "GET catalog with Host evil.example -> 400",
+     "ok": true,
+     "got": 400,
+     "expected": null
+    },
+    {
+     "id": "I07",
+     "what": "POST /api/integrations/qa-no-such-id/stop with the API's own Origin (http://127.0.0.1:8031) passes the guard -> 404 (QA-API-05)",
+     "ok": false,
+     "got": 403,
+     "expected": 404
+    },
+    {
+     "id": "I08",
+     "what": "control: POST /api/reload with the API's own Origin -> 200 (OriginGuard allows own origin)",
+     "ok": true,
+     "got": 200,
+     "expected": null
+    },
+    {
+     "id": "I09 PUT",
+     "what": "PUT /api/qa-nope -> JSON 404 (catch-all)",
+     "ok": true,
+     "got": 404,
+     "expected": null
+    },
+    {
+     "id": "I09 DELETE",
+     "what": "DELETE /api/qa-nope -> JSON 404 (catch-all)",
+     "ok": true,
+     "got": 404,
+     "expected": null
+    },
+    {
+     "id": "I09 PATCH",
+     "what": "PATCH /api/qa-nope -> JSON 404 (catch-all)",
+     "ok": true,
+     "got": 404,
+     "expected": null
+    },
+    {
+     "id": "U01",
+     "what": "POST /api/uploads 2 files -> 201, exact keys, mode upload",
+     "ok": true,
+     "got": [
+      201,
+      [
+       "created_at",
+       "files",
+       "mode",
+       "raw_dir",
+       "total_bytes",
+       "upload_id"
+      ]
+     ],
+     "expected": null
+    },
+    {
+     "id": "U02",
+     "what": "files[] names/bytes exact, total_bytes = sum, other field ignored",
+     "ok": true,
+     "got": [
+      {
+       "name": "fortigate_bf.log",
+       "bytes": 136066
+      },
+      {
+       "name": "noise.txt",
+       "bytes": 10746
+      }
+     ],
+     "expected": null
+    },
+    {
+     "id": "U03",
+     "what": "upload written byte-exact under data/raw/uploads/<id>/",
+     "ok": true,
+     "got": "data/raw/uploads/up-20261031-202800-29bf5f",
+     "expected": null
+    },
+    {
+     "id": "U04",
+     "what": "created_at ISO-8601 UTC Z",
+     "ok": true,
+     "got": "2026-10-31T20:28:00Z",
+     "expected": null
+    },
+    {
+     "id": "U05",
+     "what": "POST /api/uploads/local -> 201 mode link, same file (hard link, nlink 2)",
+     "ok": true,
+     "got": [
+      201,
+      "link"
+     ],
+     "expected": null
+    },
+    {
+     "id": "U06",
+     "what": "GET /api/uploads lists all three, newest first, same shape",
+     "ok": true,
+     "got": [
+      "up-20261031-202801-17fb57",
+      "up-20261031-202800-c3bb19",
+      "up-20261031-202800-29bf5f"
+     ],
+     "expected": null
+    },
+    {
+     "id": "U07|'../evil.log'",
+     "what": "upload name '../evil.log' -> 400",
+     "ok": true,
+     "got": [
+      400,
+      null
+     ],
+     "expected": 400
+    },
+    {
+     "id": "U07|'..\\\\evil.log'",
+     "what": "upload name '..\\\\evil.log' -> 400",
+     "ok": true,
+     "got": [
+      400,
+      null
+     ],
+     "expected": 400
+    },
+    {
+     "id": "U07|'/etc/passwd.log'",
+     "what": "upload name '/etc/passwd.log' -> 400",
+     "ok": true,
+     "got": [
+      400,
+      null
+     ],
+     "expected": 400
+    },
+    {
+     "id": "U07|'\\\\\\\\srv\\\\share\\\\x.log'",
+     "what": "upload name '\\\\\\\\srv\\\\share\\\\x.log' -> 400",
+     "ok": true,
+     "got": [
+      400,
+      null
+     ],
+     "expected": 400
+    },
+    {
+     "id": "U07|'C:\\\\Windows\\\\x.log'",
+     "what": "upload name 'C:\\\\Windows\\\\x.log' -> 400",
+     "ok": true,
+     "got": [
+      400,
+      null
+     ],
+     "expected": 400
+    },
+    {
+     "id": "U07|'C:x.log'",
+     "what": "upload name 'C:x.log' -> 400",
+     "ok": true,
+     "got": [
+      400,
+      null
+     ],
+     "expected": 400
+    },
+    {
+     "id": "U07|'a/../../b.log'",
+     "what": "upload name 'a/../../b.log' -> 400",
+     "ok": true,
+     "got": [
+      400,
+      null
+     ],
+     "expected": 400
+    },
+    {
+     "id": "U07|''",
+     "what": "upload name '' -> 400",
+     "ok": true,
+     "got": [
+      400,
+      null
+     ],
+     "expected": 400
+    },
+    {
+     "id": "U07|'   '",
+     "what": "upload name '   ' -> 400",
+     "ok": true,
+     "got": [
+      400,
+      null
+     ],
+     "expected": 400
+    },
+    {
+     "id": "U07|'.log'",
+     "what": "upload name '.log' -> 415",
+     "ok": true,
+     "got": [
+      415,
+      null
+     ],
+     "expected": 415
+    },
+    {
+     "id": "U07|'evil.exe'",
+     "what": "upload name 'evil.exe' -> 415",
+     "ok": true,
+     "got": [
+      415,
+      null
+     ],
+     "expected": 415
+    },
+    {
+     "id": "U07|'evil.log.exe'",
+     "what": "upload name 'evil.log.exe' -> 415",
+     "ok": true,
+     "got": [
+      415,
+      null
+     ],
+     "expected": 415
+    },
+    {
+     "id": "U07|'evil.log.'",
+     "what": "upload name 'evil.log.' -> 415",
+     "ok": true,
+     "got": [
+      415,
+      null
+     ],
+     "expected": 415
+    },
+    {
+     "id": "U07|'evil'",
+     "what": "upload name 'evil' -> 415",
+     "ok": true,
+     "got": [
+      415,
+      null
+     ],
+     "expected": 415
+    },
+    {
+     "id": "U07|'evil.LOG'",
+     "what": "upload name 'evil.LOG' -> 201",
+     "ok": true,
+     "got": [
+      201,
+      "evil.LOG"
+     ],
+     "expected": 201
+    },
+    {
+     "id": "U07|'sub/dir/ok.log'",
+     "what": "upload name 'sub/dir/ok.log' -> 201",
+     "ok": true,
+     "got": [
+      201,
+      "ok.log"
+     ],
+     "expected": 201
+    },
+    {
+     "id": "U07|'we ird$name.log'",
+     "what": "upload name 'we ird$name.log' -> 201",
+     "ok": true,
+     "got": [
+      201,
+      "we_ird_name.log"
+     ],
+     "expected": 201
+    },
+    {
+     "id": "U07|'\u0430dmin.log'",
+     "what": "upload name '\u0430dmin.log' -> 201",
+     "ok": true,
+     "got": [
+      201,
+      "_dmin.log"
+     ],
+     "expected": 201
+    },
+    {
+     "id": "U08",
+     "what": "no partial upload left after rejected names",
+     "ok": true,
+     "got": null,
+     "expected": null
+    },
+    {
+     "id": "U09|CON.log",
+     "what": "Windows reserved name CON.log: refused, or stored and readable byte-exact",
+     "ok": true,
+     "got": [
+      201,
+      ""
+     ],
+     "expected": null
+    },
+    {
+     "id": "U09|NUL.log",
+     "what": "Windows reserved name NUL.log: refused, or stored and readable byte-exact",
+     "ok": true,
+     "got": [
+      201,
+      ""
+     ],
+     "expected": null
+    },
+    {
+     "id": "U09|aux.log",
+     "what": "Windows reserved name aux.log: refused, or stored and readable byte-exact",
+     "ok": true,
+     "got": [
+      201,
+      ""
+     ],
+     "expected": null
+    },
+    {
+     "id": "U09|COM1.log",
+     "what": "Windows reserved name COM1.log: refused, or stored and readable byte-exact",
+     "ok": true,
+     "got": [
+      201,
+      ""
+     ],
+     "expected": null
+    },
+    {
+     "id": "U09|nul.txt",
+     "what": "Windows reserved name nul.txt: refused, or stored and readable byte-exact",
+     "ok": true,
+     "got": [
+      201,
+      ""
+     ],
+     "expected": null
+    },
+    {
+     "id": "U10",
+     "what": "JSON body to /api/uploads -> 400",
+     "ok": true,
+     "got": 400,
+     "expected": null
+    },
+    {
+     "id": "U11",
+     "what": "multipart without boundary -> 400",
+     "ok": true,
+     "got": 400,
+     "expected": null
+    },
+    {
+     "id": "U12",
+     "what": "no 'files' field -> 400",
+     "ok": true,
+     "got": 400,
+     "expected": null
+    },
+    {
+     "id": "U13",
+     "what": "truncated multipart (closing boundary missing) -> 400",
+     "ok": true,
+     "got": 400,
+     "expected": null
+    },
+    {
+     "id": "U14",
+     "what": "multipart cut mid-headers -> 400",
+     "ok": true,
+     "got": 400,
+     "expected": null
+    },
+    {
+     "id": "U15",
+     "what": "no partial upload left after truncated bodies",
+     "ok": true,
+     "got": null,
+     "expected": null
+    },
+    {
+     "id": "U16",
+     "what": "Content-Length 85899345920 -> 413 without streaming the body",
+     "ok": true,
+     "got": [
+      413,
+      0.02
+     ],
+     "expected": null
+    },
+    {
+     "id": "U17",
+     "what": "Content-Length 68720525313 -> 413 without streaming the body",
+     "ok": true,
+     "got": [
+      413,
+      0.0
+     ],
+     "expected": null
+    },
+    {
+     "id": "U18",
+     "what": "Content-Length 60 GiB with less free disk -> 507",
+     "ok": true,
+     "got": 507,
+     "expected": null
+    },
+    {
+     "id": "U19",
+     "what": "client disconnect mid-body: partial dir removed within 5 s",
+     "ok": true,
+     "got": null,
+     "expected": null
+    },
+    {
+     "id": "U20",
+     "what": "uploads/local 'data/raw/smoke/edr.jsonl' -> 400",
+     "ok": true,
+     "got": [
+      400,
+      "path must be an absolute path on this machine"
+     ],
+     "expected": null
+    },
+    {
+     "id": "U21",
+     "what": "uploads/local 'C:\\\\cyberforge\\\\data\\\\tmp\\\\qa_api\\\\does_not_exist.log' -> 404",
+     "ok": true,
+     "got": [
+      404,
+      "file not found"
+     ],
+     "expected": null
+    },
+    {
+     "id": "U22",
+     "what": "uploads/local 'C:\\\\cyberforge\\\\data\\\\tmp\\\\qa_api' -> 400",
+     "ok": true,
+     "got": [
+      400,
+      "path must be an existing regular file"
+     ],
+     "expected": null
+    },
+    {
+     "id": "U23",
+     "what": "uploads/local 'C:\\\\cyberforge\\\\backend\\\\pyproject.toml' -> 415",
+     "ok": true,
+     "got": [
+      415,
+      "extension .toml not allowed; allowed: .log .txt .csv .json .jsonl .ndjson .cef .syslog"
+     ],
+     "expected": null
+    },
+    {
+     "id": "U24",
+     "what": "uploads/local '' -> 400",
+     "ok": true,
+     "got": [
+      400,
+      "path must be an absolute path on this machine"
+     ],
+     "expected": null
+    },
+    {
+     "id": "U25",
+     "what": "uploads/local 'C:\\\\cyberforge\\\\data\\\\tmp\\\\qa_api\\\\..\\\\qa_api\\\\local_src\\\\fw_local.log' -> 201",
+     "ok": true,
+     "got": [
+      201,
+      null
+     ],
+     "expected": null
+    },
+    {
+     "id": "U26",
+     "what": "uploads/local without path -> 422",
+     "ok": true,
+     "got": 422,
+     "expected": null
+    },
+    {
+     "id": "U27",
+     "what": "no partial upload left after local abuse",
+     "ok": true,
+     "got": null,
+     "expected": null
+    },
+    {
+     "id": "X01",
+     "what": "POST /api/runs {'raw_dir': '../../etc'} -> 400, detail never echoes the path",
+     "ok": true,
+     "got": [
+      400,
+      "raw_dir must be under data/raw/"
+     ],
+     "expected": null
+    },
+    {
+     "id": "X02",
+     "what": "POST /api/runs {'raw_dir': 'C:/Windows'} -> 400, detail never echoes the path",
+     "ok": true,
+     "got": [
+      400,
+      "raw_dir must be under data/raw/"
+     ],
+     "expected": null
+    },
+    {
+     "id": "X03",
+     "what": "POST /api/runs {'raw_dir': 'data/raw'} -> 400, detail never echoes the path",
+     "ok": true,
+     "got": [
+      400,
+      "raw_dir must be a sub-directory of data/raw/ with names of [A-Za-z0-9._-]"
+     ],
+     "expected": null
+    },
+    {
+     "id": "X04",
+     "what": "POST /api/runs {'raw_dir': 'data/raw/uploads'} -> 400, detail never echoes the path",
+     "ok": true,
+     "got": [
+      400,
+      "raw_dir must be data/raw/<set> or data/raw/uploads/<upload_id>, not a directory that holds uploads"
+     ],
+     "expected": null
+    },
+    {
+     "id": "X05",
+     "what": "POST /api/runs {'raw_dir': 'data/raw/uploads/.incoming'} -> 400, detail never echoes the path",
+     "ok": true,
+     "got": [
+      400,
+      "raw_dir must be data/raw/<set> or data/raw/uploads/<upload_id> (no hidden directories)"
+     ],
+     "expected": null
+    },
+    {
+     "id": "X06",
+     "what": "POST /api/runs {'raw_dir': 'data/raw/nope_qa'} -> 400, detail never echoes the path",
+     "ok": true,
+     "got": [
+      400,
+      "raw_dir is not an existing directory"
+     ],
+     "expected": null
+    },
+    {
+     "id": "X07",
+     "what": "POST /api/runs {'raw_dir': 'data/raw/smoke', 'out_dir': 'data/out/a/b'} -> 400, detail never echoes the path",
+     "ok": true,
+     "got": [
+      400,
+      "out_dir must be exactly data/out/<name>"
+     ],
+     "expected": null
+    },
+    {
+     "id": "X08",
+     "what": "POST /api/runs {'raw_dir': 'data/raw/smoke', 'out_dir': 'data/out/live'} -> 400, detail never echoes the path",
+     "ok": true,
+     "got": [
+      400,
+      "out_dir is the live-mode output (live.yaml out_dir or a running live engine)"
+     ],
+     "expected": null
+    },
+    {
+     "id": "X09",
+     "what": "POST /api/runs {'raw_dir': 'data/raw/smoke', 'out_dir': 'C:/temp/x'} -> 400, detail never echoes the path",
+     "ok": true,
+     "got": [
+      400,
+      "out_dir must be under data/out/"
+     ],
+     "expected": null
+    },
+    {
+     "id": "X10",
+     "what": "POST /api/runs {'raw_dir': 'data/raw/smoke', 'out_dir': 'data/out/qa_api_smoke', 'ground_truth': 'C:/Windows/win.ini'} -> 400, detail never echoes the path",
+     "ok": true,
+     "got": [
+      400,
+      "ground_truth must be under data/raw/"
+     ],
+     "expected": null
+    },
+    {
+     "id": "X11",
+     "what": "POST /api/runs {'raw_dir': 'data/raw/smoke', 'out_dir': 'data/out/qa_api_smoke', 'ground_truth': 'data/raw/smoke/nope.json'} -> 400, detail never echoes the path",
+     "ok": true,
+     "got": [
+      400,
+      "ground_truth is not an existing file"
+     ],
+     "expected": null
+    },
+    {
+     "id": "X12",
+     "what": "POST /api/runs {'out_dir': 'data/out/qa_api_smoke'} -> 422, detail never echoes the path",
+     "ok": true,
+     "got": [
+      422,
+      [
+       {
+        "type": "missing",
+        "loc": [
+         "body",
+         "raw_dir"
+        ],
+        "msg": "Field required",
+        "input": {
+         "out_dir": "data/out/qa_api_smoke"
+        }
+       }
+      ]
+     ],
+     "expected": null
+    },
+    {
+     "id": "X13",
+     "what": "POST /api/runs {'raw_dir': 'data/raw/sm oke'} -> 400, detail never echoes the path",
+     "ok": true,
+     "got": [
+      400,
+      "raw_dir must be a sub-directory of data/raw/ with names of [A-Za-z0-9._-]"
+     ],
+     "expected": null
+    },
+    {
+     "id": "X20",
+     "what": "6 concurrent POST /api/runs -> exactly one 202, five 409",
+     "ok": true,
+     "got": [
+      202,
+      409,
+      409,
+      409,
+      409,
+      409
+     ],
+     "expected": null
+    },
+    {
+     "id": "X21",
+     "what": "run_id is 12 hex",
+     "ok": true,
+     "got": "bafc071bb360",
+     "expected": null
+    },
+    {
+     "id": "X22",
+     "what": "GET /api/runs/{id} exact key set while running",
+     "ok": true,
+     "got": [
+      "elapsed_s",
+      "error",
+      "log",
+      "out_dir",
+      "peak_rss_mb",
+      "percent",
+      "raw_dir",
+      "returncode",
+      "rss_mb",
+      "run_id",
+      "stage",
+      "started",
+      "status"
+     ],
+     "expected": null
+    },
+    {
+     "id": "X23",
+     "what": "while the run is running the served dir is unchanged",
+     "ok": true,
+     "got": "C:\\cyberforge\\data\\tmp\\qa_api\\out",
+     "expected": null
+    },
+    {
+     "id": "X24",
+     "what": "a second run (other raw dir) while one runs -> 409",
+     "ok": true,
+     "got": 409,
+     "expected": null
+    },
+    {
+     "id": "X25",
+     "what": "smoke run succeeded rc 0, stage done, percent 100, error null",
+     "ok": true,
+     "got": {
+      "status": "succeeded",
+      "returncode": 0,
+      "stage": "done",
+      "percent": 100,
+      "error": null
+     },
+     "expected": null
+    },
+    {
+     "id": "X26",
+     "what": "percent is monotonic non-decreasing while polled",
+     "ok": true,
+     "got": [
+      0,
+      2,
+      5,
+      45,
+      50,
+      65,
+      72,
+      80,
+      90,
+      100
+     ],
+     "expected": null
+    },
+    {
+     "id": "X27",
+     "what": "peak_rss_mb > 0 recorded",
+     "ok": true,
+     "got": 268.8,
+     "expected": null
+    },
+    {
+     "id": "X28",
+     "what": "served switch: health -> data/out/qa_api_smoke, source api_run, count == its index",
+     "ok": true,
+     "got": [
+      "C:\\cyberforge\\data\\out\\qa_api_smoke",
+      "api_run",
+      0,
+      0
+     ],
+     "expected": null
+    },
+    {
+     "id": "X29",
+     "what": "GET /api/incidents now serves the run's index",
+     "ok": true,
+     "got": null,
+     "expected": null
+    },
+    {
+     "id": "X30",
+     "what": "POST /api/reload keeps the pinned run output",
+     "ok": true,
+     "got": {
+      "incidents": 0,
+      "out_dir": "C:\\cyberforge\\data\\out\\qa_api_smoke"
+     },
+     "expected": null
+    },
+    {
+     "id": "X31",
+     "what": "run into the served out_dir -> 400",
+     "ok": true,
+     "got": [
+      400,
+      "out_dir is the output the API is serving now; omit out_dir (a fresh one is used) or choose another name"
+     ],
+     "expected": null
+    },
+    {
+     "id": "X32",
+     "what": "POST /api/runs on data/raw/uploads/<id> -> 202",
+     "ok": true,
+     "got": 202,
+     "expected": null
+    },
+    {
+     "id": "X33",
+     "what": "upload run succeeded and the API now serves data/out/<upload_id>",
+     "ok": true,
+     "got": [
+      "succeeded",
+      "C:\\cyberforge\\data\\out\\up-20261031-202800-29bf5f"
+     ],
+     "expected": null
+    },
+    {
+     "id": "X34",
+     "what": "uploaded FortiGate brute-force-then-success is served as an incident (T1110, attacker ip)",
+     "ok": true,
+     "got": [
+      [
+       "inc-65704455",
+       [
+        "Initial Access",
+        "Credential Access"
+       ]
+      ]
+     ],
+     "expected": null
+    },
+    {
+     "id": "X35",
+     "what": "upload accounting: fortigate_kv rows_in == ok == 281 lines, 0 dropped",
+     "ok": true,
+     "got": {
+      "fortigate_kv": [
+       281,
+       281,
+       0
+      ]
+     },
+     "expected": null
+    },
+    {
+     "id": "X36",
+     "what": "GET /api/runs newest first, same keys as /runs/{id}",
+     "ok": true,
+     "got": [
+      "fd30cac3f21c",
+      "bafc071bb360"
+     ],
+     "expected": null
+    },
+    {
+     "id": "X37",
+     "what": "GET /api/runs/000000000000 -> 404",
+     "ok": true,
+     "got": 404,
+     "expected": null
+    },
+    {
+     "id": "X38",
+     "what": "GET /api/runs/ZZZ -> 404",
+     "ok": true,
+     "got": 404,
+     "expected": null
+    },
+    {
+     "id": "X39",
+     "what": "GET /api/runs/..%2f..%2fetc -> 404",
+     "ok": true,
+     "got": 404,
+     "expected": null
+    }
+   ],
+   "numbers": {
+    "latency": {
+     "/api/health": {
+      "n": 200,
+      "p50_ms": 3.62,
+      "p95_ms": 75.35,
+      "p99_ms": 518.83,
+      "max_ms": 3765.62
+     },
+     "/api/incidents": {
+      "n": 200,
+      "p50_ms": 3.16,
+      "p95_ms": 4.34,
+      "p99_ms": 36.34,
+      "max_ms": 61.94
+     },
+     "/api/incidents/{id}": {
+      "n": 200,
+      "p50_ms": 3.31,
+      "p95_ms": 4.26,
+      "p99_ms": 19.15,
+      "max_ms": 99.38
+     },
+     "/api/incidents/{id}/path": {
+      "n": 200,
+      "p50_ms": 3.44,
+      "p95_ms": 4.46,
+      "p99_ms": 53.99,
+      "max_ms": 84.09
+     },
+     "/api/metrics": {
+      "n": 200,
+      "p50_ms": 3.43,
+      "p95_ms": 4.85,
+      "p99_ms": 9.68,
+      "max_ms": 51.37
+     },
+     "concurrent_8x100_mixed": {
+      "n": 800,
+      "errors": 0,
+      "p50_ms": 5.76,
+      "p95_ms": 32.59,
+      "p99_ms": 113.25,
+      "rps": 105.2
+     }
+    },
+    "smoke_run": {
+     "elapsed_s": 71.9,
+     "peak_rss_mb": 268.8,
+     "stages_seen": [
+      [
+       0.0,
+       "starting",
+       0
+      ],
+      [
+       24.3,
+       "profile",
+       2
+      ],
+      [
+       26.6,
+       "ingest",
+       5
+      ],
+      [
+       31.4,
+       "lookups",
+       45
+      ],
+      [
+       32.0,
+       "detect",
+       50
+      ],
+      [
+       65.0,
+       "episodes",
+       65
+      ],
+      [
+       65.6,
+       "link",
+       72
+      ],
+      [
+       70.1,
+       "incidents",
+       80
+      ],
+      [
+       70.7,
+       "publish",
+       90
+      ],
+      [
+       71.3,
+       "done",
+       100
+      ]
+     ],
+     "incidents": 0,
+     "run_metrics_total_wall_s": 48.4,
+     "run_metrics_rows_in": 50000,
+     "run_metrics_peak_rss_mb": 238.9
+    },
+    "upload_run": {
+     "elapsed_s": 26.6,
+     "peak_rss_mb": 162.6
+    }
+   }
+  },
+  "live": {
+   "lines": 2000,
+   "rate_lps": 20.0,
+   "n_fail": 60,
+   "threads": 2,
+   "memory_limit": "1GB",
+   "startup_to_heartbeat_s": 5.9,
+   "feed_s": 100.03,
+   "batches": 9,
+   "rows_final": 2000,
+   "last_error": null,
+   "accounting": [
+    {
+     "source_type": "fortigate_kv",
+     "rows_in": 2000,
+     "rows_ok": 2000,
+     "dropped": 0,
+     "drop_reasons": {},
+     "pruned_outside_window": 0
+    }
+   ],
+   "cycle_s": {
+    "n": 9,
+    "p50": 10.687,
+    "p95": 15.075,
+    "max": 22.432
+   },
+   "delay_success_to_incident_file_s": 17.32,
+   "delay_success_to_incident_api_s": 18.26,
+   "status_disabled_after_kill_s": 9.7,
+   "incident_id": "inc-4b371300",
+   "live_status_polls": 1004,
+   "live_status_disabled_while_running": 265,
+   "live_status_max_heartbeat_age_s": 24.9,
+   "samples": [
+    {
+     "t": 1793478706.934304,
+     "batches": 0,
+     "cycles": 1,
+     "last_cycle_s": null,
+     "ingest_s": null,
+     "window_s": null,
+     "stage_wall_s": null,
+     "rows": 0,
+     "window_rows": null,
+     "incidents": 0,
+     "new_bytes": null,
+     "last_error": null
+    },
+    {
+     "t": 1793478731.652997,
+     "batches": 1,
+     "cycles": 2,
+     "last_cycle_s": 22.432,
+     "ingest_s": 2.002,
+     "window_s": 0.063,
+     "stage_wall_s": {
+      "lookups": 0.145,
+      "detect": 13.902,
+      "episodes": 0.72,
+      "link": 1.04,
+      "incidents": 0.353,
+      "publish": 0.013
+     },
+     "rows": 32,
+     "window_rows": 32,
+     "incidents": 0,
+     "new_bytes": 17043,
+     "last_error": null
+    },
+    {
+     "t": 1793478747.787455,
+     "batches": 2,
+     "cycles": 3,
+     "last_cycle_s": 15.075,
+     "ingest_s": 5.116,
+     "window_s": 0.13,
+     "stage_wall_s": {
+      "lookups": 0.404,
+      "detect": 7.379,
+      "episodes": 0.757,
+      "link": 0.725,
+      "incidents": 0.382,
+      "publish": 0.002
+     },
+     "rows": 494,
+     "window_rows": 494,
+     "incidents": 0,
+     "new_bytes": 248726,
+     "last_error": null
+    },
+    {
+     "t": 1793478760.7473257,
+     "batches": 3,
+     "cycles": 4,
+     "last_cycle_s": 11.392,
+     "ingest_s": 5.232,
+     "window_s": 0.151,
+     "stage_wall_s": {
+      "lookups": 0.096,
+      "detect": 4.357,
+      "episodes": 0.643,
+      "link": 0.6,
+      "incidents": 0.223,
+      "publish": 0.003
+     },
+     "rows": 816,
+     "window_rows": 816,
+     "incidents": 0,
+     "new_bytes": 173068,
+     "last_error": null
+    },
+    {
+     "t": 1793478775.4894364,
+     "batches": 4,
+     "cycles": 5,
+     "last_cycle_s": 14.653,
+     "ingest_s": 1.023,
+     "window_s": 0.094,
+     "stage_wall_s": {
+      "lookups": 0.12,
+      "detect": 10.068,
+      "episodes": 1.136,
+      "link": 0.914,
+      "incidents": 0.692,
+      "publish": 0.375
+     },
+     "rows": 1076,
+     "window_rows": 1076,
+     "incidents": 1,
+     "new_bytes": 135468,
+     "last_error": null
+    },
+    {
+     "t": 1793478787.3329623,
+     "batches": 5,
+     "cycles": 6,
+     "last_cycle_s": 10.687,
+     "ingest_s": 3.727,
+     "window_s": 0.054,
+     "stage_wall_s": {
+      "lookups": 0.165,
+      "detect": 5.505,
+      "episodes": 0.494,
+      "link": 0.475,
+      "incidents": 0.197,
+      "publish": 0.007
+     },
+     "rows": 1372,
+     "window_rows": 1372,
+     "incidents": 1,
+     "new_bytes": 159304,
+     "last_error": null
+    },
+    {
+     "t": 1793478796.2001894,
+     "batches": 6,
+     "cycles": 7,
+     "last_cycle_s": 7.872,
+     "ingest_s": 2.236,
+     "window_s": 0.097,
+     "stage_wall_s": {
+      "lookups": 0.161,
+      "detect": 3.868,
+      "episodes": 0.762,
+      "link": 0.392,
+      "incidents": 0.206,
+      "publish": 0.007
+     },
+     "rows": 1608,
+     "window_rows": 1608,
+     "incidents": 1,
+     "new_bytes": 127039,
+     "last_error": null
+    },
+    {
+     "t": 1793478804.5788338,
+     "batches": 7,
+     "cycles": 8,
+     "last_cycle_s": 7.896,
+     "ingest_s": 1.721,
+     "window_s": 0.065,
+     "stage_wall_s": {
+      "lookups": 0.134,
+      "detect": 4.7,
+      "episodes": 0.511,
+      "link": 0.385,
+      "incidents": 0.212,
+      "publish": 0.007
+     },
+     "rows": 1784,
+     "window_rows": 1784,
+     "incidents": 1,
+     "new_bytes": 94673,
+     "last_error": null
+    },
+    {
+     "t": 1793478815.2146635,
+     "batches": 8,
+     "cycles": 9,
+     "last_cycle_s": 9.87,
+     "ingest_s": 2.246,
+     "window_s": 0.111,
+     "stage_wall_s": {
+      "lookups": 0.211,
+      "detect": 5.773,
+      "episodes": 0.312,
+      "link": 0.554,
+      "incidents": 0.45,
+      "publish": 0.011
+     },
+     "rows": 1954,
+     "window_rows": 1954,
+     "incidents": 1,
+     "new_bytes": 91450,
+     "last_error": null
+    },
+    {
+     "t": 1793478823.7289186,
+     "batches": 9,
+     "cycles": 10,
+     "last_cycle_s": 7.844,
+     "ingest_s": 2.812,
+     "window_s": 0.109,
+     "stage_wall_s": {
+      "lookups": 0.184,
+      "detect": 3.614,
+      "episodes": 0.486,
+      "link": 0.337,
+      "incidents": 0.218,
+      "publish": 0.008
+     },
+     "rows": 2000,
+     "window_rows": 2000,
+     "incidents": 1,
+     "new_bytes": 24783,
+     "last_error": null
+    }
+   ]
+  },
+  "eta_summary": {
+   "demo": {
+    "total_wall_s": 63.1,
+    "max_abs_percent_gap": 33.1,
+    "max_abs_eta_error_pct_of_total": 662.2
+   },
+   "f1": {
+    "total_wall_s": 59.5,
+    "max_abs_percent_gap": 30.5,
+    "max_abs_eta_error_pct_of_total": 54.4
+   },
+   "g1": {
+    "total_wall_s": 37.8,
+    "max_abs_percent_gap": 32.1,
+    "max_abs_eta_error_pct_of_total": 289.1
+   },
+   "g10": {
+    "total_wall_s": 257.6,
+    "max_abs_percent_gap": 33.0,
+    "max_abs_eta_error_pct_of_total": 61.9
+   },
+   "g30": {
+    "total_wall_s": 594.4,
+    "max_abs_percent_gap": 33.1,
+    "max_abs_eta_error_pct_of_total": 56.4
+   },
+   "n10": {
+    "total_wall_s": 535.3,
+    "max_abs_percent_gap": 31.0,
+    "max_abs_eta_error_pct_of_total": 88.5
+   },
+   "t10": {
+    "total_wall_s": 422.8,
+    "max_abs_percent_gap": 30.7,
+    "max_abs_eta_error_pct_of_total": 89.8
+   },
+   "t30": {
+    "total_wall_s": 312.6,
+    "max_abs_percent_gap": 34.2,
+    "max_abs_eta_error_pct_of_total": 81.8
+   },
+   "rt10": {
+    "total_wall_s": 336.0,
+    "max_abs_percent_gap": 31.3,
+    "max_abs_eta_error_pct_of_total": 85.1
+   },
+   "rt30": {
+    "total_wall_s": 221.9,
+    "max_abs_percent_gap": 33.5,
+    "max_abs_eta_error_pct_of_total": 81.4
+   },
+   "t50s": {
+    "total_wall_s": 10.5,
+    "max_abs_percent_gap": 30.7,
+    "max_abs_eta_error_pct_of_total": 55.0
+   },
+   "g50m_sigma": {
+    "total_wall_s": 29.6,
+    "max_abs_percent_gap": 30.4,
+    "max_abs_eta_error_pct_of_total": 134.1
+   }
+  },
+  "eta_live_smoke": {
+   "run_id": "f3780ed21d8f",
+   "raw": "data/raw/smoke",
+   "status": "succeeded",
+   "total_elapsed_s": 31.0,
+   "eta_total_s_final": 28.604,
+   "polls_running": 29,
+   "polls_with_eta": 27,
+   "polls_eta_null": 2,
+   "abs_err_s": {
+    "p50": 11.4,
+    "max": 11.5
+   },
+   "abs_err_pct_of_total": {
+    "p50": 36.8,
+    "max": 37.1
+   },
+   "eta_negative": 0,
+   "bases": [
+    "None",
+    "history",
+    "history+live"
+   ],
+   "percent_monotonic": true,
+   "samples": [
+    {
+     "t": 0.03,
+     "status": "running",
+     "stage": "starting",
+     "percent": 0,
+     "elapsed_s": 0.0,
+     "eta_s": null,
+     "eta_basis": null,
+     "eta_total_s": null,
+     "stage_fraction": null,
+     "stage_elapsed_s": null,
+     "bytes_done": null,
+     "bytes_total": null,
+     "rows_done": null,
+     "ingest_mb_s": null
+    },
+    {
+     "t": 1.06,
+     "status": "running",
+     "stage": "starting",
+     "percent": 0,
+     "elapsed_s": 1.1,
+     "eta_s": null,
+     "eta_basis": null,
+     "eta_total_s": null,
+     "stage_fraction": null,
+     "stage_elapsed_s": null,
+     "bytes_done": null,
+     "bytes_total": null,
+     "rows_done": null,
+     "ingest_mb_s": null
+    },
+    {
+     "t": 2.36,
+     "status": "running",
+     "stage": "profile",
+     "percent": 2,
+     "elapsed_s": 2.1,
+     "eta_s": 27.6,
+     "eta_basis": "history",
+     "eta_total_s": 27.9,
+     "stage_fraction": null,
+     "stage_elapsed_s": 0.2,
+     "bytes_done": null,
+     "bytes_total": 41848637,
+     "rows_done": null,
+     "ingest_mb_s": null,
+     "pred_finish_s": 29.7,
+     "err_s": -1.3,
+     "err_pct_of_total": -4.2
+    },
+    {
+     "t": 3.39,
+     "status": "running",
+     "stage": "profile",
+     "percent": 2,
+     "elapsed_s": 3.4,
+     "eta_s": 27.2,
+     "eta_basis": "history",
+     "eta_total_s": 28.7,
+     "stage_fraction": null,
+     "stage_elapsed_s": 1.4,
+     "bytes_done": null,
+     "bytes_total": 41848637,
+     "rows_done": null,
+     "ingest_mb_s": null,
+     "pred_finish_s": 30.6,
+     "err_s": -0.4,
+     "err_pct_of_total": -1.3
+    },
+    {
+     "t": 4.45,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 4.4,
+     "eta_s": 26.9,
+     "eta_basis": "history",
+     "eta_total_s": 29.4,
+     "stage_fraction": 0.0,
+     "stage_elapsed_s": 0.3,
+     "bytes_done": 0,
+     "bytes_total": 41848637,
+     "rows_done": null,
+     "ingest_mb_s": null,
+     "pred_finish_s": 31.3,
+     "err_s": 0.3,
+     "err_pct_of_total": 1.0
+    },
+    {
+     "t": 5.5,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 5.5,
+     "eta_s": 26.9,
+     "eta_basis": "history",
+     "eta_total_s": 30.5,
+     "stage_fraction": 0.0,
+     "stage_elapsed_s": 1.4,
+     "bytes_done": 0,
+     "bytes_total": 41848637,
+     "rows_done": null,
+     "ingest_mb_s": null,
+     "pred_finish_s": 32.4,
+     "err_s": 1.4,
+     "err_pct_of_total": 4.5
+    },
+    {
+     "t": 6.53,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 6.5,
+     "eta_s": 26.9,
+     "eta_basis": "history",
+     "eta_total_s": 31.5,
+     "stage_fraction": 0.0,
+     "stage_elapsed_s": 2.4,
+     "bytes_done": 0,
+     "bytes_total": 41848637,
+     "rows_done": null,
+     "ingest_mb_s": null,
+     "pred_finish_s": 33.4,
+     "err_s": 2.4,
+     "err_pct_of_total": 7.7
+    },
+    {
+     "t": 7.59,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 7.6,
+     "eta_s": 27.4,
+     "eta_basis": "history+live",
+     "eta_total_s": 33.1,
+     "stage_fraction": 0.3744,
+     "stage_elapsed_s": 3.5,
+     "bytes_done": 17407820,
+     "bytes_total": 41848637,
+     "rows_done": null,
+     "ingest_mb_s": 4.97,
+     "pred_finish_s": 35.0,
+     "err_s": 4.0,
+     "err_pct_of_total": 12.9
+    },
+    {
+     "t": 8.67,
+     "status": "running",
+     "stage": "detect",
+     "percent": 50,
+     "elapsed_s": 8.7,
+     "eta_s": 33.8,
+     "eta_basis": "history",
+     "eta_total_s": 40.6,
+     "stage_fraction": null,
+     "stage_elapsed_s": 0.3,
+     "bytes_done": 41848637,
+     "bytes_total": 41848637,
+     "rows_done": 50000,
+     "ingest_mb_s": 10.61,
+     "pred_finish_s": 42.5,
+     "err_s": 11.5,
+     "err_pct_of_total": 37.1
+    },
+    {
+     "t": 9.72,
+     "status": "running",
+     "stage": "detect",
+     "percent": 50,
+     "elapsed_s": 9.7,
+     "eta_s": 32.8,
+     "eta_basis": "history",
+     "eta_total_s": 40.6,
+     "stage_fraction": null,
+     "stage_elapsed_s": 1.4,
+     "bytes_done": 41848637,
+     "bytes_total": 41848637,
+     "rows_done": 50000,
+     "ingest_mb_s": 10.61,
+     "pred_finish_s": 42.5,
+     "err_s": 11.5,
+     "err_pct_of_total": 37.1
+    },
+    {
+     "t": 10.76,
+     "status": "running",
+     "stage": "detect",
+     "percent": 50,
+     "elapsed_s": 10.8,
+     "eta_s": 31.7,
+     "eta_basis": "history",
+     "eta_total_s": 40.6,
+     "stage_fraction": null,
+     "stage_elapsed_s": 2.4,
+     "bytes_done": 41848637,
+     "bytes_total": 41848637,
+     "rows_done": 50000,
+     "ingest_mb_s": 10.61,
+     "pred_finish_s": 42.5,
+     "err_s": 11.5,
+     "err_pct_of_total": 37.1
+    },
+    {
+     "t": 11.91,
+     "status": "running",
+     "stage": "detect",
+     "percent": 50,
+     "elapsed_s": 11.8,
+     "eta_s": 30.6,
+     "eta_basis": "history",
+     "eta_total_s": 40.6,
+     "stage_fraction": null,
+     "stage_elapsed_s": 3.6,
+     "bytes_done": 41848637,
+     "bytes_total": 41848637,
+     "rows_done": 50000,
+     "ingest_mb_s": 10.61,
+     "pred_finish_s": 42.4,
+     "err_s": 11.4,
+     "err_pct_of_total": 36.8
+    },
+    {
+     "t": 12.94,
+     "status": "running",
+     "stage": "detect",
+     "percent": 50,
+     "elapsed_s": 12.9,
+     "eta_s": 29.5,
+     "eta_basis": "history",
+     "eta_total_s": 40.6,
+     "stage_fraction": null,
+     "stage_elapsed_s": 4.6,
+     "bytes_done": 41848637,
+     "bytes_total": 41848637,
+     "rows_done": 50000,
+     "ingest_mb_s": 10.61,
+     "pred_finish_s": 42.4,
+     "err_s": 11.4,
+     "err_pct_of_total": 36.8
+    },
+    {
+     "t": 14.0,
+     "status": "running",
+     "stage": "detect",
+     "percent": 50,
+     "elapsed_s": 14.0,
+     "eta_s": 28.5,
+     "eta_basis": "history",
+     "eta_total_s": 40.6,
+     "stage_fraction": null,
+     "stage_elapsed_s": 5.6,
+     "bytes_done": 41848637,
+     "bytes_total": 41848637,
+     "rows_done": 50000,
+     "ingest_mb_s": 10.61,
+     "pred_finish_s": 42.5,
+     "err_s": 11.5,
+     "err_pct_of_total": 37.1
+    },
+    {
+     "t": 15.01,
+     "status": "running",
+     "stage": "detect",
+     "percent": 50,
+     "elapsed_s": 15.0,
+     "eta_s": 27.5,
+     "eta_basis": "history",
+     "eta_total_s": 40.6,
+     "stage_fraction": null,
+     "stage_elapsed_s": 6.7,
+     "bytes_done": 41848637,
+     "bytes_total": 41848637,
+     "rows_done": 50000,
+     "ingest_mb_s": 10.61,
+     "pred_finish_s": 42.5,
+     "err_s": 11.5,
+     "err_pct_of_total": 37.1
+    },
+    {
+     "t": 16.09,
+     "status": "running",
+     "stage": "detect",
+     "percent": 50,
+     "elapsed_s": 16.1,
+     "eta_s": 26.4,
+     "eta_basis": "history",
+     "eta_total_s": 40.6,
+     "stage_fraction": null,
+     "stage_elapsed_s": 7.8,
+     "bytes_done": 41848637,
+     "bytes_total": 41848637,
+     "rows_done": 50000,
+     "ingest_mb_s": 10.61,
+     "pred_finish_s": 42.5,
+     "err_s": 11.5,
+     "err_pct_of_total": 37.1
+    },
+    {
+     "t": 17.14,
+     "status": "running",
+     "stage": "detect",
+     "percent": 50,
+     "elapsed_s": 17.1,
+     "eta_s": 25.3,
+     "eta_basis": "history",
+     "eta_total_s": 40.6,
+     "stage_fraction": null,
+     "stage_elapsed_s": 8.8,
+     "bytes_done": 41848637,
+     "bytes_total": 41848637,
+     "rows_done": 50000,
+     "ingest_mb_s": 10.61,
+     "pred_finish_s": 42.4,
+     "err_s": 11.4,
+     "err_pct_of_total": 36.8
+    },
+    {
+     "t": 18.19,
+     "status": "running",
+     "stage": "detect",
+     "percent": 50,
+     "elapsed_s": 18.2,
+     "eta_s": 24.3,
+     "eta_basis": "history",
+     "eta_total_s": 40.6,
+     "stage_fraction": null,
+     "stage_elapsed_s": 9.8,
+     "bytes_done": 41848637,
+     "bytes_total": 41848637,
+     "rows_done": 50000,
+     "ingest_mb_s": 10.61,
+     "pred_finish_s": 42.5,
+     "err_s": 11.5,
+     "err_pct_of_total": 37.1
+    },
+    {
+     "t": 19.22,
+     "status": "running",
+     "stage": "detect",
+     "percent": 50,
+     "elapsed_s": 19.2,
+     "eta_s": 23.3,
+     "eta_basis": "history",
+     "eta_total_s": 40.6,
+     "stage_fraction": null,
+     "stage_elapsed_s": 10.9,
+     "bytes_done": 41848637,
+     "bytes_total": 41848637,
+     "rows_done": 50000,
+     "ingest_mb_s": 10.61,
+     "pred_finish_s": 42.5,
+     "err_s": 11.5,
+     "err_pct_of_total": 37.1
+    },
+    {
+     "t": 20.28,
+     "status": "running",
+     "stage": "detect",
+     "percent": 50,
+     "elapsed_s": 20.2,
+     "eta_s": 22.2,
+     "eta_basis": "history",
+     "eta_total_s": 40.6,
+     "stage_fraction": null,
+     "stage_elapsed_s": 11.9,
+     "bytes_done": 41848637,
+     "bytes_total": 41848637,
+     "rows_done": 50000,
+     "ingest_mb_s": 10.61,
+     "pred_finish_s": 42.4,
+     "err_s": 11.4,
+     "err_pct_of_total": 36.8
+    },
+    {
+     "t": 21.31,
+     "status": "running",
+     "stage": "detect",
+     "percent": 50,
+     "elapsed_s": 21.3,
+     "eta_s": 21.2,
+     "eta_basis": "history",
+     "eta_total_s": 40.6,
+     "stage_fraction": null,
+     "stage_elapsed_s": 13.0,
+     "bytes_done": 41848637,
+     "bytes_total": 41848637,
+     "rows_done": 50000,
+     "ingest_mb_s": 10.61,
+     "pred_finish_s": 42.5,
+     "err_s": 11.5,
+     "err_pct_of_total": 37.1
+    },
+    {
+     "t": 22.42,
+     "status": "running",
+     "stage": "detect",
+     "percent": 50,
+     "elapsed_s": 22.4,
+     "eta_s": 20.1,
+     "eta_basis": "history",
+     "eta_total_s": 40.6,
+     "stage_fraction": null,
+     "stage_elapsed_s": 14.1,
+     "bytes_done": 41848637,
+     "bytes_total": 41848637,
+     "rows_done": 50000,
+     "ingest_mb_s": 10.61,
+     "pred_finish_s": 42.5,
+     "err_s": 11.5,
+     "err_pct_of_total": 37.1
+    },
+    {
+     "t": 23.48,
+     "status": "running",
+     "stage": "detect",
+     "percent": 50,
+     "elapsed_s": 23.5,
+     "eta_s": 19.0,
+     "eta_basis": "history",
+     "eta_total_s": 40.6,
+     "stage_fraction": null,
+     "stage_elapsed_s": 15.1,
+     "bytes_done": 41848637,
+     "bytes_total": 41848637,
+     "rows_done": 50000,
+     "ingest_mb_s": 10.61,
+     "pred_finish_s": 42.5,
+     "err_s": 11.5,
+     "err_pct_of_total": 37.1
+    },
+    {
+     "t": 24.51,
+     "status": "running",
+     "stage": "detect",
+     "percent": 50,
+     "elapsed_s": 24.5,
+     "eta_s": 18.0,
+     "eta_basis": "history",
+     "eta_total_s": 40.6,
+     "stage_fraction": null,
+     "stage_elapsed_s": 16.2,
+     "bytes_done": 41848637,
+     "bytes_total": 41848637,
+     "rows_done": 50000,
+     "ingest_mb_s": 10.61,
+     "pred_finish_s": 42.5,
+     "err_s": 11.5,
+     "err_pct_of_total": 37.1
+    },
+    {
+     "t": 25.58,
+     "status": "running",
+     "stage": "detect",
+     "percent": 50,
+     "elapsed_s": 25.5,
+     "eta_s": 16.9,
+     "eta_basis": "history",
+     "eta_total_s": 40.6,
+     "stage_fraction": null,
+     "stage_elapsed_s": 17.2,
+     "bytes_done": 41848637,
+     "bytes_total": 41848637,
+     "rows_done": 50000,
+     "ingest_mb_s": 10.61,
+     "pred_finish_s": 42.4,
+     "err_s": 11.4,
+     "err_pct_of_total": 36.8
+    },
+    {
+     "t": 26.64,
+     "status": "running",
+     "stage": "episodes",
+     "percent": 65,
+     "elapsed_s": 26.6,
+     "eta_s": 1.2,
+     "eta_basis": "history",
+     "eta_total_s": 25.9,
+     "stage_fraction": null,
+     "stage_elapsed_s": 0.1,
+     "bytes_done": 41848637,
+     "bytes_total": 41848637,
+     "rows_done": 50000,
+     "ingest_mb_s": 10.61,
+     "pred_finish_s": 27.8,
+     "err_s": -3.2,
+     "err_pct_of_total": -10.3
+    },
+    {
+     "t": 27.73,
+     "status": "running",
+     "stage": "link",
+     "percent": 72,
+     "elapsed_s": 27.7,
+     "eta_s": 0.9,
+     "eta_basis": "history",
+     "eta_total_s": 26.7,
+     "stage_fraction": null,
+     "stage_elapsed_s": 0.8,
+     "bytes_done": 41848637,
+     "bytes_total": 41848637,
+     "rows_done": 50000,
+     "ingest_mb_s": 10.61,
+     "pred_finish_s": 28.6,
+     "err_s": -2.4,
+     "err_pct_of_total": -7.7
+    },
+    {
+     "t": 28.81,
+     "status": "running",
+     "stage": "link",
+     "percent": 72,
+     "elapsed_s": 28.8,
+     "eta_s": 1.3,
+     "eta_basis": "history",
+     "eta_total_s": 28.2,
+     "stage_fraction": null,
+     "stage_elapsed_s": 1.9,
+     "bytes_done": 41848637,
+     "bytes_total": 41848637,
+     "rows_done": 50000,
+     "ingest_mb_s": 10.61,
+     "pred_finish_s": 30.1,
+     "err_s": -0.9,
+     "err_pct_of_total": -2.9
+    },
+    {
+     "t": 29.91,
+     "status": "running",
+     "stage": "incidents",
+     "percent": 80,
+     "elapsed_s": 29.9,
+     "eta_s": 0.9,
+     "eta_basis": "history",
+     "eta_total_s": 28.9,
+     "stage_fraction": null,
+     "stage_elapsed_s": 0.1,
+     "bytes_done": 41848637,
+     "bytes_total": 41848637,
+     "rows_done": 50000,
+     "ingest_mb_s": 10.61,
+     "pred_finish_s": 30.8,
+     "err_s": -0.2,
+     "err_pct_of_total": -0.6
+    },
+    {
+     "t": 30.97,
+     "status": "succeeded",
+     "stage": "done",
+     "percent": 100,
+     "elapsed_s": 31.0,
+     "eta_s": 0.0,
+     "eta_basis": null,
+     "eta_total_s": 28.604,
+     "stage_fraction": null,
+     "stage_elapsed_s": null,
+     "bytes_done": 41848637,
+     "bytes_total": 41848637,
+     "rows_done": 50000,
+     "ingest_mb_s": 10.61
+    }
+   ]
+  },
+  "eta_live_f1": {
+   "run_id": "fc02e3e12df6",
+   "raw": "data/raw/f1",
+   "status": "succeeded",
+   "total_elapsed_s": 262.1,
+   "eta_total_s_final": 257.49,
+   "polls_running": 200,
+   "polls_with_eta": 196,
+   "polls_eta_null": 4,
+   "abs_err_s": {
+    "p50": 80.6,
+    "max": 191.9
+   },
+   "abs_err_pct_of_total": {
+    "p50": 30.7,
+    "max": 73.2
+   },
+   "eta_negative": 0,
+   "bases": [
+    "None",
+    "history",
+    "history+live"
+   ],
+   "percent_monotonic": true,
+   "samples": [
+    {
+     "t": 0.05,
+     "status": "running",
+     "stage": "starting",
+     "percent": 0,
+     "elapsed_s": 0.0,
+     "eta_s": null,
+     "eta_basis": null,
+     "eta_total_s": null,
+     "stage_fraction": null,
+     "stage_elapsed_s": null,
+     "bytes_done": null,
+     "bytes_total": null,
+     "rows_done": null,
+     "ingest_mb_s": null
+    },
+    {
+     "t": 1.08,
+     "status": "running",
+     "stage": "starting",
+     "percent": 0,
+     "elapsed_s": 1.1,
+     "eta_s": null,
+     "eta_basis": null,
+     "eta_total_s": null,
+     "stage_fraction": null,
+     "stage_elapsed_s": null,
+     "bytes_done": null,
+     "bytes_total": null,
+     "rows_done": null,
+     "ingest_mb_s": null
+    },
+    {
+     "t": 2.11,
+     "status": "running",
+     "stage": "starting",
+     "percent": 0,
+     "elapsed_s": 2.1,
+     "eta_s": null,
+     "eta_basis": null,
+     "eta_total_s": null,
+     "stage_fraction": null,
+     "stage_elapsed_s": null,
+     "bytes_done": null,
+     "bytes_total": null,
+     "rows_done": null,
+     "ingest_mb_s": null
+    },
+    {
+     "t": 3.12,
+     "status": "running",
+     "stage": "starting",
+     "percent": 0,
+     "elapsed_s": 3.1,
+     "eta_s": null,
+     "eta_basis": null,
+     "eta_total_s": null,
+     "stage_fraction": null,
+     "stage_elapsed_s": null,
+     "bytes_done": null,
+     "bytes_total": null,
+     "rows_done": null,
+     "ingest_mb_s": null
+    },
+    {
+     "t": 4.28,
+     "status": "running",
+     "stage": "profile",
+     "percent": 2,
+     "elapsed_s": 4.2,
+     "eta_s": 66.0,
+     "eta_basis": "history",
+     "eta_total_s": 67.0,
+     "stage_fraction": null,
+     "stage_elapsed_s": 0.9,
+     "bytes_done": null,
+     "bytes_total": 1073821394,
+     "rows_done": null,
+     "ingest_mb_s": null,
+     "pred_finish_s": 70.2,
+     "err_s": -191.9,
+     "err_pct_of_total": -73.2
+    },
+    {
+     "t": 5.36,
+     "status": "running",
+     "stage": "profile",
+     "percent": 2,
+     "elapsed_s": 5.3,
+     "eta_s": 64.9,
+     "eta_basis": "history",
+     "eta_total_s": 67.0,
+     "stage_fraction": null,
+     "stage_elapsed_s": 2.0,
+     "bytes_done": null,
+     "bytes_total": 1073821394,
+     "rows_done": null,
+     "ingest_mb_s": null,
+     "pred_finish_s": 70.2,
+     "err_s": -191.9,
+     "err_pct_of_total": -73.2
+    },
+    {
+     "t": 6.41,
+     "status": "running",
+     "stage": "profile",
+     "percent": 2,
+     "elapsed_s": 6.4,
+     "eta_s": 63.8,
+     "eta_basis": "history",
+     "eta_total_s": 67.0,
+     "stage_fraction": null,
+     "stage_elapsed_s": 3.1,
+     "bytes_done": null,
+     "bytes_total": 1073821394,
+     "rows_done": null,
+     "ingest_mb_s": null,
+     "pred_finish_s": 70.2,
+     "err_s": -191.9,
+     "err_pct_of_total": -73.2
+    },
+    {
+     "t": 7.47,
+     "status": "running",
+     "stage": "profile",
+     "percent": 2,
+     "elapsed_s": 7.5,
+     "eta_s": 62.8,
+     "eta_basis": "history",
+     "eta_total_s": 67.0,
+     "stage_fraction": null,
+     "stage_elapsed_s": 4.2,
+     "bytes_done": null,
+     "bytes_total": 1073821394,
+     "rows_done": null,
+     "ingest_mb_s": null,
+     "pred_finish_s": 70.3,
+     "err_s": -191.8,
+     "err_pct_of_total": -73.2
+    },
+    {
+     "t": 8.5,
+     "status": "running",
+     "stage": "profile",
+     "percent": 2,
+     "elapsed_s": 8.5,
+     "eta_s": 62.2,
+     "eta_basis": "history",
+     "eta_total_s": 67.4,
+     "stage_fraction": null,
+     "stage_elapsed_s": 5.2,
+     "bytes_done": null,
+     "bytes_total": 1073821394,
+     "rows_done": null,
+     "ingest_mb_s": null,
+     "pred_finish_s": 70.7,
+     "err_s": -191.4,
+     "err_pct_of_total": -73.0
+    },
+    {
+     "t": 9.55,
+     "status": "running",
+     "stage": "profile",
+     "percent": 2,
+     "elapsed_s": 9.5,
+     "eta_s": 62.7,
+     "eta_basis": "history",
+     "eta_total_s": 69.0,
+     "stage_fraction": null,
+     "stage_elapsed_s": 6.2,
+     "bytes_done": null,
+     "bytes_total": 1073821394,
+     "rows_done": null,
+     "ingest_mb_s": null,
+     "pred_finish_s": 72.2,
+     "err_s": -189.9,
+     "err_pct_of_total": -72.5
+    },
+    {
+     "t": 10.58,
+     "status": "running",
+     "stage": "profile",
+     "percent": 2,
+     "elapsed_s": 10.6,
+     "eta_s": 63.2,
+     "eta_basis": "history",
+     "eta_total_s": 70.5,
+     "stage_fraction": null,
+     "stage_elapsed_s": 7.3,
+     "bytes_done": null,
+     "bytes_total": 1073821394,
+     "rows_done": null,
+     "ingest_mb_s": null,
+     "pred_finish_s": 73.8,
+     "err_s": -188.3,
+     "err_pct_of_total": -71.8
+    },
+    {
+     "t": 11.78,
+     "status": "running",
+     "stage": "profile",
+     "percent": 2,
+     "elapsed_s": 11.6,
+     "eta_s": 63.8,
+     "eta_basis": "history",
+     "eta_total_s": 72.3,
+     "stage_fraction": null,
+     "stage_elapsed_s": 8.5,
+     "bytes_done": null,
+     "bytes_total": 1073821394,
+     "rows_done": null,
+     "ingest_mb_s": null,
+     "pred_finish_s": 75.4,
+     "err_s": -186.7,
+     "err_pct_of_total": -71.2
+    },
+    {
+     "t": 12.81,
+     "status": "running",
+     "stage": "profile",
+     "percent": 2,
+     "elapsed_s": 12.8,
+     "eta_s": 64.3,
+     "eta_basis": "history",
+     "eta_total_s": 73.8,
+     "stage_fraction": null,
+     "stage_elapsed_s": 9.5,
+     "bytes_done": null,
+     "bytes_total": 1073821394,
+     "rows_done": null,
+     "ingest_mb_s": null,
+     "pred_finish_s": 77.1,
+     "err_s": -185.0,
+     "err_pct_of_total": -70.6
+    },
+    {
+     "t": 13.88,
+     "status": "running",
+     "stage": "profile",
+     "percent": 2,
+     "elapsed_s": 13.8,
+     "eta_s": 64.8,
+     "eta_basis": "history",
+     "eta_total_s": 75.4,
+     "stage_fraction": null,
+     "stage_elapsed_s": 10.6,
+     "bytes_done": null,
+     "bytes_total": 1073821394,
+     "rows_done": null,
+     "ingest_mb_s": null,
+     "pred_finish_s": 78.6,
+     "err_s": -183.5,
+     "err_pct_of_total": -70.0
+    },
+    {
+     "t": 14.92,
+     "status": "running",
+     "stage": "profile",
+     "percent": 2,
+     "elapsed_s": 14.9,
+     "eta_s": 65.4,
+     "eta_basis": "history",
+     "eta_total_s": 77.0,
+     "stage_fraction": null,
+     "stage_elapsed_s": 11.6,
+     "bytes_done": null,
+     "bytes_total": 1073821394,
+     "rows_done": null,
+     "ingest_mb_s": null,
+     "pred_finish_s": 80.3,
+     "err_s": -181.8,
+     "err_pct_of_total": -69.4
+    },
+    {
+     "t": 16.53,
+     "status": "running",
+     "stage": "profile",
+     "percent": 2,
+     "elapsed_s": 16.5,
+     "eta_s": 66.2,
+     "eta_basis": "history",
+     "eta_total_s": 79.4,
+     "stage_fraction": null,
+     "stage_elapsed_s": 13.2,
+     "bytes_done": null,
+     "bytes_total": 1073821394,
+     "rows_done": null,
+     "ingest_mb_s": null,
+     "pred_finish_s": 82.7,
+     "err_s": -179.4,
+     "err_pct_of_total": -68.4
+    },
+    {
+     "t": 17.89,
+     "status": "running",
+     "stage": "profile",
+     "percent": 2,
+     "elapsed_s": 17.8,
+     "eta_s": 66.8,
+     "eta_basis": "history",
+     "eta_total_s": 81.4,
+     "stage_fraction": null,
+     "stage_elapsed_s": 14.5,
+     "bytes_done": null,
+     "bytes_total": 1073821394,
+     "rows_done": null,
+     "ingest_mb_s": null,
+     "pred_finish_s": 84.6,
+     "err_s": -177.5,
+     "err_pct_of_total": -67.7
+    },
+    {
+     "t": 19.28,
+     "status": "running",
+     "stage": "profile",
+     "percent": 2,
+     "elapsed_s": 19.2,
+     "eta_s": 67.5,
+     "eta_basis": "history",
+     "eta_total_s": 83.5,
+     "stage_fraction": null,
+     "stage_elapsed_s": 15.9,
+     "bytes_done": null,
+     "bytes_total": 1073821394,
+     "rows_done": null,
+     "ingest_mb_s": null,
+     "pred_finish_s": 86.7,
+     "err_s": -175.4,
+     "err_pct_of_total": -66.9
+    },
+    {
+     "t": 20.55,
+     "status": "running",
+     "stage": "profile",
+     "percent": 2,
+     "elapsed_s": 20.5,
+     "eta_s": 68.2,
+     "eta_basis": "history",
+     "eta_total_s": 85.4,
+     "stage_fraction": null,
+     "stage_elapsed_s": 17.2,
+     "bytes_done": null,
+     "bytes_total": 1073821394,
+     "rows_done": null,
+     "ingest_mb_s": null,
+     "pred_finish_s": 88.7,
+     "err_s": -173.4,
+     "err_pct_of_total": -66.2
+    },
+    {
+     "t": 21.61,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 21.6,
+     "eta_s": 117.3,
+     "eta_basis": "history",
+     "eta_total_s": 135.6,
+     "stage_fraction": 0.0,
+     "stage_elapsed_s": 0.1,
+     "bytes_done": 0,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": null,
+     "pred_finish_s": 138.9,
+     "err_s": -123.2,
+     "err_pct_of_total": -47.0
+    },
+    {
+     "t": 24.38,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 22.7,
+     "eta_s": 114.5,
+     "eta_basis": "history",
+     "eta_total_s": 135.6,
+     "stage_fraction": 0.0462,
+     "stage_elapsed_s": 2.9,
+     "bytes_done": 55142048,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 19.01,
+     "pred_finish_s": 137.2,
+     "err_s": -124.9,
+     "err_pct_of_total": -47.7
+    },
+    {
+     "t": 25.81,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 25.8,
+     "eta_s": 114.5,
+     "eta_basis": "history",
+     "eta_total_s": 137.0,
+     "stage_fraction": 0.0462,
+     "stage_elapsed_s": 4.4,
+     "bytes_done": 55142048,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 12.53,
+     "pred_finish_s": 140.3,
+     "err_s": -121.8,
+     "err_pct_of_total": -46.5
+    },
+    {
+     "t": 27.26,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 27.2,
+     "eta_s": 114.5,
+     "eta_basis": "history",
+     "eta_total_s": 138.4,
+     "stage_fraction": 0.0462,
+     "stage_elapsed_s": 5.8,
+     "bytes_done": 55142048,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 9.51,
+     "pred_finish_s": 141.7,
+     "err_s": -120.4,
+     "err_pct_of_total": -45.9
+    },
+    {
+     "t": 28.8,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 28.8,
+     "eta_s": 114.5,
+     "eta_basis": "history",
+     "eta_total_s": 140.0,
+     "stage_fraction": 0.0462,
+     "stage_elapsed_s": 7.3,
+     "bytes_done": 55142048,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 7.55,
+     "pred_finish_s": 143.3,
+     "err_s": -118.8,
+     "err_pct_of_total": -45.3
+    },
+    {
+     "t": 30.41,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 30.2,
+     "eta_s": 114.5,
+     "eta_basis": "history",
+     "eta_total_s": 141.5,
+     "stage_fraction": 0.0462,
+     "stage_elapsed_s": 8.9,
+     "bytes_done": 55142048,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 6.2,
+     "pred_finish_s": 144.7,
+     "err_s": -117.4,
+     "err_pct_of_total": -44.8
+    },
+    {
+     "t": 31.78,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 31.8,
+     "eta_s": 114.5,
+     "eta_basis": "history",
+     "eta_total_s": 143.0,
+     "stage_fraction": 0.0462,
+     "stage_elapsed_s": 10.3,
+     "bytes_done": 55142048,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 5.35,
+     "pred_finish_s": 146.3,
+     "err_s": -115.8,
+     "err_pct_of_total": -44.2
+    },
+    {
+     "t": 33.33,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 33.3,
+     "eta_s": 114.5,
+     "eta_basis": "history",
+     "eta_total_s": 144.5,
+     "stage_fraction": 0.0462,
+     "stage_elapsed_s": 11.8,
+     "bytes_done": 55142048,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 4.67,
+     "pred_finish_s": 147.8,
+     "err_s": -114.3,
+     "err_pct_of_total": -43.6
+    },
+    {
+     "t": 34.94,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 34.8,
+     "eta_s": 114.5,
+     "eta_basis": "history",
+     "eta_total_s": 146.1,
+     "stage_fraction": 0.0462,
+     "stage_elapsed_s": 13.5,
+     "bytes_done": 55142048,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 4.08,
+     "pred_finish_s": 149.3,
+     "err_s": -112.8,
+     "err_pct_of_total": -43.0
+    },
+    {
+     "t": 36.47,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 36.4,
+     "eta_s": 114.5,
+     "eta_basis": "history",
+     "eta_total_s": 147.7,
+     "stage_fraction": 0.0462,
+     "stage_elapsed_s": 15.0,
+     "bytes_done": 55142048,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 3.68,
+     "pred_finish_s": 150.9,
+     "err_s": -111.2,
+     "err_pct_of_total": -42.4
+    },
+    {
+     "t": 37.95,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 37.9,
+     "eta_s": 114.5,
+     "eta_basis": "history",
+     "eta_total_s": 149.1,
+     "stage_fraction": 0.0462,
+     "stage_elapsed_s": 16.5,
+     "bytes_done": 55142048,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 3.34,
+     "pred_finish_s": 152.4,
+     "err_s": -109.7,
+     "err_pct_of_total": -41.9
+    },
+    {
+     "t": 39.5,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 39.4,
+     "eta_s": 114.5,
+     "eta_basis": "history",
+     "eta_total_s": 150.7,
+     "stage_fraction": 0.0462,
+     "stage_elapsed_s": 18.0,
+     "bytes_done": 55142048,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 3.06,
+     "pred_finish_s": 153.9,
+     "err_s": -108.2,
+     "err_pct_of_total": -41.3
+    },
+    {
+     "t": 40.95,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 40.9,
+     "eta_s": 114.5,
+     "eta_basis": "history",
+     "eta_total_s": 152.1,
+     "stage_fraction": 0.0462,
+     "stage_elapsed_s": 19.5,
+     "bytes_done": 55142048,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 2.83,
+     "pred_finish_s": 155.4,
+     "err_s": -106.7,
+     "err_pct_of_total": -40.7
+    },
+    {
+     "t": 42.41,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 42.4,
+     "eta_s": 114.5,
+     "eta_basis": "history",
+     "eta_total_s": 153.6,
+     "stage_fraction": 0.0462,
+     "stage_elapsed_s": 20.9,
+     "bytes_done": 55142048,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 2.64,
+     "pred_finish_s": 156.9,
+     "err_s": -105.2,
+     "err_pct_of_total": -40.1
+    },
+    {
+     "t": 43.95,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 43.9,
+     "eta_s": 114.5,
+     "eta_basis": "history",
+     "eta_total_s": 155.1,
+     "stage_fraction": 0.0462,
+     "stage_elapsed_s": 22.5,
+     "bytes_done": 55142048,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 2.45,
+     "pred_finish_s": 158.4,
+     "err_s": -103.7,
+     "err_pct_of_total": -39.6
+    },
+    {
+     "t": 45.25,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 45.2,
+     "eta_s": 114.5,
+     "eta_basis": "history",
+     "eta_total_s": 156.5,
+     "stage_fraction": 0.0462,
+     "stage_elapsed_s": 23.8,
+     "bytes_done": 55142048,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 2.32,
+     "pred_finish_s": 159.7,
+     "err_s": -102.4,
+     "err_pct_of_total": -39.1
+    },
+    {
+     "t": 46.62,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 46.6,
+     "eta_s": 114.5,
+     "eta_basis": "history",
+     "eta_total_s": 157.8,
+     "stage_fraction": 0.0462,
+     "stage_elapsed_s": 25.2,
+     "bytes_done": 55142048,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 2.19,
+     "pred_finish_s": 161.1,
+     "err_s": -101.0,
+     "err_pct_of_total": -38.5
+    },
+    {
+     "t": 48.01,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 48.0,
+     "eta_s": 114.5,
+     "eta_basis": "history",
+     "eta_total_s": 159.2,
+     "stage_fraction": 0.0462,
+     "stage_elapsed_s": 26.6,
+     "bytes_done": 55142048,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 2.07,
+     "pred_finish_s": 162.5,
+     "err_s": -99.6,
+     "err_pct_of_total": -38.0
+    },
+    {
+     "t": 49.44,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 49.3,
+     "eta_s": 114.5,
+     "eta_basis": "history",
+     "eta_total_s": 160.7,
+     "stage_fraction": 0.0462,
+     "stage_elapsed_s": 28.0,
+     "bytes_done": 55142048,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 1.97,
+     "pred_finish_s": 163.8,
+     "err_s": -98.3,
+     "err_pct_of_total": -37.5
+    },
+    {
+     "t": 50.84,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 50.8,
+     "eta_s": 114.5,
+     "eta_basis": "history",
+     "eta_total_s": 162.0,
+     "stage_fraction": 0.0462,
+     "stage_elapsed_s": 29.4,
+     "bytes_done": 55142048,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 1.88,
+     "pred_finish_s": 165.3,
+     "err_s": -96.8,
+     "err_pct_of_total": -36.9
+    },
+    {
+     "t": 52.39,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 52.3,
+     "eta_s": 114.5,
+     "eta_basis": "history",
+     "eta_total_s": 163.6,
+     "stage_fraction": 0.0462,
+     "stage_elapsed_s": 30.9,
+     "bytes_done": 55142048,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 1.78,
+     "pred_finish_s": 166.8,
+     "err_s": -95.3,
+     "err_pct_of_total": -36.4
+    },
+    {
+     "t": 53.88,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 53.8,
+     "eta_s": 114.5,
+     "eta_basis": "history",
+     "eta_total_s": 165.1,
+     "stage_fraction": 0.0462,
+     "stage_elapsed_s": 32.4,
+     "bytes_done": 55142048,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 1.7,
+     "pred_finish_s": 168.3,
+     "err_s": -93.8,
+     "err_pct_of_total": -35.8
+    },
+    {
+     "t": 55.42,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 55.4,
+     "eta_s": 114.5,
+     "eta_basis": "history",
+     "eta_total_s": 166.6,
+     "stage_fraction": 0.0462,
+     "stage_elapsed_s": 33.9,
+     "bytes_done": 55142048,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 1.63,
+     "pred_finish_s": 169.9,
+     "err_s": -92.2,
+     "err_pct_of_total": -35.2
+    },
+    {
+     "t": 56.75,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 56.7,
+     "eta_s": 114.5,
+     "eta_basis": "history",
+     "eta_total_s": 167.9,
+     "stage_fraction": 0.0462,
+     "stage_elapsed_s": 35.3,
+     "bytes_done": 55142048,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 1.56,
+     "pred_finish_s": 171.2,
+     "err_s": -90.9,
+     "err_pct_of_total": -34.7
+    },
+    {
+     "t": 58.12,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 58.1,
+     "eta_s": 114.5,
+     "eta_basis": "history",
+     "eta_total_s": 169.3,
+     "stage_fraction": 0.0462,
+     "stage_elapsed_s": 36.6,
+     "bytes_done": 55142048,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 1.51,
+     "pred_finish_s": 172.6,
+     "err_s": -89.5,
+     "err_pct_of_total": -34.1
+    },
+    {
+     "t": 59.56,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 59.5,
+     "eta_s": 114.5,
+     "eta_basis": "history",
+     "eta_total_s": 170.8,
+     "stage_fraction": 0.0462,
+     "stage_elapsed_s": 38.1,
+     "bytes_done": 55142048,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 1.45,
+     "pred_finish_s": 174.0,
+     "err_s": -88.1,
+     "err_pct_of_total": -33.6
+    },
+    {
+     "t": 61.14,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 61.1,
+     "eta_s": 114.5,
+     "eta_basis": "history",
+     "eta_total_s": 172.3,
+     "stage_fraction": 0.0462,
+     "stage_elapsed_s": 39.7,
+     "bytes_done": 55142048,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 1.39,
+     "pred_finish_s": 175.6,
+     "err_s": -86.5,
+     "err_pct_of_total": -33.0
+    },
+    {
+     "t": 62.73,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 62.7,
+     "eta_s": 114.5,
+     "eta_basis": "history",
+     "eta_total_s": 173.9,
+     "stage_fraction": 0.0462,
+     "stage_elapsed_s": 41.3,
+     "bytes_done": 55142048,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 1.34,
+     "pred_finish_s": 177.2,
+     "err_s": -84.9,
+     "err_pct_of_total": -32.4
+    },
+    {
+     "t": 64.33,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 64.2,
+     "eta_s": 114.5,
+     "eta_basis": "history",
+     "eta_total_s": 175.4,
+     "stage_fraction": 0.0462,
+     "stage_elapsed_s": 42.7,
+     "bytes_done": 55142048,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 1.29,
+     "pred_finish_s": 178.7,
+     "err_s": -83.4,
+     "err_pct_of_total": -31.8
+    },
+    {
+     "t": 66.56,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 65.7,
+     "eta_s": 114.5,
+     "eta_basis": "history",
+     "eta_total_s": 177.0,
+     "stage_fraction": 0.0462,
+     "stage_elapsed_s": 44.3,
+     "bytes_done": 55142048,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 1.24,
+     "pred_finish_s": 180.2,
+     "err_s": -81.9,
+     "err_pct_of_total": -31.2
+    },
+    {
+     "t": 67.97,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 67.9,
+     "eta_s": 114.5,
+     "eta_basis": "history",
+     "eta_total_s": 179.2,
+     "stage_fraction": 0.0462,
+     "stage_elapsed_s": 46.5,
+     "bytes_done": 55142048,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 1.19,
+     "pred_finish_s": 182.4,
+     "err_s": -79.7,
+     "err_pct_of_total": -30.4
+    },
+    {
+     "t": 69.33,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 69.3,
+     "eta_s": 114.5,
+     "eta_basis": "history",
+     "eta_total_s": 180.5,
+     "stage_fraction": 0.0462,
+     "stage_elapsed_s": 47.8,
+     "bytes_done": 55142048,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 1.15,
+     "pred_finish_s": 183.8,
+     "err_s": -78.3,
+     "err_pct_of_total": -29.9
+    },
+    {
+     "t": 70.8,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 70.8,
+     "eta_s": 114.5,
+     "eta_basis": "history",
+     "eta_total_s": 182.0,
+     "stage_fraction": 0.0462,
+     "stage_elapsed_s": 49.3,
+     "bytes_done": 55142048,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 1.12,
+     "pred_finish_s": 185.3,
+     "err_s": -76.8,
+     "err_pct_of_total": -29.3
+    },
+    {
+     "t": 72.25,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 72.2,
+     "eta_s": 114.5,
+     "eta_basis": "history",
+     "eta_total_s": 183.4,
+     "stage_fraction": 0.0462,
+     "stage_elapsed_s": 50.8,
+     "bytes_done": 55142048,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 1.09,
+     "pred_finish_s": 186.7,
+     "err_s": -75.4,
+     "err_pct_of_total": -28.8
+    },
+    {
+     "t": 73.73,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 73.7,
+     "eta_s": 114.5,
+     "eta_basis": "history",
+     "eta_total_s": 184.9,
+     "stage_fraction": 0.0462,
+     "stage_elapsed_s": 52.2,
+     "bytes_done": 55142048,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 1.06,
+     "pred_finish_s": 188.2,
+     "err_s": -73.9,
+     "err_pct_of_total": -28.2
+    },
+    {
+     "t": 75.11,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 75.0,
+     "eta_s": 114.5,
+     "eta_basis": "history",
+     "eta_total_s": 186.3,
+     "stage_fraction": 0.0462,
+     "stage_elapsed_s": 53.6,
+     "bytes_done": 55142048,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 1.03,
+     "pred_finish_s": 189.5,
+     "err_s": -72.6,
+     "err_pct_of_total": -27.7
+    },
+    {
+     "t": 76.56,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 76.5,
+     "eta_s": 114.5,
+     "eta_basis": "history",
+     "eta_total_s": 187.8,
+     "stage_fraction": 0.0462,
+     "stage_elapsed_s": 55.1,
+     "bytes_done": 55142048,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 1.0,
+     "pred_finish_s": 191.0,
+     "err_s": -71.1,
+     "err_pct_of_total": -27.1
+    },
+    {
+     "t": 78.05,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 78.0,
+     "eta_s": 114.5,
+     "eta_basis": "history",
+     "eta_total_s": 189.3,
+     "stage_fraction": 0.0462,
+     "stage_elapsed_s": 56.6,
+     "bytes_done": 55142048,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 0.97,
+     "pred_finish_s": 192.5,
+     "err_s": -69.6,
+     "err_pct_of_total": -26.6
+    },
+    {
+     "t": 79.7,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 79.7,
+     "eta_s": 114.5,
+     "eta_basis": "history",
+     "eta_total_s": 190.9,
+     "stage_fraction": 0.0462,
+     "stage_elapsed_s": 58.2,
+     "bytes_done": 55142048,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 0.95,
+     "pred_finish_s": 194.2,
+     "err_s": -67.9,
+     "err_pct_of_total": -25.9
+    },
+    {
+     "t": 81.17,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 81.1,
+     "eta_s": 114.5,
+     "eta_basis": "history",
+     "eta_total_s": 192.4,
+     "stage_fraction": 0.0462,
+     "stage_elapsed_s": 59.7,
+     "bytes_done": 55142048,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 0.92,
+     "pred_finish_s": 195.6,
+     "err_s": -66.5,
+     "err_pct_of_total": -25.4
+    },
+    {
+     "t": 82.75,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 82.7,
+     "eta_s": 114.5,
+     "eta_basis": "history",
+     "eta_total_s": 193.9,
+     "stage_fraction": 0.0462,
+     "stage_elapsed_s": 61.3,
+     "bytes_done": 55142048,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 0.9,
+     "pred_finish_s": 197.2,
+     "err_s": -64.9,
+     "err_pct_of_total": -24.8
+    },
+    {
+     "t": 84.12,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 84.1,
+     "eta_s": 114.5,
+     "eta_basis": "history",
+     "eta_total_s": 195.3,
+     "stage_fraction": 0.0462,
+     "stage_elapsed_s": 62.6,
+     "bytes_done": 55142048,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 0.88,
+     "pred_finish_s": 198.6,
+     "err_s": -63.5,
+     "err_pct_of_total": -24.2
+    },
+    {
+     "t": 85.61,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 85.6,
+     "eta_s": 114.5,
+     "eta_basis": "history",
+     "eta_total_s": 196.8,
+     "stage_fraction": 0.0462,
+     "stage_elapsed_s": 64.1,
+     "bytes_done": 55142048,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 0.86,
+     "pred_finish_s": 200.1,
+     "err_s": -62.0,
+     "err_pct_of_total": -23.7
+    },
+    {
+     "t": 87.11,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 87.0,
+     "eta_s": 114.5,
+     "eta_basis": "history",
+     "eta_total_s": 198.3,
+     "stage_fraction": 0.0462,
+     "stage_elapsed_s": 65.6,
+     "bytes_done": 55142048,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 0.84,
+     "pred_finish_s": 201.5,
+     "err_s": -60.6,
+     "err_pct_of_total": -23.1
+    },
+    {
+     "t": 88.56,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 88.5,
+     "eta_s": 114.5,
+     "eta_basis": "history",
+     "eta_total_s": 199.8,
+     "stage_fraction": 0.0462,
+     "stage_elapsed_s": 67.1,
+     "bytes_done": 55142048,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 0.82,
+     "pred_finish_s": 203.0,
+     "err_s": -59.1,
+     "err_pct_of_total": -22.5
+    },
+    {
+     "t": 89.91,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 89.9,
+     "eta_s": 114.5,
+     "eta_basis": "history",
+     "eta_total_s": 201.1,
+     "stage_fraction": 0.0462,
+     "stage_elapsed_s": 68.4,
+     "bytes_done": 55142048,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 0.81,
+     "pred_finish_s": 204.4,
+     "err_s": -57.7,
+     "err_pct_of_total": -22.0
+    },
+    {
+     "t": 91.23,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 91.2,
+     "eta_s": 114.5,
+     "eta_basis": "history",
+     "eta_total_s": 202.4,
+     "stage_fraction": 0.0462,
+     "stage_elapsed_s": 69.7,
+     "bytes_done": 55142048,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 0.79,
+     "pred_finish_s": 205.7,
+     "err_s": -56.4,
+     "err_pct_of_total": -21.5
+    },
+    {
+     "t": 92.76,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 92.7,
+     "eta_s": 114.5,
+     "eta_basis": "history",
+     "eta_total_s": 204.0,
+     "stage_fraction": 0.0462,
+     "stage_elapsed_s": 71.3,
+     "bytes_done": 55142048,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 0.77,
+     "pred_finish_s": 207.2,
+     "err_s": -54.9,
+     "err_pct_of_total": -20.9
+    },
+    {
+     "t": 94.26,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 94.2,
+     "eta_s": 114.5,
+     "eta_basis": "history",
+     "eta_total_s": 205.4,
+     "stage_fraction": 0.0462,
+     "stage_elapsed_s": 72.7,
+     "bytes_done": 55142048,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 0.76,
+     "pred_finish_s": 208.7,
+     "err_s": -53.4,
+     "err_pct_of_total": -20.4
+    },
+    {
+     "t": 95.91,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 95.8,
+     "eta_s": 114.5,
+     "eta_basis": "history",
+     "eta_total_s": 207.1,
+     "stage_fraction": 0.0462,
+     "stage_elapsed_s": 74.4,
+     "bytes_done": 55142048,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 0.74,
+     "pred_finish_s": 210.3,
+     "err_s": -51.8,
+     "err_pct_of_total": -19.8
+    },
+    {
+     "t": 97.25,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 97.2,
+     "eta_s": 114.5,
+     "eta_basis": "history",
+     "eta_total_s": 208.4,
+     "stage_fraction": 0.0462,
+     "stage_elapsed_s": 75.8,
+     "bytes_done": 55142048,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 0.73,
+     "pred_finish_s": 211.7,
+     "err_s": -50.4,
+     "err_pct_of_total": -19.2
+    },
+    {
+     "t": 98.75,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 98.7,
+     "eta_s": 114.5,
+     "eta_basis": "history",
+     "eta_total_s": 209.9,
+     "stage_fraction": 0.0462,
+     "stage_elapsed_s": 77.3,
+     "bytes_done": 55142048,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 0.71,
+     "pred_finish_s": 213.2,
+     "err_s": -48.9,
+     "err_pct_of_total": -18.7
+    },
+    {
+     "t": 100.3,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 100.3,
+     "eta_s": 114.5,
+     "eta_basis": "history",
+     "eta_total_s": 211.5,
+     "stage_fraction": 0.0462,
+     "stage_elapsed_s": 78.8,
+     "bytes_done": 55142048,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 0.7,
+     "pred_finish_s": 214.8,
+     "err_s": -47.3,
+     "err_pct_of_total": -18.0
+    },
+    {
+     "t": 101.7,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 101.6,
+     "eta_s": 170.7,
+     "eta_basis": "history+live",
+     "eta_total_s": 269.1,
+     "stage_fraction": 0.1399,
+     "stage_elapsed_s": 80.2,
+     "bytes_done": 166949295,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 2.08,
+     "pred_finish_s": 272.3,
+     "err_s": 10.2,
+     "err_pct_of_total": 3.9
+    },
+    {
+     "t": 103.06,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 103.1,
+     "eta_s": 171.9,
+     "eta_basis": "history+live",
+     "eta_total_s": 271.7,
+     "stage_fraction": 0.1399,
+     "stage_elapsed_s": 81.6,
+     "bytes_done": 166949295,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 2.05,
+     "pred_finish_s": 275.0,
+     "err_s": 12.9,
+     "err_pct_of_total": 4.9
+    },
+    {
+     "t": 104.51,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 104.5,
+     "eta_s": 173.1,
+     "eta_basis": "history+live",
+     "eta_total_s": 274.3,
+     "stage_fraction": 0.1399,
+     "stage_elapsed_s": 83.0,
+     "bytes_done": 166949295,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 2.01,
+     "pred_finish_s": 277.6,
+     "err_s": 15.5,
+     "err_pct_of_total": 5.9
+    },
+    {
+     "t": 105.86,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 105.8,
+     "eta_s": 174.3,
+     "eta_basis": "history+live",
+     "eta_total_s": 276.8,
+     "stage_fraction": 0.1399,
+     "stage_elapsed_s": 84.4,
+     "bytes_done": 166949295,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 1.98,
+     "pred_finish_s": 280.1,
+     "err_s": 18.0,
+     "err_pct_of_total": 6.9
+    },
+    {
+     "t": 107.23,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 107.1,
+     "eta_s": 175.4,
+     "eta_basis": "history+live",
+     "eta_total_s": 279.3,
+     "stage_fraction": 0.1399,
+     "stage_elapsed_s": 85.7,
+     "bytes_done": 166949295,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 1.95,
+     "pred_finish_s": 282.5,
+     "err_s": 20.4,
+     "err_pct_of_total": 7.8
+    },
+    {
+     "t": 108.58,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 108.6,
+     "eta_s": 176.6,
+     "eta_basis": "history+live",
+     "eta_total_s": 281.9,
+     "stage_fraction": 0.1399,
+     "stage_elapsed_s": 87.1,
+     "bytes_done": 166949295,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 1.92,
+     "pred_finish_s": 285.2,
+     "err_s": 23.1,
+     "err_pct_of_total": 8.8
+    },
+    {
+     "t": 110.05,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 110.0,
+     "eta_s": 177.9,
+     "eta_basis": "history+live",
+     "eta_total_s": 284.6,
+     "stage_fraction": 0.1399,
+     "stage_elapsed_s": 88.6,
+     "bytes_done": 166949295,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 1.88,
+     "pred_finish_s": 287.9,
+     "err_s": 25.8,
+     "err_pct_of_total": 9.8
+    },
+    {
+     "t": 111.45,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 111.4,
+     "eta_s": 179.1,
+     "eta_basis": "history+live",
+     "eta_total_s": 287.2,
+     "stage_fraction": 0.1399,
+     "stage_elapsed_s": 90.0,
+     "bytes_done": 166949295,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 1.85,
+     "pred_finish_s": 290.5,
+     "err_s": 28.4,
+     "err_pct_of_total": 10.8
+    },
+    {
+     "t": 112.89,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 112.8,
+     "eta_s": 180.3,
+     "eta_basis": "history+live",
+     "eta_total_s": 289.9,
+     "stage_fraction": 0.1399,
+     "stage_elapsed_s": 91.4,
+     "bytes_done": 166949295,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 1.83,
+     "pred_finish_s": 293.1,
+     "err_s": 31.0,
+     "err_pct_of_total": 11.8
+    },
+    {
+     "t": 114.36,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 114.2,
+     "eta_s": 181.6,
+     "eta_basis": "history+live",
+     "eta_total_s": 292.7,
+     "stage_fraction": 0.1399,
+     "stage_elapsed_s": 92.9,
+     "bytes_done": 166949295,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 1.8,
+     "pred_finish_s": 295.8,
+     "err_s": 33.7,
+     "err_pct_of_total": 12.9
+    },
+    {
+     "t": 115.78,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 115.7,
+     "eta_s": 182.8,
+     "eta_basis": "history+live",
+     "eta_total_s": 295.3,
+     "stage_fraction": 0.1399,
+     "stage_elapsed_s": 94.3,
+     "bytes_done": 166949295,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 1.77,
+     "pred_finish_s": 298.5,
+     "err_s": 36.4,
+     "err_pct_of_total": 13.9
+    },
+    {
+     "t": 117.34,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 117.2,
+     "eta_s": 184.0,
+     "eta_basis": "history+live",
+     "eta_total_s": 297.9,
+     "stage_fraction": 0.1399,
+     "stage_elapsed_s": 95.7,
+     "bytes_done": 166949295,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 1.74,
+     "pred_finish_s": 301.2,
+     "err_s": 39.1,
+     "err_pct_of_total": 14.9
+    },
+    {
+     "t": 118.81,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 118.7,
+     "eta_s": 185.4,
+     "eta_basis": "history+live",
+     "eta_total_s": 300.9,
+     "stage_fraction": 0.1399,
+     "stage_elapsed_s": 97.3,
+     "bytes_done": 166949295,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 1.72,
+     "pred_finish_s": 304.1,
+     "err_s": 42.0,
+     "err_pct_of_total": 16.0
+    },
+    {
+     "t": 120.33,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 120.2,
+     "eta_s": 186.7,
+     "eta_basis": "history+live",
+     "eta_total_s": 303.7,
+     "stage_fraction": 0.1399,
+     "stage_elapsed_s": 98.8,
+     "bytes_done": 166949295,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 1.69,
+     "pred_finish_s": 306.9,
+     "err_s": 44.8,
+     "err_pct_of_total": 17.1
+    },
+    {
+     "t": 121.91,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 121.9,
+     "eta_s": 188.1,
+     "eta_basis": "history+live",
+     "eta_total_s": 306.7,
+     "stage_fraction": 0.1399,
+     "stage_elapsed_s": 100.4,
+     "bytes_done": 166949295,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 1.66,
+     "pred_finish_s": 310.0,
+     "err_s": 47.9,
+     "err_pct_of_total": 18.3
+    },
+    {
+     "t": 123.3,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 123.2,
+     "eta_s": 189.2,
+     "eta_basis": "history+live",
+     "eta_total_s": 309.2,
+     "stage_fraction": 0.1399,
+     "stage_elapsed_s": 101.8,
+     "bytes_done": 166949295,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 1.64,
+     "pred_finish_s": 312.4,
+     "err_s": 50.3,
+     "err_pct_of_total": 19.2
+    },
+    {
+     "t": 124.84,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 124.8,
+     "eta_s": 190.6,
+     "eta_basis": "history+live",
+     "eta_total_s": 312.1,
+     "stage_fraction": 0.1399,
+     "stage_elapsed_s": 103.4,
+     "bytes_done": 166949295,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 1.61,
+     "pred_finish_s": 315.4,
+     "err_s": 53.3,
+     "err_pct_of_total": 20.3
+    },
+    {
+     "t": 126.26,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 126.2,
+     "eta_s": 191.8,
+     "eta_basis": "history+live",
+     "eta_total_s": 314.8,
+     "stage_fraction": 0.1399,
+     "stage_elapsed_s": 104.8,
+     "bytes_done": 166949295,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 1.59,
+     "pred_finish_s": 318.0,
+     "err_s": 55.9,
+     "err_pct_of_total": 21.3
+    },
+    {
+     "t": 128.01,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 127.8,
+     "eta_s": 193.2,
+     "eta_basis": "history+live",
+     "eta_total_s": 317.7,
+     "stage_fraction": 0.1399,
+     "stage_elapsed_s": 106.4,
+     "bytes_done": 166949295,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 1.57,
+     "pred_finish_s": 321.0,
+     "err_s": 58.9,
+     "err_pct_of_total": 22.5
+    },
+    {
+     "t": 129.5,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 129.4,
+     "eta_s": 194.6,
+     "eta_basis": "history+live",
+     "eta_total_s": 320.8,
+     "stage_fraction": 0.1399,
+     "stage_elapsed_s": 108.0,
+     "bytes_done": 166949295,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 1.55,
+     "pred_finish_s": 324.0,
+     "err_s": 61.9,
+     "err_pct_of_total": 23.6
+    },
+    {
+     "t": 131.01,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 131.0,
+     "eta_s": 195.9,
+     "eta_basis": "history+live",
+     "eta_total_s": 323.6,
+     "stage_fraction": 0.1399,
+     "stage_elapsed_s": 109.5,
+     "bytes_done": 166949295,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 1.52,
+     "pred_finish_s": 326.9,
+     "err_s": 64.8,
+     "err_pct_of_total": 24.7
+    },
+    {
+     "t": 132.53,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 132.5,
+     "eta_s": 197.2,
+     "eta_basis": "history+live",
+     "eta_total_s": 326.4,
+     "stage_fraction": 0.1399,
+     "stage_elapsed_s": 111.0,
+     "bytes_done": 166949295,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 1.5,
+     "pred_finish_s": 329.7,
+     "err_s": 67.6,
+     "err_pct_of_total": 25.8
+    },
+    {
+     "t": 134.06,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 134.0,
+     "eta_s": 198.5,
+     "eta_basis": "history+live",
+     "eta_total_s": 329.3,
+     "stage_fraction": 0.1399,
+     "stage_elapsed_s": 112.6,
+     "bytes_done": 166949295,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 1.48,
+     "pred_finish_s": 332.5,
+     "err_s": 70.4,
+     "err_pct_of_total": 26.9
+    },
+    {
+     "t": 135.53,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 135.5,
+     "eta_s": 199.8,
+     "eta_basis": "history+live",
+     "eta_total_s": 332.0,
+     "stage_fraction": 0.1399,
+     "stage_elapsed_s": 114.0,
+     "bytes_done": 166949295,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 1.46,
+     "pred_finish_s": 335.3,
+     "err_s": 73.2,
+     "err_pct_of_total": 27.9
+    },
+    {
+     "t": 136.94,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 136.8,
+     "eta_s": 201.0,
+     "eta_basis": "history+live",
+     "eta_total_s": 334.7,
+     "stage_fraction": 0.1399,
+     "stage_elapsed_s": 115.5,
+     "bytes_done": 166949295,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 1.45,
+     "pred_finish_s": 337.8,
+     "err_s": 75.7,
+     "err_pct_of_total": 28.9
+    },
+    {
+     "t": 138.56,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 138.5,
+     "eta_s": 202.4,
+     "eta_basis": "history+live",
+     "eta_total_s": 337.6,
+     "stage_fraction": 0.1399,
+     "stage_elapsed_s": 117.1,
+     "bytes_done": 166949295,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 1.43,
+     "pred_finish_s": 340.9,
+     "err_s": 78.8,
+     "err_pct_of_total": 30.1
+    },
+    {
+     "t": 139.94,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 139.9,
+     "eta_s": 203.6,
+     "eta_basis": "history+live",
+     "eta_total_s": 340.2,
+     "stage_fraction": 0.1399,
+     "stage_elapsed_s": 118.5,
+     "bytes_done": 166949295,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 1.41,
+     "pred_finish_s": 343.5,
+     "err_s": 81.4,
+     "err_pct_of_total": 31.1
+    },
+    {
+     "t": 141.7,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 141.6,
+     "eta_s": 205.1,
+     "eta_basis": "history+live",
+     "eta_total_s": 343.5,
+     "stage_fraction": 0.1399,
+     "stage_elapsed_s": 120.2,
+     "bytes_done": 166949295,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 1.39,
+     "pred_finish_s": 346.7,
+     "err_s": 84.6,
+     "err_pct_of_total": 32.3
+    },
+    {
+     "t": 143.19,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 143.2,
+     "eta_s": 206.4,
+     "eta_basis": "history+live",
+     "eta_total_s": 346.3,
+     "stage_fraction": 0.1399,
+     "stage_elapsed_s": 121.7,
+     "bytes_done": 166949295,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 1.37,
+     "pred_finish_s": 349.6,
+     "err_s": 87.5,
+     "err_pct_of_total": 33.4
+    },
+    {
+     "t": 144.61,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 144.5,
+     "eta_s": 207.6,
+     "eta_basis": "history+live",
+     "eta_total_s": 348.9,
+     "stage_fraction": 0.1399,
+     "stage_elapsed_s": 123.1,
+     "bytes_done": 166949295,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 1.36,
+     "pred_finish_s": 352.1,
+     "err_s": 90.0,
+     "err_pct_of_total": 34.3
+    },
+    {
+     "t": 146.26,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 146.2,
+     "eta_s": 209.0,
+     "eta_basis": "history+live",
+     "eta_total_s": 352.0,
+     "stage_fraction": 0.1399,
+     "stage_elapsed_s": 124.8,
+     "bytes_done": 166949295,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 1.34,
+     "pred_finish_s": 355.2,
+     "err_s": 93.1,
+     "err_pct_of_total": 35.5
+    },
+    {
+     "t": 147.78,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 147.7,
+     "eta_s": 210.3,
+     "eta_basis": "history+live",
+     "eta_total_s": 354.8,
+     "stage_fraction": 0.1399,
+     "stage_elapsed_s": 126.3,
+     "bytes_done": 166949295,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 1.32,
+     "pred_finish_s": 358.0,
+     "err_s": 95.9,
+     "err_pct_of_total": 36.6
+    },
+    {
+     "t": 149.08,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 149.1,
+     "eta_s": 211.4,
+     "eta_basis": "history+live",
+     "eta_total_s": 357.2,
+     "stage_fraction": 0.1399,
+     "stage_elapsed_s": 127.6,
+     "bytes_done": 166949295,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 1.31,
+     "pred_finish_s": 360.5,
+     "err_s": 98.4,
+     "err_pct_of_total": 37.5
+    },
+    {
+     "t": 150.64,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 150.5,
+     "eta_s": 212.8,
+     "eta_basis": "history+live",
+     "eta_total_s": 360.1,
+     "stage_fraction": 0.1399,
+     "stage_elapsed_s": 129.2,
+     "bytes_done": 166949295,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 1.29,
+     "pred_finish_s": 363.3,
+     "err_s": 101.2,
+     "err_pct_of_total": 38.6
+    },
+    {
+     "t": 151.98,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 151.9,
+     "eta_s": 213.9,
+     "eta_basis": "history+live",
+     "eta_total_s": 362.7,
+     "stage_fraction": 0.1399,
+     "stage_elapsed_s": 130.5,
+     "bytes_done": 166949295,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 1.28,
+     "pred_finish_s": 365.8,
+     "err_s": 103.7,
+     "err_pct_of_total": 39.6
+    },
+    {
+     "t": 153.36,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 153.3,
+     "eta_s": 215.1,
+     "eta_basis": "history+live",
+     "eta_total_s": 365.1,
+     "stage_fraction": 0.1399,
+     "stage_elapsed_s": 131.8,
+     "bytes_done": 166949295,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 1.27,
+     "pred_finish_s": 368.4,
+     "err_s": 106.3,
+     "err_pct_of_total": 40.6
+    },
+    {
+     "t": 154.86,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 154.8,
+     "eta_s": 216.4,
+     "eta_basis": "history+live",
+     "eta_total_s": 368.0,
+     "stage_fraction": 0.1399,
+     "stage_elapsed_s": 133.4,
+     "bytes_done": 166949295,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 1.25,
+     "pred_finish_s": 371.2,
+     "err_s": 109.1,
+     "err_pct_of_total": 41.6
+    },
+    {
+     "t": 156.33,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 156.2,
+     "eta_s": 217.7,
+     "eta_basis": "history+live",
+     "eta_total_s": 370.7,
+     "stage_fraction": 0.1399,
+     "stage_elapsed_s": 134.8,
+     "bytes_done": 166949295,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 1.24,
+     "pred_finish_s": 373.9,
+     "err_s": 111.8,
+     "err_pct_of_total": 42.7
+    },
+    {
+     "t": 157.84,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 157.8,
+     "eta_s": 219.0,
+     "eta_basis": "history+live",
+     "eta_total_s": 373.5,
+     "stage_fraction": 0.1399,
+     "stage_elapsed_s": 136.3,
+     "bytes_done": 166949295,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 1.22,
+     "pred_finish_s": 376.8,
+     "err_s": 114.7,
+     "err_pct_of_total": 43.8
+    },
+    {
+     "t": 159.36,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 159.2,
+     "eta_s": 220.3,
+     "eta_basis": "history+live",
+     "eta_total_s": 376.4,
+     "stage_fraction": 0.1399,
+     "stage_elapsed_s": 137.9,
+     "bytes_done": 166949295,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 1.21,
+     "pred_finish_s": 379.5,
+     "err_s": 117.4,
+     "err_pct_of_total": 44.8
+    },
+    {
+     "t": 160.81,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 160.8,
+     "eta_s": 221.5,
+     "eta_basis": "history+live",
+     "eta_total_s": 379.0,
+     "stage_fraction": 0.1399,
+     "stage_elapsed_s": 139.3,
+     "bytes_done": 166949295,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 1.2,
+     "pred_finish_s": 382.3,
+     "err_s": 120.2,
+     "err_pct_of_total": 45.9
+    },
+    {
+     "t": 162.16,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 162.1,
+     "eta_s": 222.7,
+     "eta_basis": "history+live",
+     "eta_total_s": 381.6,
+     "stage_fraction": 0.1399,
+     "stage_elapsed_s": 140.7,
+     "bytes_done": 166949295,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 1.19,
+     "pred_finish_s": 384.8,
+     "err_s": 122.7,
+     "err_pct_of_total": 46.8
+    },
+    {
+     "t": 163.64,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 163.5,
+     "eta_s": 224.0,
+     "eta_basis": "history+live",
+     "eta_total_s": 384.3,
+     "stage_fraction": 0.1399,
+     "stage_elapsed_s": 142.2,
+     "bytes_done": 166949295,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 1.17,
+     "pred_finish_s": 387.5,
+     "err_s": 125.4,
+     "err_pct_of_total": 47.8
+    },
+    {
+     "t": 164.97,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 164.9,
+     "eta_s": 225.1,
+     "eta_basis": "history+live",
+     "eta_total_s": 386.8,
+     "stage_fraction": 0.1399,
+     "stage_elapsed_s": 143.5,
+     "bytes_done": 166949295,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 1.16,
+     "pred_finish_s": 390.0,
+     "err_s": 127.9,
+     "err_pct_of_total": 48.8
+    },
+    {
+     "t": 166.42,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 166.4,
+     "eta_s": 226.4,
+     "eta_basis": "history+live",
+     "eta_total_s": 389.5,
+     "stage_fraction": 0.1399,
+     "stage_elapsed_s": 145.0,
+     "bytes_done": 166949295,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 1.15,
+     "pred_finish_s": 392.8,
+     "err_s": 130.7,
+     "err_pct_of_total": 49.9
+    },
+    {
+     "t": 167.98,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 168.0,
+     "eta_s": 227.7,
+     "eta_basis": "history+live",
+     "eta_total_s": 392.4,
+     "stage_fraction": 0.1399,
+     "stage_elapsed_s": 146.5,
+     "bytes_done": 166949295,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 1.14,
+     "pred_finish_s": 395.7,
+     "err_s": 133.6,
+     "err_pct_of_total": 51.0
+    },
+    {
+     "t": 169.48,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 169.3,
+     "eta_s": 229.0,
+     "eta_basis": "history+live",
+     "eta_total_s": 395.2,
+     "stage_fraction": 0.1399,
+     "stage_elapsed_s": 148.0,
+     "bytes_done": 166949295,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 1.13,
+     "pred_finish_s": 398.3,
+     "err_s": 136.2,
+     "err_pct_of_total": 52.0
+    },
+    {
+     "t": 171.16,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 171.0,
+     "eta_s": 230.4,
+     "eta_basis": "history+live",
+     "eta_total_s": 398.2,
+     "stage_fraction": 0.1399,
+     "stage_elapsed_s": 149.6,
+     "bytes_done": 166949295,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 1.12,
+     "pred_finish_s": 401.4,
+     "err_s": 139.3,
+     "err_pct_of_total": 53.1
+    },
+    {
+     "t": 172.69,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 172.7,
+     "eta_s": 231.7,
+     "eta_basis": "history+live",
+     "eta_total_s": 401.1,
+     "stage_fraction": 0.1399,
+     "stage_elapsed_s": 151.2,
+     "bytes_done": 166949295,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 1.1,
+     "pred_finish_s": 404.4,
+     "err_s": 142.3,
+     "err_pct_of_total": 54.3
+    },
+    {
+     "t": 174.17,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 174.1,
+     "eta_s": 233.0,
+     "eta_basis": "history+live",
+     "eta_total_s": 403.9,
+     "stage_fraction": 0.1399,
+     "stage_elapsed_s": 152.7,
+     "bytes_done": 166949295,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 1.09,
+     "pred_finish_s": 407.1,
+     "err_s": 145.0,
+     "err_pct_of_total": 55.3
+    },
+    {
+     "t": 175.92,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 175.8,
+     "eta_s": 211.1,
+     "eta_basis": "history+live",
+     "eta_total_s": 383.7,
+     "stage_fraction": 0.233,
+     "stage_elapsed_s": 154.4,
+     "bytes_done": 278056659,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 1.8,
+     "pred_finish_s": 386.9,
+     "err_s": 124.8,
+     "err_pct_of_total": 47.6
+    },
+    {
+     "t": 177.7,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 177.5,
+     "eta_s": 212.4,
+     "eta_basis": "history+live",
+     "eta_total_s": 386.8,
+     "stage_fraction": 0.233,
+     "stage_elapsed_s": 156.2,
+     "bytes_done": 278056659,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 1.78,
+     "pred_finish_s": 389.9,
+     "err_s": 127.8,
+     "err_pct_of_total": 48.8
+    },
+    {
+     "t": 179.26,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 179.2,
+     "eta_s": 213.6,
+     "eta_basis": "history+live",
+     "eta_total_s": 389.6,
+     "stage_fraction": 0.233,
+     "stage_elapsed_s": 157.8,
+     "bytes_done": 278056659,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 1.76,
+     "pred_finish_s": 392.8,
+     "err_s": 130.7,
+     "err_pct_of_total": 49.9
+    },
+    {
+     "t": 180.73,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 180.6,
+     "eta_s": 214.8,
+     "eta_basis": "history+live",
+     "eta_total_s": 392.2,
+     "stage_fraction": 0.233,
+     "stage_elapsed_s": 159.3,
+     "bytes_done": 278056659,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 1.75,
+     "pred_finish_s": 395.4,
+     "err_s": 133.3,
+     "err_pct_of_total": 50.9
+    },
+    {
+     "t": 181.8,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 181.8,
+     "eta_s": 215.6,
+     "eta_basis": "history+live",
+     "eta_total_s": 394.1,
+     "stage_fraction": 0.233,
+     "stage_elapsed_s": 160.3,
+     "bytes_done": 278056659,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 1.73,
+     "pred_finish_s": 397.4,
+     "err_s": 135.3,
+     "err_pct_of_total": 51.6
+    },
+    {
+     "t": 182.83,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 182.8,
+     "eta_s": 216.4,
+     "eta_basis": "history+live",
+     "eta_total_s": 395.9,
+     "stage_fraction": 0.233,
+     "stage_elapsed_s": 161.4,
+     "bytes_done": 278056659,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 1.72,
+     "pred_finish_s": 399.2,
+     "err_s": 137.1,
+     "err_pct_of_total": 52.3
+    },
+    {
+     "t": 183.91,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 183.9,
+     "eta_s": 217.2,
+     "eta_basis": "history+live",
+     "eta_total_s": 397.8,
+     "stage_fraction": 0.233,
+     "stage_elapsed_s": 162.4,
+     "bytes_done": 278056659,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 1.71,
+     "pred_finish_s": 401.1,
+     "err_s": 139.0,
+     "err_pct_of_total": 53.0
+    },
+    {
+     "t": 184.95,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 185.0,
+     "eta_s": 218.0,
+     "eta_basis": "history+live",
+     "eta_total_s": 399.7,
+     "stage_fraction": 0.233,
+     "stage_elapsed_s": 163.5,
+     "bytes_done": 278056659,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 1.7,
+     "pred_finish_s": 403.0,
+     "err_s": 140.9,
+     "err_pct_of_total": 53.8
+    },
+    {
+     "t": 186.0,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 186.0,
+     "eta_s": 193.2,
+     "eta_basis": "history+live",
+     "eta_total_s": 375.9,
+     "stage_fraction": 0.3354,
+     "stage_elapsed_s": 164.5,
+     "bytes_done": 400209064,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 2.43,
+     "pred_finish_s": 379.2,
+     "err_s": 117.1,
+     "err_pct_of_total": 44.7
+    },
+    {
+     "t": 187.01,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 187.0,
+     "eta_s": 193.9,
+     "eta_basis": "history+live",
+     "eta_total_s": 377.6,
+     "stage_fraction": 0.3354,
+     "stage_elapsed_s": 165.6,
+     "bytes_done": 400209064,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 2.42,
+     "pred_finish_s": 380.9,
+     "err_s": 118.8,
+     "err_pct_of_total": 45.3
+    },
+    {
+     "t": 188.12,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 188.0,
+     "eta_s": 190.3,
+     "eta_basis": "history+live",
+     "eta_total_s": 375.1,
+     "stage_fraction": 0.3528,
+     "stage_elapsed_s": 166.6,
+     "bytes_done": 420937848,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 2.53,
+     "pred_finish_s": 378.3,
+     "err_s": 116.2,
+     "err_pct_of_total": 44.3
+    },
+    {
+     "t": 189.16,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 189.2,
+     "eta_s": 191.0,
+     "eta_basis": "history+live",
+     "eta_total_s": 376.9,
+     "stage_fraction": 0.3528,
+     "stage_elapsed_s": 167.7,
+     "bytes_done": 420937848,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 2.51,
+     "pred_finish_s": 380.2,
+     "err_s": 118.1,
+     "err_pct_of_total": 45.1
+    },
+    {
+     "t": 190.19,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 190.2,
+     "eta_s": 187.4,
+     "eta_basis": "history+live",
+     "eta_total_s": 374.4,
+     "stage_fraction": 0.3701,
+     "stage_elapsed_s": 168.7,
+     "bytes_done": 441542354,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 2.62,
+     "pred_finish_s": 377.6,
+     "err_s": 115.5,
+     "err_pct_of_total": 44.1
+    },
+    {
+     "t": 191.23,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 191.2,
+     "eta_s": 188.1,
+     "eta_basis": "history+live",
+     "eta_total_s": 376.0,
+     "stage_fraction": 0.3701,
+     "stage_elapsed_s": 169.8,
+     "bytes_done": 441542354,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 2.6,
+     "pred_finish_s": 379.3,
+     "err_s": 117.2,
+     "err_pct_of_total": 44.7
+    },
+    {
+     "t": 192.3,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 192.3,
+     "eta_s": 188.0,
+     "eta_basis": "history+live",
+     "eta_total_s": 377.0,
+     "stage_fraction": 0.3732,
+     "stage_elapsed_s": 170.8,
+     "bytes_done": 445227712,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 2.61,
+     "pred_finish_s": 380.3,
+     "err_s": 118.2,
+     "err_pct_of_total": 45.1
+    },
+    {
+     "t": 193.34,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 193.3,
+     "eta_s": 188.7,
+     "eta_basis": "history+live",
+     "eta_total_s": 378.7,
+     "stage_fraction": 0.3732,
+     "stage_elapsed_s": 171.9,
+     "bytes_done": 445227712,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 2.59,
+     "pred_finish_s": 382.0,
+     "err_s": 119.9,
+     "err_pct_of_total": 45.7
+    },
+    {
+     "t": 194.39,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 194.4,
+     "eta_s": 187.8,
+     "eta_basis": "history+live",
+     "eta_total_s": 378.9,
+     "stage_fraction": 0.3793,
+     "stage_elapsed_s": 172.9,
+     "bytes_done": 452592290,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 2.62,
+     "pred_finish_s": 382.2,
+     "err_s": 120.1,
+     "err_pct_of_total": 45.8
+    },
+    {
+     "t": 195.44,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 195.4,
+     "eta_s": 188.5,
+     "eta_basis": "history+live",
+     "eta_total_s": 380.6,
+     "stage_fraction": 0.3793,
+     "stage_elapsed_s": 174.0,
+     "bytes_done": 452592290,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 2.6,
+     "pred_finish_s": 383.9,
+     "err_s": 121.8,
+     "err_pct_of_total": 46.5
+    },
+    {
+     "t": 196.5,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 196.5,
+     "eta_s": 186.9,
+     "eta_basis": "history+live",
+     "eta_total_s": 380.2,
+     "stage_fraction": 0.388,
+     "stage_elapsed_s": 175.0,
+     "bytes_done": 462883856,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 2.65,
+     "pred_finish_s": 383.4,
+     "err_s": 121.3,
+     "err_pct_of_total": 46.3
+    },
+    {
+     "t": 197.58,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 197.5,
+     "eta_s": 187.6,
+     "eta_basis": "history+live",
+     "eta_total_s": 381.8,
+     "stage_fraction": 0.388,
+     "stage_elapsed_s": 176.1,
+     "bytes_done": 462883856,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 2.63,
+     "pred_finish_s": 385.1,
+     "err_s": 123.0,
+     "err_pct_of_total": 46.9
+    },
+    {
+     "t": 198.73,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 198.7,
+     "eta_s": 187.0,
+     "eta_basis": "history+live",
+     "eta_total_s": 382.5,
+     "stage_fraction": 0.3932,
+     "stage_elapsed_s": 177.3,
+     "bytes_done": 469129276,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 2.65,
+     "pred_finish_s": 385.7,
+     "err_s": 123.6,
+     "err_pct_of_total": 47.2
+    },
+    {
+     "t": 199.81,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 199.8,
+     "eta_s": 186.7,
+     "eta_basis": "history+live",
+     "eta_total_s": 383.2,
+     "stage_fraction": 0.3972,
+     "stage_elapsed_s": 178.3,
+     "bytes_done": 473918209,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 2.66,
+     "pred_finish_s": 386.5,
+     "err_s": 124.4,
+     "err_pct_of_total": 47.5
+    },
+    {
+     "t": 200.86,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 200.9,
+     "eta_s": 187.3,
+     "eta_basis": "history+live",
+     "eta_total_s": 384.9,
+     "stage_fraction": 0.3972,
+     "stage_elapsed_s": 179.4,
+     "bytes_done": 473918209,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 2.64,
+     "pred_finish_s": 388.2,
+     "err_s": 126.1,
+     "err_pct_of_total": 48.1
+    },
+    {
+     "t": 201.92,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 201.9,
+     "eta_s": 187.2,
+     "eta_basis": "history+live",
+     "eta_total_s": 385.8,
+     "stage_fraction": 0.4002,
+     "stage_elapsed_s": 180.5,
+     "bytes_done": 477469945,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 2.65,
+     "pred_finish_s": 389.1,
+     "err_s": 127.0,
+     "err_pct_of_total": 48.5
+    },
+    {
+     "t": 202.95,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 203.0,
+     "eta_s": 187.8,
+     "eta_basis": "history+live",
+     "eta_total_s": 387.5,
+     "stage_fraction": 0.4002,
+     "stage_elapsed_s": 181.5,
+     "bytes_done": 477469945,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 2.63,
+     "pred_finish_s": 390.8,
+     "err_s": 128.7,
+     "err_pct_of_total": 49.1
+    },
+    {
+     "t": 204.09,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 204.0,
+     "eta_s": 188.3,
+     "eta_basis": "history+live",
+     "eta_total_s": 389.1,
+     "stage_fraction": 0.4011,
+     "stage_elapsed_s": 182.6,
+     "bytes_done": 478566381,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 2.62,
+     "pred_finish_s": 392.3,
+     "err_s": 130.2,
+     "err_pct_of_total": 49.7
+    },
+    {
+     "t": 205.14,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 205.1,
+     "eta_s": 188.9,
+     "eta_basis": "history+live",
+     "eta_total_s": 390.8,
+     "stage_fraction": 0.4011,
+     "stage_elapsed_s": 183.7,
+     "bytes_done": 478566381,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 2.61,
+     "pred_finish_s": 394.0,
+     "err_s": 131.9,
+     "err_pct_of_total": 50.3
+    },
+    {
+     "t": 206.2,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 206.2,
+     "eta_s": 189.1,
+     "eta_basis": "history+live",
+     "eta_total_s": 392.0,
+     "stage_fraction": 0.4026,
+     "stage_elapsed_s": 184.7,
+     "bytes_done": 480406896,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 2.6,
+     "pred_finish_s": 395.3,
+     "err_s": 133.2,
+     "err_pct_of_total": 50.8
+    },
+    {
+     "t": 207.25,
+     "status": "running",
+     "stage": "ingest",
+     "percent": 5,
+     "elapsed_s": 207.2,
+     "eta_s": 189.8,
+     "eta_basis": "history+live",
+     "eta_total_s": 393.7,
+     "stage_fraction": 0.4026,
+     "stage_elapsed_s": 185.8,
+     "bytes_done": 480406896,
+     "bytes_total": 1073818839,
+     "rows_done": null,
+     "ingest_mb_s": 2.59,
+     "pred_finish_s": 397.0,
+     "err_s": 134.9,
+     "err_pct_of_total": 51.5
+    },
+    {
+     "t": 208.36,
+     "status": "running",
+     "stage": "lookups",
+     "percent": 45,
+     "elapsed_s": 208.3,
+     "eta_s": 114.3,
+     "eta_basis": "history",
+     "eta_total_s": 319.4,
+     "stage_fraction": null,
+     "stage_elapsed_s": 0.3,
+     "bytes_done": 1073818839,
+     "bytes_total": 1073818839,
+     "rows_done": 2036104,
+     "ingest_mb_s": 5.76,
+     "pred_finish_s": 322.6,
+     "err_s": 60.5,
+     "err_pct_of_total": 23.1
+    },
+    {
+     "t": 209.41,
+     "status": "running",
+     "stage": "lookups",
+     "percent": 45,
+     "elapsed_s": 209.4,
+     "eta_s": 113.2,
+     "eta_basis": "history",
+     "eta_total_s": 319.4,
+     "stage_fraction": null,
+     "stage_elapsed_s": 1.3,
+     "bytes_done": 1073818839,
+     "bytes_total": 1073818839,
+     "rows_done": 2036104,
+     "ingest_mb_s": 5.76,
+     "pred_finish_s": 322.6,
+     "err_s": 60.5,
+     "err_pct_of_total": 23.1
+    },
+    {
+     "t": 210.48,
+     "status": "running",
+     "stage": "lookups",
+     "percent": 45,
+     "elapsed_s": 210.5,
+     "eta_s": 112.2,
+     "eta_basis": "history",
+     "eta_total_s": 319.4,
+     "stage_fraction": null,
+     "stage_elapsed_s": 2.4,
+     "bytes_done": 1073818839,
+     "bytes_total": 1073818839,
+     "rows_done": 2036104,
+     "ingest_mb_s": 5.76,
+     "pred_finish_s": 322.7,
+     "err_s": 60.6,
+     "err_pct_of_total": 23.1
+    },
+    {
+     "t": 211.56,
+     "status": "running",
+     "stage": "detect",
+     "percent": 50,
+     "elapsed_s": 211.5,
+     "eta_s": 110.3,
+     "eta_basis": "history",
+     "eta_total_s": 318.6,
+     "stage_fraction": null,
+     "stage_elapsed_s": 0.4,
+     "bytes_done": 1073818839,
+     "bytes_total": 1073818839,
+     "rows_done": 2036104,
+     "ingest_mb_s": 5.76,
+     "pred_finish_s": 321.8,
+     "err_s": 59.7,
+     "err_pct_of_total": 22.8
+    },
+    {
+     "t": 212.62,
+     "status": "running",
+     "stage": "detect",
+     "percent": 50,
+     "elapsed_s": 212.6,
+     "eta_s": 109.2,
+     "eta_basis": "history",
+     "eta_total_s": 318.6,
+     "stage_fraction": null,
+     "stage_elapsed_s": 1.4,
+     "bytes_done": 1073818839,
+     "bytes_total": 1073818839,
+     "rows_done": 2036104,
+     "ingest_mb_s": 5.76,
+     "pred_finish_s": 321.8,
+     "err_s": 59.7,
+     "err_pct_of_total": 22.8
+    },
+    {
+     "t": 213.67,
+     "status": "running",
+     "stage": "detect",
+     "percent": 50,
+     "elapsed_s": 213.7,
+     "eta_s": 108.2,
+     "eta_basis": "history",
+     "eta_total_s": 318.6,
+     "stage_fraction": null,
+     "stage_elapsed_s": 2.5,
+     "bytes_done": 1073818839,
+     "bytes_total": 1073818839,
+     "rows_done": 2036104,
+     "ingest_mb_s": 5.76,
+     "pred_finish_s": 321.9,
+     "err_s": 59.8,
+     "err_pct_of_total": 22.8
+    },
+    {
+     "t": 214.75,
+     "status": "running",
+     "stage": "detect",
+     "percent": 50,
+     "elapsed_s": 214.7,
+     "eta_s": 107.1,
+     "eta_basis": "history",
+     "eta_total_s": 318.6,
+     "stage_fraction": null,
+     "stage_elapsed_s": 3.6,
+     "bytes_done": 1073818839,
+     "bytes_total": 1073818839,
+     "rows_done": 2036104,
+     "ingest_mb_s": 5.76,
+     "pred_finish_s": 321.8,
+     "err_s": 59.7,
+     "err_pct_of_total": 22.8
+    },
+    {
+     "t": 215.8,
+     "status": "running",
+     "stage": "detect",
+     "percent": 50,
+     "elapsed_s": 215.8,
+     "eta_s": 106.0,
+     "eta_basis": "history",
+     "eta_total_s": 318.6,
+     "stage_fraction": null,
+     "stage_elapsed_s": 4.6,
+     "bytes_done": 1073818839,
+     "bytes_total": 1073818839,
+     "rows_done": 2036104,
+     "ingest_mb_s": 5.76,
+     "pred_finish_s": 321.8,
+     "err_s": 59.7,
+     "err_pct_of_total": 22.8
+    },
+    {
+     "t": 216.89,
+     "status": "running",
+     "stage": "detect",
+     "percent": 50,
+     "elapsed_s": 216.9,
+     "eta_s": 104.9,
+     "eta_basis": "history",
+     "eta_total_s": 318.6,
+     "stage_fraction": null,
+     "stage_elapsed_s": 5.7,
+     "bytes_done": 1073818839,
+     "bytes_total": 1073818839,
+     "rows_done": 2036104,
+     "ingest_mb_s": 5.76,
+     "pred_finish_s": 321.8,
+     "err_s": 59.7,
+     "err_pct_of_total": 22.8
+    },
+    {
+     "t": 217.95,
+     "status": "running",
+     "stage": "detect",
+     "percent": 50,
+     "elapsed_s": 217.9,
+     "eta_s": 103.9,
+     "eta_basis": "history",
+     "eta_total_s": 318.6,
+     "stage_fraction": null,
+     "stage_elapsed_s": 6.8,
+     "bytes_done": 1073818839,
+     "bytes_total": 1073818839,
+     "rows_done": 2036104,
+     "ingest_mb_s": 5.76,
+     "pred_finish_s": 321.8,
+     "err_s": 59.7,
+     "err_pct_of_total": 22.8
+    },
+    {
+     "t": 219.01,
+     "status": "running",
+     "stage": "detect",
+     "percent": 50,
+     "elapsed_s": 219.0,
+     "eta_s": 102.8,
+     "eta_basis": "history",
+     "eta_total_s": 318.6,
+     "stage_fraction": null,
+     "stage_elapsed_s": 7.8,
+     "bytes_done": 1073818839,
+     "bytes_total": 1073818839,
+     "rows_done": 2036104,
+     "ingest_mb_s": 5.76,
+     "pred_finish_s": 321.8,
+     "err_s": 59.7,
+     "err_pct_of_total": 22.8
+    },
+    {
+     "t": 220.12,
+     "status": "running",
+     "stage": "detect",
+     "percent": 50,
+     "elapsed_s": 220.0,
+     "eta_s": 101.7,
+     "eta_basis": "history",
+     "eta_total_s": 318.6,
+     "stage_fraction": null,
+     "stage_elapsed_s": 8.9,
+     "bytes_done": 1073818839,
+     "bytes_total": 1073818839,
+     "rows_done": 2036104,
+     "ingest_mb_s": 5.76,
+     "pred_finish_s": 321.7,
+     "err_s": 59.6,
+     "err_pct_of_total": 22.7
+    },
+    {
+     "t": 221.17,
+     "status": "running",
+     "stage": "detect",
+     "percent": 50,
+     "elapsed_s": 221.2,
+     "eta_s": 100.7,
+     "eta_basis": "history",
+     "eta_total_s": 318.6,
+     "stage_fraction": null,
+     "stage_elapsed_s": 10.0,
+     "bytes_done": 1073818839,
+     "bytes_total": 1073818839,
+     "rows_done": 2036104,
+     "ingest_mb_s": 5.76,
+     "pred_finish_s": 321.9,
+     "err_s": 59.8,
+     "err_pct_of_total": 22.8
+    },
+    {
+     "t": 222.25,
+     "status": "running",
+     "stage": "detect",
+     "percent": 50,
+     "elapsed_s": 222.2,
+     "eta_s": 99.6,
+     "eta_basis": "history",
+     "eta_total_s": 318.6,
+     "stage_fraction": null,
+     "stage_elapsed_s": 11.1,
+     "bytes_done": 1073818839,
+     "bytes_total": 1073818839,
+     "rows_done": 2036104,
+     "ingest_mb_s": 5.76,
+     "pred_finish_s": 321.8,
+     "err_s": 59.7,
+     "err_pct_of_total": 22.8
+    },
+    {
+     "t": 223.33,
+     "status": "running",
+     "stage": "detect",
+     "percent": 50,
+     "elapsed_s": 223.3,
+     "eta_s": 98.5,
+     "eta_basis": "history",
+     "eta_total_s": 318.6,
+     "stage_fraction": null,
+     "stage_elapsed_s": 12.1,
+     "bytes_done": 1073818839,
+     "bytes_total": 1073818839,
+     "rows_done": 2036104,
+     "ingest_mb_s": 5.76,
+     "pred_finish_s": 321.8,
+     "err_s": 59.7,
+     "err_pct_of_total": 22.8
+    },
+    {
+     "t": 224.47,
+     "status": "running",
+     "stage": "detect",
+     "percent": 50,
+     "elapsed_s": 224.4,
+     "eta_s": 97.4,
+     "eta_basis": "history",
+     "eta_total_s": 318.6,
+     "stage_fraction": null,
+     "stage_elapsed_s": 13.3,
+     "bytes_done": 1073818839,
+     "bytes_total": 1073818839,
+     "rows_done": 2036104,
+     "ingest_mb_s": 5.76,
+     "pred_finish_s": 321.8,
+     "err_s": 59.7,
+     "err_pct_of_total": 22.8
+    },
+    {
+     "t": 225.51,
+     "status": "running",
+     "stage": "detect",
+     "percent": 50,
+     "elapsed_s": 225.5,
+     "eta_s": 96.3,
+     "eta_basis": "history",
+     "eta_total_s": 318.6,
+     "stage_fraction": null,
+     "stage_elapsed_s": 14.3,
+     "bytes_done": 1073818839,
+     "bytes_total": 1073818839,
+     "rows_done": 2036104,
+     "ingest_mb_s": 5.76,
+     "pred_finish_s": 321.8,
+     "err_s": 59.7,
+     "err_pct_of_total": 22.8
+    },
+    {
+     "t": 226.61,
+     "status": "running",
+     "stage": "detect",
+     "percent": 50,
+     "elapsed_s": 226.6,
+     "eta_s": 95.2,
+     "eta_basis": "history",
+     "eta_total_s": 318.6,
+     "stage_fraction": null,
+     "stage_elapsed_s": 15.4,
+     "bytes_done": 1073818839,
+     "bytes_total": 1073818839,
+     "rows_done": 2036104,
+     "ingest_mb_s": 5.76,
+     "pred_finish_s": 321.8,
+     "err_s": 59.7,
+     "err_pct_of_total": 22.8
+    },
+    {
+     "t": 227.73,
+     "status": "running",
+     "stage": "detect",
+     "percent": 50,
+     "elapsed_s": 227.7,
+     "eta_s": 94.1,
+     "eta_basis": "history",
+     "eta_total_s": 318.6,
+     "stage_fraction": null,
+     "stage_elapsed_s": 16.6,
+     "bytes_done": 1073818839,
+     "bytes_total": 1073818839,
+     "rows_done": 2036104,
+     "ingest_mb_s": 5.76,
+     "pred_finish_s": 321.8,
+     "err_s": 59.7,
+     "err_pct_of_total": 22.8
+    },
+    {
+     "t": 228.84,
+     "status": "running",
+     "stage": "detect",
+     "percent": 50,
+     "elapsed_s": 228.8,
+     "eta_s": 93.0,
+     "eta_basis": "history",
+     "eta_total_s": 318.6,
+     "stage_fraction": null,
+     "stage_elapsed_s": 17.7,
+     "bytes_done": 1073818839,
+     "bytes_total": 1073818839,
+     "rows_done": 2036104,
+     "ingest_mb_s": 5.76,
+     "pred_finish_s": 321.8,
+     "err_s": 59.7,
+     "err_pct_of_total": 22.8
+    },
+    {
+     "t": 229.92,
+     "status": "running",
+     "stage": "detect",
+     "percent": 50,
+     "elapsed_s": 229.9,
+     "eta_s": 91.9,
+     "eta_basis": "history",
+     "eta_total_s": 318.6,
+     "stage_fraction": null,
+     "stage_elapsed_s": 18.7,
+     "bytes_done": 1073818839,
+     "bytes_total": 1073818839,
+     "rows_done": 2036104,
+     "ingest_mb_s": 5.76,
+     "pred_finish_s": 321.8,
+     "err_s": 59.7,
+     "err_pct_of_total": 22.8
+    },
+    {
+     "t": 231.11,
+     "status": "running",
+     "stage": "detect",
+     "percent": 50,
+     "elapsed_s": 231.1,
+     "eta_s": 90.7,
+     "eta_basis": "history",
+     "eta_total_s": 318.6,
+     "stage_fraction": null,
+     "stage_elapsed_s": 19.9,
+     "bytes_done": 1073818839,
+     "bytes_total": 1073818839,
+     "rows_done": 2036104,
+     "ingest_mb_s": 5.76,
+     "pred_finish_s": 321.8,
+     "err_s": 59.7,
+     "err_pct_of_total": 22.8
+    },
+    {
+     "t": 232.2,
+     "status": "running",
+     "stage": "detect",
+     "percent": 50,
+     "elapsed_s": 232.2,
+     "eta_s": 89.6,
+     "eta_basis": "history",
+     "eta_total_s": 318.6,
+     "stage_fraction": null,
+     "stage_elapsed_s": 21.0,
+     "bytes_done": 1073818839,
+     "bytes_total": 1073818839,
+     "rows_done": 2036104,
+     "ingest_mb_s": 5.76,
+     "pred_finish_s": 321.8,
+     "err_s": 59.7,
+     "err_pct_of_total": 22.8
+    },
+    {
+     "t": 233.42,
+     "status": "running",
+     "stage": "detect",
+     "percent": 50,
+     "elapsed_s": 233.4,
+     "eta_s": 88.4,
+     "eta_basis": "history",
+     "eta_total_s": 318.6,
+     "stage_fraction": null,
+     "stage_elapsed_s": 22.2,
+     "bytes_done": 1073818839,
+     "bytes_total": 1073818839,
+     "rows_done": 2036104,
+     "ingest_mb_s": 5.76,
+     "pred_finish_s": 321.8,
+     "err_s": 59.7,
+     "err_pct_of_total": 22.8
+    },
+    {
+     "t": 234.55,
+     "status": "running",
+     "stage": "detect",
+     "percent": 50,
+     "elapsed_s": 234.5,
+     "eta_s": 87.3,
+     "eta_basis": "history",
+     "eta_total_s": 318.6,
+     "stage_fraction": null,
+     "stage_elapsed_s": 23.4,
+     "bytes_done": 1073818839,
+     "bytes_total": 1073818839,
+     "rows_done": 2036104,
+     "ingest_mb_s": 5.76,
+     "pred_finish_s": 321.8,
+     "err_s": 59.7,
+     "err_pct_of_total": 22.8
+    },
+    {
+     "t": 235.62,
+     "status": "running",
+     "stage": "detect",
+     "percent": 50,
+     "elapsed_s": 235.6,
+     "eta_s": 86.2,
+     "eta_basis": "history",
+     "eta_total_s": 318.6,
+     "stage_fraction": null,
+     "stage_elapsed_s": 24.4,
+     "bytes_done": 1073818839,
+     "bytes_total": 1073818839,
+     "rows_done": 2036104,
+     "ingest_mb_s": 5.76,
+     "pred_finish_s": 321.8,
+     "err_s": 59.7,
+     "err_pct_of_total": 22.8
+    },
+    {
+     "t": 236.72,
+     "status": "running",
+     "stage": "detect",
+     "percent": 50,
+     "elapsed_s": 236.7,
+     "eta_s": 85.1,
+     "eta_basis": "history",
+     "eta_total_s": 318.6,
+     "stage_fraction": null,
+     "stage_elapsed_s": 25.5,
+     "bytes_done": 1073818839,
+     "bytes_total": 1073818839,
+     "rows_done": 2036104,
+     "ingest_mb_s": 5.76,
+     "pred_finish_s": 321.8,
+     "err_s": 59.7,
+     "err_pct_of_total": 22.8
+    },
+    {
+     "t": 237.76,
+     "status": "running",
+     "stage": "detect",
+     "percent": 50,
+     "elapsed_s": 237.8,
+     "eta_s": 84.1,
+     "eta_basis": "history",
+     "eta_total_s": 318.6,
+     "stage_fraction": null,
+     "stage_elapsed_s": 26.6,
+     "bytes_done": 1073818839,
+     "bytes_total": 1073818839,
+     "rows_done": 2036104,
+     "ingest_mb_s": 5.76,
+     "pred_finish_s": 321.9,
+     "err_s": 59.8,
+     "err_pct_of_total": 22.8
+    },
+    {
+     "t": 239.0,
+     "status": "running",
+     "stage": "detect",
+     "percent": 50,
+     "elapsed_s": 238.9,
+     "eta_s": 82.8,
+     "eta_basis": "history",
+     "eta_total_s": 318.6,
+     "stage_fraction": null,
+     "stage_elapsed_s": 27.8,
+     "bytes_done": 1073818839,
+     "bytes_total": 1073818839,
+     "rows_done": 2036104,
+     "ingest_mb_s": 5.76,
+     "pred_finish_s": 321.7,
+     "err_s": 59.6,
+     "err_pct_of_total": 22.7
+    },
+    {
+     "t": 240.08,
+     "status": "running",
+     "stage": "detect",
+     "percent": 50,
+     "elapsed_s": 240.1,
+     "eta_s": 81.8,
+     "eta_basis": "history",
+     "eta_total_s": 318.6,
+     "stage_fraction": null,
+     "stage_elapsed_s": 28.9,
+     "bytes_done": 1073818839,
+     "bytes_total": 1073818839,
+     "rows_done": 2036104,
+     "ingest_mb_s": 5.76,
+     "pred_finish_s": 321.9,
+     "err_s": 59.8,
+     "err_pct_of_total": 22.8
+    },
+    {
+     "t": 241.16,
+     "status": "running",
+     "stage": "detect",
+     "percent": 50,
+     "elapsed_s": 241.1,
+     "eta_s": 80.7,
+     "eta_basis": "history",
+     "eta_total_s": 318.6,
+     "stage_fraction": null,
+     "stage_elapsed_s": 30.0,
+     "bytes_done": 1073818839,
+     "bytes_total": 1073818839,
+     "rows_done": 2036104,
+     "ingest_mb_s": 5.76,
+     "pred_finish_s": 321.8,
+     "err_s": 59.7,
+     "err_pct_of_total": 22.8
+    },
+    {
+     "t": 242.22,
+     "status": "running",
+     "stage": "detect",
+     "percent": 50,
+     "elapsed_s": 242.2,
+     "eta_s": 79.6,
+     "eta_basis": "history",
+     "eta_total_s": 318.6,
+     "stage_fraction": null,
+     "stage_elapsed_s": 31.0,
+     "bytes_done": 1073818839,
+     "bytes_total": 1073818839,
+     "rows_done": 2036104,
+     "ingest_mb_s": 5.76,
+     "pred_finish_s": 321.8,
+     "err_s": 59.7,
+     "err_pct_of_total": 22.8
+    },
+    {
+     "t": 243.36,
+     "status": "running",
+     "stage": "detect",
+     "percent": 50,
+     "elapsed_s": 243.2,
+     "eta_s": 78.5,
+     "eta_basis": "history",
+     "eta_total_s": 318.6,
+     "stage_fraction": null,
+     "stage_elapsed_s": 32.2,
+     "bytes_done": 1073818839,
+     "bytes_total": 1073818839,
+     "rows_done": 2036104,
+     "ingest_mb_s": 5.76,
+     "pred_finish_s": 321.7,
+     "err_s": 59.6,
+     "err_pct_of_total": 22.7
+    },
+    {
+     "t": 244.41,
+     "status": "running",
+     "stage": "detect",
+     "percent": 50,
+     "elapsed_s": 244.4,
+     "eta_s": 77.4,
+     "eta_basis": "history",
+     "eta_total_s": 318.6,
+     "stage_fraction": null,
+     "stage_elapsed_s": 33.2,
+     "bytes_done": 1073818839,
+     "bytes_total": 1073818839,
+     "rows_done": 2036104,
+     "ingest_mb_s": 5.76,
+     "pred_finish_s": 321.8,
+     "err_s": 59.7,
+     "err_pct_of_total": 22.8
+    },
+    {
+     "t": 245.51,
+     "status": "running",
+     "stage": "detect",
+     "percent": 50,
+     "elapsed_s": 245.5,
+     "eta_s": 76.3,
+     "eta_basis": "history",
+     "eta_total_s": 318.6,
+     "stage_fraction": null,
+     "stage_elapsed_s": 34.3,
+     "bytes_done": 1073818839,
+     "bytes_total": 1073818839,
+     "rows_done": 2036104,
+     "ingest_mb_s": 5.76,
+     "pred_finish_s": 321.8,
+     "err_s": 59.7,
+     "err_pct_of_total": 22.8
+    },
+    {
+     "t": 246.67,
+     "status": "running",
+     "stage": "detect",
+     "percent": 50,
+     "elapsed_s": 246.6,
+     "eta_s": 75.2,
+     "eta_basis": "history",
+     "eta_total_s": 318.6,
+     "stage_fraction": null,
+     "stage_elapsed_s": 35.5,
+     "bytes_done": 1073818839,
+     "bytes_total": 1073818839,
+     "rows_done": 2036104,
+     "ingest_mb_s": 5.76,
+     "pred_finish_s": 321.8,
+     "err_s": 59.7,
+     "err_pct_of_total": 22.8
+    },
+    {
+     "t": 247.75,
+     "status": "running",
+     "stage": "detect",
+     "percent": 50,
+     "elapsed_s": 247.8,
+     "eta_s": 74.1,
+     "eta_basis": "history",
+     "eta_total_s": 318.6,
+     "stage_fraction": null,
+     "stage_elapsed_s": 36.6,
+     "bytes_done": 1073818839,
+     "bytes_total": 1073818839,
+     "rows_done": 2036104,
+     "ingest_mb_s": 5.76,
+     "pred_finish_s": 321.9,
+     "err_s": 59.8,
+     "err_pct_of_total": 22.8
+    },
+    {
+     "t": 248.86,
+     "status": "running",
+     "stage": "episodes",
+     "percent": 65,
+     "elapsed_s": 248.8,
+     "eta_s": 6.5,
+     "eta_basis": "history",
+     "eta_total_s": 252.1,
+     "stage_fraction": null,
+     "stage_elapsed_s": 0.6,
+     "bytes_done": 1073818839,
+     "bytes_total": 1073818839,
+     "rows_done": 2036104,
+     "ingest_mb_s": 5.76,
+     "pred_finish_s": 255.3,
+     "err_s": -6.8,
+     "err_pct_of_total": -2.6
+    },
+    {
+     "t": 249.97,
+     "status": "running",
+     "stage": "link",
+     "percent": 72,
+     "elapsed_s": 249.9,
+     "eta_s": 4.2,
+     "eta_basis": "history",
+     "eta_total_s": 250.9,
+     "stage_fraction": null,
+     "stage_elapsed_s": 0.4,
+     "bytes_done": 1073818839,
+     "bytes_total": 1073818839,
+     "rows_done": 2036104,
+     "ingest_mb_s": 5.76,
+     "pred_finish_s": 254.1,
+     "err_s": -8.0,
+     "err_pct_of_total": -3.1
+    },
+    {
+     "t": 251.03,
+     "status": "running",
+     "stage": "link",
+     "percent": 72,
+     "elapsed_s": 251.0,
+     "eta_s": 3.2,
+     "eta_basis": "history",
+     "eta_total_s": 250.9,
+     "stage_fraction": null,
+     "stage_elapsed_s": 1.4,
+     "bytes_done": 1073818839,
+     "bytes_total": 1073818839,
+     "rows_done": 2036104,
+     "ingest_mb_s": 5.76,
+     "pred_finish_s": 254.2,
+     "err_s": -7.9,
+     "err_pct_of_total": -3.0
+    },
+    {
+     "t": 252.09,
+     "status": "running",
+     "stage": "link",
+     "percent": 72,
+     "elapsed_s": 252.1,
+     "eta_s": 3.6,
+     "eta_basis": "history",
+     "eta_total_s": 252.4,
+     "stage_fraction": null,
+     "stage_elapsed_s": 2.5,
+     "bytes_done": 1073818839,
+     "bytes_total": 1073818839,
+     "rows_done": 2036104,
+     "ingest_mb_s": 5.76,
+     "pred_finish_s": 255.7,
+     "err_s": -6.4,
+     "err_pct_of_total": -2.4
+    },
+    {
+     "t": 253.17,
+     "status": "running",
+     "stage": "link",
+     "percent": 72,
+     "elapsed_s": 253.1,
+     "eta_s": 4.0,
+     "eta_basis": "history",
+     "eta_total_s": 253.9,
+     "stage_fraction": null,
+     "stage_elapsed_s": 3.6,
+     "bytes_done": 1073818839,
+     "bytes_total": 1073818839,
+     "rows_done": 2036104,
+     "ingest_mb_s": 5.76,
+     "pred_finish_s": 257.1,
+     "err_s": -5.0,
+     "err_pct_of_total": -1.9
+    },
+    {
+     "t": 254.25,
+     "status": "running",
+     "stage": "link",
+     "percent": 72,
+     "elapsed_s": 254.2,
+     "eta_s": 4.5,
+     "eta_basis": "history",
+     "eta_total_s": 255.4,
+     "stage_fraction": null,
+     "stage_elapsed_s": 4.6,
+     "bytes_done": 1073818839,
+     "bytes_total": 1073818839,
+     "rows_done": 2036104,
+     "ingest_mb_s": 5.76,
+     "pred_finish_s": 258.7,
+     "err_s": -3.4,
+     "err_pct_of_total": -1.3
+    },
+    {
+     "t": 255.33,
+     "status": "running",
+     "stage": "link",
+     "percent": 72,
+     "elapsed_s": 255.3,
+     "eta_s": 4.9,
+     "eta_basis": "history",
+     "eta_total_s": 256.9,
+     "stage_fraction": null,
+     "stage_elapsed_s": 5.7,
+     "bytes_done": 1073818839,
+     "bytes_total": 1073818839,
+     "rows_done": 2036104,
+     "ingest_mb_s": 5.76,
+     "pred_finish_s": 260.2,
+     "err_s": -1.9,
+     "err_pct_of_total": -0.7
+    },
+    {
+     "t": 256.38,
+     "status": "running",
+     "stage": "link",
+     "percent": 72,
+     "elapsed_s": 256.4,
+     "eta_s": 5.3,
+     "eta_basis": "history",
+     "eta_total_s": 258.4,
+     "stage_fraction": null,
+     "stage_elapsed_s": 6.8,
+     "bytes_done": 1073818839,
+     "bytes_total": 1073818839,
+     "rows_done": 2036104,
+     "ingest_mb_s": 5.76,
+     "pred_finish_s": 261.7,
+     "err_s": -0.4,
+     "err_pct_of_total": -0.2
+    },
+    {
+     "t": 257.48,
+     "status": "running",
+     "stage": "link",
+     "percent": 72,
+     "elapsed_s": 257.4,
+     "eta_s": 5.7,
+     "eta_basis": "history",
+     "eta_total_s": 260.0,
+     "stage_fraction": null,
+     "stage_elapsed_s": 7.9,
+     "bytes_done": 1073818839,
+     "bytes_total": 1073818839,
+     "rows_done": 2036104,
+     "ingest_mb_s": 5.76,
+     "pred_finish_s": 263.1,
+     "err_s": 1.0,
+     "err_pct_of_total": 0.4
+    },
+    {
+     "t": 258.62,
+     "status": "running",
+     "stage": "incidents",
+     "percent": 80,
+     "elapsed_s": 258.6,
+     "eta_s": 3.8,
+     "eta_basis": "history",
+     "eta_total_s": 259.1,
+     "stage_fraction": null,
+     "stage_elapsed_s": 0.4,
+     "bytes_done": 1073818839,
+     "bytes_total": 1073818839,
+     "rows_done": 2036104,
+     "ingest_mb_s": 5.76,
+     "pred_finish_s": 262.4,
+     "err_s": 0.3,
+     "err_pct_of_total": 0.1
+    },
+    {
+     "t": 259.88,
+     "status": "running",
+     "stage": "incidents",
+     "percent": 80,
+     "elapsed_s": 259.7,
+     "eta_s": 2.5,
+     "eta_basis": "history",
+     "eta_total_s": 259.1,
+     "stage_fraction": null,
+     "stage_elapsed_s": 1.6,
+     "bytes_done": 1073818839,
+     "bytes_total": 1073818839,
+     "rows_done": 2036104,
+     "ingest_mb_s": 5.76,
+     "pred_finish_s": 262.2,
+     "err_s": 0.1,
+     "err_pct_of_total": 0.0
+    },
+    {
+     "t": 260.97,
+     "status": "running",
+     "stage": "publish",
+     "percent": 90,
+     "elapsed_s": 260.9,
+     "eta_s": 0.0,
+     "eta_basis": "history",
+     "eta_total_s": 257.7,
+     "stage_fraction": 1.0,
+     "stage_elapsed_s": 0.8,
+     "bytes_done": 1073818839,
+     "bytes_total": 1073818839,
+     "rows_done": 2036104,
+     "ingest_mb_s": 5.76,
+     "pred_finish_s": 260.9,
+     "err_s": -1.2,
+     "err_pct_of_total": -0.5
+    },
+    {
+     "t": 262.08,
+     "status": "succeeded",
+     "stage": "done",
+     "percent": 100,
+     "elapsed_s": 262.1,
+     "eta_s": 0.0,
+     "eta_basis": null,
+     "eta_total_s": 257.49,
+     "stage_fraction": null,
+     "stage_elapsed_s": null,
+     "bytes_done": 1073818839,
+     "bytes_total": 1073818839,
+     "rows_done": 2036104,
+     "ingest_mb_s": 5.76
+    }
+   ]
+  }
+ }
+}

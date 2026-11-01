@@ -13,5 +13,8 @@ max_read_bytes: 268435456  # max new bytes read per file per cycle (rest is read
 status_stale_s: 10         # /api/live/status reports enabled=false if the heartbeat is older than this
 compact_max_files: 200      # window Parquet files before a rewrite into one file per partition
 max_future_skew_s: 300     # rows dated later than now + this are rejected (drop reason future_timestamp)
-watermark_min_rows: 100    # batches with >= this many rows use p99(ts) as watermark (one bad line can't move it)
+watermark_min_rows: 100    # with >= this many sampled rows the watermark is p99 of the sample, else max
 max_window_ms: 604800000   # hard cap: days kept for still-open incidents never exceed watermark - 7 d
+watermark_sample: 1000     # rolling sample of recent timestamps (across batches) the watermark is taken from
+watermark_jump_ms: 3600000 # an advance beyond previous watermark + this ...
+watermark_jump_min_rows: 5 # ... needs at least this many sampled rows beyond it (one stray timestamp can't prune)

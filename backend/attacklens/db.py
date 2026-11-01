@@ -55,8 +55,11 @@ def line_reader(files: Sequence[str], filename: bool = True, rejects: str | None
     """Table function reading files as one VARCHAR column `line` per physical line (no quoting, no parsing).
 
     - Empty lines come back as NULL; a UTF-8 BOM and CR/LF/CRLF endings (also mixed) are stripped.
-    - Delimiter NUL: the whole line lands in one column. A NUL byte inside a line truncates it there
-      (strict_mode=false); the truncated JSON then counts as malformed, so it is still counted.
+    - Delimiter chr(1) (SOH, a control byte text logs never carry): the whole line lands in one column.
+      NUL bytes (corrupt / preallocated tails) stay in the line, so a NUL run is a kept unparseable row and
+      NUL inside JSON makes it malformed: both counted. A SOH byte truncates the line there (strict_mode=false).
+      Never write delim='\\0' in SQL: DuckDB reads backslash + '0' and cut every line at JSON-escaped registry
+      paths like ...\\\\LEGACY_X\\\\0000; delim=chr(0) would turn NUL runs into NULL and cut kv lines silently.
     - Lines that cannot be read (invalid UTF-8) are skipped by the reader; pass `rejects=<name>` to record
       them in temp tables <name>_err / <name>_scan (see count_rejects). Rejects tables hold every rejected
       line in memory, so for big line files count physical lines with encoding='latin-1' instead (every byte
@@ -67,7 +70,7 @@ def line_reader(files: Sequence[str], filename: bool = True, rejects: str | None
           f"rejects_scan={sql_str(rejects + '_scan')}") if rejects else ""
     rj += f", encoding={sql_str(encoding)}" if encoding else ""
     return (f"read_csv({sql_list([str(f).replace(chr(92), '/') for f in files])}, columns={{'line': 'VARCHAR'}}, "
-            f"header=false, delim='\\0', quote='', escape='', auto_detect=false, max_line_size={MAX_LINE_SIZE}, "
+            f"header=false, delim=chr(1), quote='', escape='', auto_detect=false, max_line_size={MAX_LINE_SIZE}, "
             f"strict_mode=false, ignore_errors=true{fn}{rj})")
 
 

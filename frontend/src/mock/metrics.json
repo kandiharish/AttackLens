@@ -1,17 +1,52 @@
 {
   "run_metrics": {
+    "set": "mock",
+    "raw_dir": "src/mock",
+    "out_dir": "src/mock (VITE_USE_MOCK=true)",
     "total_wall_s": 412.6,
     "peak_rss_mb": 4630.0,
     "rows_per_s": 123622.0,
     "stages": [
-      {"name": "profile", "wall_s": 3.2, "peak_rss_mb": 310.0},
-      {"name": "ingest", "wall_s": 251.3, "peak_rss_mb": 4630.0},
-      {"name": "lookups", "wall_s": 18.4, "peak_rss_mb": 2210.0},
-      {"name": "detect", "wall_s": 88.1, "peak_rss_mb": 3890.0},
-      {"name": "episodes", "wall_s": 21.7, "peak_rss_mb": 1420.0},
-      {"name": "link", "wall_s": 9.6, "peak_rss_mb": 980.0},
-      {"name": "incidents", "wall_s": 16.9, "peak_rss_mb": 1150.0},
-      {"name": "publish", "wall_s": 3.4, "peak_rss_mb": 640.0}
+      {
+        "name": "profile",
+        "wall_s": 3.2,
+        "peak_rss_mb": 310.0
+      },
+      {
+        "name": "ingest",
+        "wall_s": 251.3,
+        "peak_rss_mb": 4630.0
+      },
+      {
+        "name": "lookups",
+        "wall_s": 18.4,
+        "peak_rss_mb": 2210.0
+      },
+      {
+        "name": "detect",
+        "wall_s": 88.1,
+        "peak_rss_mb": 3890.0
+      },
+      {
+        "name": "episodes",
+        "wall_s": 21.7,
+        "peak_rss_mb": 1420.0
+      },
+      {
+        "name": "link",
+        "wall_s": 9.6,
+        "peak_rss_mb": 980.0
+      },
+      {
+        "name": "incidents",
+        "wall_s": 16.9,
+        "peak_rss_mb": 1150.0
+      },
+      {
+        "name": "publish",
+        "wall_s": 3.4,
+        "peak_rss_mb": 640.0
+      }
     ],
     "episodes": 18240,
     "episodes_spilled": 0,
@@ -31,7 +66,17 @@
     "targets": {}
   },
   "ingest_accounting": [
-    {"source_type": "ecs_json", "rows_in": 41200000, "rows_ok": 41198812, "dropped": 1188},
-    {"source_type": "firewall_csv", "rows_in": 9800000, "rows_ok": 9800000, "dropped": 0}
+    {
+      "source_type": "ecs_json",
+      "rows_in": 41200000,
+      "rows_ok": 41198812,
+      "dropped": 1188
+    },
+    {
+      "source_type": "firewall_csv",
+      "rows_in": 9800000,
+      "rows_ok": 9800000,
+      "dropped": 0
+    }
   ]
 }

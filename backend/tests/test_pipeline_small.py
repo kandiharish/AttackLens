@@ -15,6 +15,8 @@ import pytest
 
 from attacklens.models import Incident
 
+# L3 = the shipped configuration end to end, SigmaHQ pack included (conftest: module fixtures follow this)
+pytestmark = pytest.mark.sigma
 REPO = Path(__file__).resolve().parents[2]
 SIX = ("detection_pct", "labels_pct", "rebuilt_pct", "false_alarms_strict_pct", "false_alarms_lenient_pct",
        "singleton_recall_pct")

@@ -99,7 +99,7 @@ def test_traffic_accept_all_columns(ctx) -> None:
     r = row(ctx, T0 + 123)
     want = {"action": "conn_allowed", "outcome": "success", "host": "fgt-sim-01", "src_ip": "10.0.0.5",
             "src_port": 50000, "dst_ip": "198.51.100.7", "dst_port": 443, "bytes_out": 1200, "bytes_in": 3400,
-            "service_name": "https", "app": "example",  # lower-cased ids "src_zone": "lan", "dst_zone": "wan",
+            "service_name": "https", "app": "example", "src_zone": "lan", "dst_zone": "wan",  # ids lower-cased
             "vendor_severity": "notice", "signature": None, "src_user": None, "target_user": None,
             "dst_domain": None, "logon_type": None}
     assert {k: r[k] for k in want} == want
@@ -194,3 +194,124 @@ def test_lone_cr_inside_line(tmp_path: Path) -> None:
         c.con.close()
     assert a["rows_in"] == 2 and a["rows_ok"] + a["dropped"] == 2
     assert ts[-1] == 31_000 and a["rows_ok"] == 2  # \n is the only line terminator
+
+
+# ================================================================ BB-ingest review fixes (fw_review.txt)
+# Lines are local 10:00:SS +0530 = 04:30:SS UTC; eventtime is local-as-UTC + 250 ms.
+R0 = 1792816200000 + 250  # 2026-10-24T04:30:00.250Z
+
+
+def _ingest_review(tmp: Path):
+    (tmp / "raw").mkdir(parents=True)
+    shutil.copy(FX / "fw_review.txt", tmp / "raw" / "fw_review.txt")
+    return run_ingest(tmp / "raw", tmp)
+
+
+@pytest.fixture(scope="module")
+def rctx(tmp_path_factory: pytest.TempPathFactory):
+    c = _ingest_review(tmp_path_factory.mktemp("fgt_review"))
+    yield c
+    c.con.close()
+
+
+def test_review_accounting_and_times(rctx) -> None:
+    a = acc_entry(rctx)
+    assert (a["rows_in"], a["rows_ok"], a["dropped"]) == (8, 8, 0)
+    got = sorted(r["ts_ms"] - R0 for r in query(rctx, "SELECT ts_ms FROM events"))
+    assert got == [0, 1000, 2000, 3000, 4000, 5000, 6000, 7000]
+    assert {r["host"] for r in query(rctx, "SELECT DISTINCT host FROM events")} == {"fgt-test"}
+
+
+SPOOF_VALUES = ("6.6.6.6", "7.7.7.7", "evil")
+
+
+def test_quoted_value_cannot_spoof_keys(rctx) -> None:
+    r = row(rctx, R0)
+    assert (r["action"], r["outcome"], r["src_ip"], r["target_user"]) == ("login_failed", "failure", "10.0.0.1",
+                                                                          "admin")
+    mapped = {k: v for k, v in r.items() if k != "raw_line"}
+    assert not [k for k, v in mapped.items() if isinstance(v, str) and any(x in v for x in SPOOF_VALUES)], mapped
+    assert 'msg="x status=success' in r["raw_line"]  # the evidence keeps the original text
+
+
+def test_spoof_guard_disabled_lets_fake_values_through(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Mutation check, kept as a test: with the guard switched off the spoof test above would fail."""
+    import re
+
+    from attacklens import ingest_sql
+    real = ingest_sql.kv_select
+
+    def no_guard(*a, **k):
+        sql = real(*a, **k)
+        out, n = re.subn(r"regexp_matches\(line, '(?:[^']|'')*'\) AS kv_spoof", "FALSE AS kv_spoof", sql)
+        assert n == 1
+        return out
+
+    monkeypatch.setattr(ingest_sql, "kv_select", no_guard)
+    import attacklens.ingest as ing
+    if hasattr(ing, "kv_select"):
+        monkeypatch.setattr(ing, "kv_select", no_guard)
+    c = _ingest_review(tmp_path)
+    try:
+        r = row(c, R0)
+    finally:
+        c.con.close()
+    assert r["src_ip"] == "6.6.6.6" or r["outcome"] == "success" or r["target_user"] == "evil"
+
+
+def test_vpn_ssl_login_fail(rctx) -> None:
+    r = row(rctx, R0 + 1000)
+    assert (r["action"], r["outcome"], r["logon_type"], r["src_ip"], r["dst_ip"], r["target_user"]) == (
+        "login_failed", "failure", 10, "192.0.2.77", None, "jdoe")
+
+
+@pytest.mark.parametrize("dt,sig,sev", [(2000, "Example.RCE", "high"), (3000, "Example.Probe2", "medium")])
+def test_ips_reset_and_clear_session_are_blocked(rctx, dt: int, sig: str, sev: str) -> None:
+    r = row(rctx, R0 + dt)
+    assert (r["action"], r["outcome"], r["signature"], r["vendor_severity"]) == ("ips_alert", "blocked", sig, sev)
+
+
+def test_dns_qname_is_dst_domain(rctx) -> None:
+    r = row(rctx, R0 + 4000)
+    assert (r["action"], r["dst_domain"], r["src_ip"]) == ("dns_query", "bad.example.test", "10.0.0.5")
+
+
+def test_dnat_uses_tranip_snat_keeps_dstip(rctx) -> None:
+    d, s = row(rctx, R0 + 5000), row(rctx, R0 + 6000)
+    assert (d["action"], d["src_ip"], d["dst_ip"], d["dst_port"]) == ("conn_allowed", "203.0.113.9", "10.0.0.80", 3389)
+    assert (s["dst_ip"], s["dst_port"]) == ("198.51.100.11", 443)
+
+
+def _find(obj, key):
+    if isinstance(obj, dict):
+        if key in obj:
+            yield obj[key]
+        for v in obj.values():
+            yield from _find(v, key)
+    elif isinstance(obj, list):
+        for v in obj:
+            yield from _find(v, key)
+
+
+def test_unknown_utm_verdict_outcome_null_and_profiled(rctx) -> None:
+    import json
+    r = row(rctx, R0 + 7000)
+    assert (r["action"], r["outcome"], r["signature"]) == ("ips_alert", None, "Example.Odd")
+    prof = json.loads((rctx.out_dir / "source_profile.json").read_text(encoding="utf-8"))
+    assert list(_find(prof, "unmapped_outcome_actions")) == [{"quarantine_weird": 1}]
+
+
+def test_line_over_16_mib_counted_as_line_too_long(tmp_path: Path) -> None:
+    from attacklens.db import MAX_LINE_SIZE
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    good = (FX / "fw_review.txt").read_bytes().split(b"\n")[5]
+    huge = good + b' msg="' + b"x" * (MAX_LINE_SIZE + 64) + b'"'
+    (raw / "big.txt").write_bytes(good + b"\n" + huge + b"\n")
+    c = run_ingest(raw, tmp_path)
+    try:
+        a = acc_entry(c)
+    finally:
+        c.con.close()
+    assert (a["rows_in"], a["rows_ok"], a["dropped"]) == (2, 1, 1)
+    assert a["drop_reasons"] == {f"line_too_long (> {MAX_LINE_SIZE} bytes, skipped by reader)": 1}

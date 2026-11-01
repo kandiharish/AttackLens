@@ -264,18 +264,40 @@ print(json.dumps(rows, default=str, sort_keys=True))
 """
 
 
-@pytest.mark.parametrize("tz", ["Asia/Kolkata", "America/New_York"])
-def test_timezone_independent(tmp_path: Path, tz: str) -> None:
+_TZS = ("Asia/Kolkata", "America/New_York")
+
+
+@pytest.fixture(scope="module")
+def tz_outputs(tmp_path_factory: pytest.TempPathFactory) -> dict[str, tuple[int, str, str]]:
+    """Ingest the fixtures once per TZ (UTC baseline + each tested zone) in separate processes started together:
+    one shared UTC baseline and parallel runs keep the wall time near one ingest instead of four in series."""
+    tmp = tmp_path_factory.mktemp("tz")
+    procs = {}
+    for name in ("UTC", *_TZS):
+        work = tmp / name.replace("/", "_")
+        shutil.copytree(FX, work / "raw")
+        procs[name] = subprocess.Popen(
+            [sys.executable, "-c", _TZ_SCRIPT, str(work / "raw"), str(work), str(Path(__file__).resolve().parents[1])],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env={**os.environ, "TZ": name})
+    outs: dict[str, tuple[int, str, str]] = {}
+    try:
+        for name, p in procs.items():
+            out, err = p.communicate(timeout=180)
+            outs[name] = (p.returncode, out, err)
+    finally:
+        for p in procs.values():
+            if p.poll() is None:
+                p.kill()
+    return outs
+
+
+@pytest.mark.parametrize("tz", _TZS)
+def test_timezone_independent(tz_outputs: dict, tz: str) -> None:
     outs = {}
     for name in ("UTC", tz):
-        work = tmp_path / name.replace("/", "_")
-        shutil.copytree(FX, work / "raw")
-        env = {**os.environ, "TZ": name}
-        p = subprocess.run([sys.executable, "-c", _TZ_SCRIPT, str(work / "raw"), str(work),
-                            str(Path(__file__).resolve().parents[1])],
-                           capture_output=True, text=True, env=env, timeout=120)
-        assert p.returncode == 0, p.stderr[-2000:]
-        outs[name] = json.loads(p.stdout.strip().splitlines()[-1])
+        rc, out, err = tz_outputs[name]
+        assert rc == 0, err[-2000:]
+        outs[name] = json.loads(out.strip().splitlines()[-1])
     a, b = outs["UTC"], outs[tz]
     assert sum(1 for r in a if r["ts_ok"]) == 15  # 4 + 5 + 2 + 3 + 1
     # source_seq may hash the absolute filename; everything else must be identical
@@ -315,3 +337,59 @@ def test_make_events_parquet_helper(tmp_path: Path) -> None:
             make_events_parquet(tmp_path / "bad", [{"threat": "T1110"}])
     finally:
         ctx.con.close()
+
+
+# ---------------------------------------------------------------- line reader delimiter (backslash-zero is text)
+BS = "\\"
+
+
+def _ecs_line(i: int, extra: dict) -> str:
+    """One label-free ECS line (raw_line == line), so the exact text can be compared after ingest."""
+    return json.dumps({"@timestamp": f"2026-10-24T02:0{i}:00.000Z",
+                       "event": {"id": f"00000000-0000-4000-8000-00000000000{i}", "category": ["registry"],
+                                 "action": "registry_set"},
+                       "host": {"name": "WS-FIN-010", "hostname": "WS-FIN-010", "ip": ["10.10.0.20"]}, **extra},
+                      separators=(",", ":"))
+
+
+def test_line_reader_keeps_backslash_zero(tmp_path: Path) -> None:
+    # OTRF runkeys/psexec: JSON-escaped registry paths contain the two characters `\0` (e.g. ...\\LEGACY_X\\0000);
+    # the reader delimiter must be one control byte (SOH), never the text backslash + '0'
+    from attacklens import db
+    lines = ['{"a":1}',
+             '{"k":"HKLM' + BS * 2 + "SYSTEM" + BS * 2 + "Enum" + BS * 2 + "Root" + BS * 2 + "LEGACY_X" + BS * 2 + '0000"}',
+             '{"s":"x' + BS + '0y"}',                              # raw `\0` in a string (not valid JSON, still a line)
+             'a\tb,c;d|e' + BS + '0']
+    f = tmp_path / "f.jsonl"
+    f.write_bytes(("\n".join(lines) + "\n").encode())
+    con = db.connect(memory_limit="1GB", threads=1, temp_directory=tmp_path / "spill")
+    try:
+        got = [r[0] for r in con.execute(f"SELECT line FROM {db.line_reader([f.as_posix()], filename=False)}").fetchall()]
+        # real NUL bytes (corrupted logs) stay in the line: invalid JSON (counted malformed), a NUL run is a row
+        g = tmp_path / "g.jsonl"
+        g.write_bytes(b'{"n":"ab\x00cd"}\n' + b"\x00" * 64)
+        nul = con.execute(f"SELECT line, json_valid(line) FROM "
+                          f"{db.line_reader([g.as_posix()], filename=False)}").fetchall()
+    finally:
+        con.close()
+    assert sorted(got) == sorted(lines)
+    assert sorted(nul) == sorted([('{"n":"ab\x00cd"}', False), ("\x00" * 64, False)])
+
+
+def test_ingest_registry_path_backslash_zero_not_malformed(tmp_path: Path) -> None:
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    lines = [_ecs_line(1, {}),
+             _ecs_line(2, {"registry": {"path": "HKLM\\SYSTEM\\CurrentControlSet\\Enum\\Root\\LEGACY_X\\0000"}}),
+             _ecs_line(3, {"process": {"command_line": "printf a\\0b"}})]
+    assert all(BS * 2 + "0" in ln for ln in lines[1:])
+    (raw / "edr.jsonl").write_bytes(("\n".join(lines) + "\n").encode())
+    ctx = run_ingest(raw, tmp_path)
+    try:
+        acc = accounting(ctx)
+        got = [r["raw_line"] for r in query(ctx, "SELECT raw_line FROM events ORDER BY ts_ms")]
+    finally:
+        ctx.con.close()
+    assert {k: (v["rows_in"], v["rows_ok"], v["dropped"]) for k, v in acc.items() if v["rows_in"]} == \
+        {"ecs_json": (3, 3, 0)}
+    assert got == lines

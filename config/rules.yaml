@@ -21,6 +21,8 @@ thresholds:
   # exfiltration (T1048)
   exfil_min_bytes: 50000000      # sliding-window sum must exceed max(this, mult x host baseline)
   exfil_window_ms: 900000
+  exfil_routine_min_days: 4      # routine transfer: pair active on >= this many days ...
+  exfil_routine_max_ratio: 2.0   # ... and alert-day volume <= ratio x its median daily volume -> no alert
   exfil_baseline_mult: 5.0       # baseline = host's median daily bytes per external destination
   # ransomware (T1486)
   mass_rename_min: 100
@@ -28,6 +30,7 @@ thresholds:
   # beaconing (T1071.001)
   beacon_min_conns: 6
   beacon_max_cv: 0.2             # inter-arrival coefficient of variation must be below this
+  beacon_max_conns_per_day: 20000   # pre-filter: (pair, day) groups busier than this are not beacons
   beacon_session_gap_ms: 3600000 # a gap > 1 h splits a (host, dst) series into separate sessions
   # new admin logon (T1021 / T1078)
   new_admin_max_pair_seen: 2     # (user, host) pair with <= this many privileged logons in the data set
@@ -47,19 +50,43 @@ thresholds:
   entity_fallback_actions: [conn_out, conn_allowed, conn_denied, dns_query, ips_alert, av_alert, web_blocked,
                             web_access, app_ctrl]
   vendor_severity_map: {critical: 90, high: 80, medium: 60, low: 40}   # signature_map row severity
-  vendor_severity_default: 40
   blocked_outcomes: [failure, blocked, dropped, reset, deny]  # device stopped it -> severity - penalty
   blocked_penalty: 20
   blocked_floor: 30
+  blocked_severity: 30           # blocked_daily alerts (prevented detections)
   scan_min_ports: 20             # port_scan: distinct dst_port on one dst_ip ...
   scan_min_hosts: 20             # ... or distinct dst_ip on one dst_port ...
   scan_window_ms: 60000          # ... within 60 s
   scan_horizontal_internal_only: true   # count only internal dst_ip for the many-hosts variant
   lateral_direction: internal    # internal_lateral: internal src only (inbound_remote_service: inbound)
+  lateral_peer_median_min: 5     # ... and the service is routine for other sources (median sightings) ...
+  lateral_sole_user_max_srcs: 1  # ... or this source is (one of) its only user(s)
+  lateral_gate_min_service_sightings: 200   # gate only services with this much history (else fail open)
+  lateral_min_bytes: 1000       # internal_lateral: ignore probe-sized connections (sent + rcvd bytes)
   lateral_max_triple_seen: 2     # internal_lateral: (src_ip, dst_ip, dst_port) seen <= this many times
   lateral_ports: {445: T1021.002, 3389: T1021.001, 5985: T1021.006, 5986: T1021.006, 22: T1021.004}
+  vpn_context_window_ms: 86400000   # vpn_login_context: look-back for the same src_ip's context
+  vpn_min_failures: 5            # ... >= this many VPN login failures, or an allowed IPS hit
+  vpn_first_seen_pair: false     # also fire on a first-seen (user, src_ip) pair (noisy: VPN IPs churn)
+  vpn_logon_type: 10
   cfg_after_login_window_ms: 7200000  # fw_config_change_after_login: change within 2 h of external login
   lateral_context_window_ms: 86400000  # T1021 needs an earlier alert for the account on the source host, else T1078
+  # remote_service_exec (T1569.002 + T1021.002): PsExec-style service created over an admin share
+  remote_svc_logon_window_ms: 300000        # network logon to the host <= 5 min before -> + T1021.002 secondary
+  remote_svc_logon_types: [3]               # Network
+  remote_svc_loopback_ips: ["127.0.0.1", "::1"]
+  remote_svc_ignore_users: ["anonymous logon"]
+  remote_svc_names: [psexesvc, paexec, remcomsvc, csexecsvc, xcmdsvc]   # remote-exec tool service names
+  remote_svc_binaries: [psexesvc.exe, remcomsvc.exe, csexecsvc.exe, xcmdsvc.exe]   # their service binaries
+  remote_svc_shells: [cmd.exe, powershell.exe, pwsh.exe]   # services.exe -> shell = a command run as a service
+  remote_svc_image_patterns:                # 7045 ImagePath (process_path) of a remote-exec service
+    - '(?i)^"?(%systemroot%|%windir%|\\systemroot|[a-z]:\\windows)\\[^\\]+\.exe"?(\s|$)'   # ADMIN$ root binary
+    - '(?i)^"?\\\\[^\\]+\\(admin|[a-z])\$\\'                                                # UNC admin share
+    - '(?i)%comspec%|(^|[\\"\s])cmd(\.exe)?"?\s+/[qcrk]\b'                                # shell one-liner
+    - '(?i)(^|[\\"\s])(powershell|pwsh)(\.exe)?"?\s.*-(e|ec|enc|encodedcommand|nop|noprofile|w|windowstyle)\b'
+    - '(?i)\\(psexesvc|paexec[^\\]*|remcomsvc|csexecsvc)\.exe'
+  remote_svc_child_path_patterns:           # services.exe child running from the Windows directory root (ADMIN$)
+    - '(?i)^[a-z]:\\windows\\[^\\]+\.exe$'
   # lookups / scoring (§4 Stage 1b, §6)
   hub_min_median_daily_peers: 40  # was 20: generator users log onto all 28 hosts daily -> every user/IP a hub,
                                   # R2/R3 dead. g1 sweep (hub 40, baseline 99): det 100 / lab 100 / rebuilt 100 / FA 16.7
@@ -153,12 +180,18 @@ rules:
     tactic: Execution
     severity: 80
 
+  # encoded_powershell: a powershell.exe / pwsh.exe launch with -enc / -e / -ec, or (also on a 4104 / 4103 script
+  # block, action script_exec) -nop with hidden / iex, an iex download cradle, or iex of FromBase64String. The bare
+  # -enc / -e flag arms stay proc_start-only: in script text they match -Encoding / -ErrorAction parameters.
   - id: encoded_powershell
     kind: match
     where: >-
-      action = 'proc_start'
-      AND lower(process_name) IN ('powershell.exe','pwsh.exe')
-      AND (command_line ILIKE '% -enc%' OR command_line ILIKE '% -e %' OR command_line ILIKE '% -ec %'
+      action IN ('proc_start','script_exec')
+      AND (action = 'script_exec' OR lower(process_name) IN ('powershell.exe','pwsh.exe'))
+      AND ((action = 'proc_start'
+            AND (command_line ILIKE '% -enc%' OR command_line ILIKE '% -e %' OR command_line ILIKE '% -ec %'))
+           OR (action = 'script_exec' AND regexp_matches(command_line, '(?i)\biex\b|invoke-expression')
+               AND regexp_matches(command_line, '(?i)frombase64string'))
            OR (regexp_matches(command_line, '(?i)\s-nop(rofile)?\b')
                AND regexp_matches(command_line, '(?i)\s-w(indowstyle)?\s+hidden\b|\biex\b|invoke-expression|downloadstring'))
            OR (regexp_matches(command_line, '(?i)\biex\b|invoke-expression')
@@ -185,7 +218,7 @@ rules:
   - id: ioc_destination
     kind: match
     where: >-
-      action IN ('conn_out','conn_allowed','conn_denied','dns_query')
+      action IN ('conn_out','conn_allowed','conn_denied','dns_query','web_access','web_blocked')
       AND (dst_ip IN {ioc.ips} OR lower(dst_domain) IN {ioc.domains})
     technique: T1071
     sub_technique: T1071.001
@@ -199,10 +232,10 @@ rules:
     tactic: Impact
     severity: 90
 
-  - id: discovery_commands
+  - id: discovery_commands      # also on 4104 / 4103 script blocks (action script_exec)
     kind: match
     where: >-
-      action = 'proc_start'
+      action IN ('proc_start','script_exec')
       AND (command_line ILIKE '%net user%' OR command_line ILIKE '%net group%' OR command_line ILIKE '%net1 group%'
            OR command_line ILIKE '%net localgroup%' OR command_line ILIKE '%nltest%' OR command_line ILIKE '%get-aduser%')
     technique: T1087
@@ -210,12 +243,14 @@ rules:
     tactic: Discovery
     severity: 55
 
-  - id: discovery_system
+  - id: discovery_system        # script block (script_exec): the command word only, not a $systemInfo variable
     kind: match
     where: >-
-      action = 'proc_start'
-      AND (lower(process_name) IN ('whoami.exe','systeminfo.exe')
-           OR command_line ILIKE '%whoami%' OR command_line ILIKE '%systeminfo%')
+      (action = 'proc_start'
+       AND (lower(process_name) IN ('whoami.exe','systeminfo.exe')
+            OR command_line ILIKE '%whoami%' OR command_line ILIKE '%systeminfo%'))
+      OR (action = 'script_exec'
+          AND regexp_matches(command_line, '(?i)(^|[\s;|&(=])(whoami|systeminfo)(\.exe)?(\s|$|[;|&)])'))
     technique: T1082
     tactic: Discovery
     severity: 45
@@ -273,11 +308,23 @@ rules:
     tactic: Execution
     severity: 70
 
-  - id: wmi_exec                # wmiprvse.exe child shell, or wmic process call create
+  # wmi_exec: a shell under wmiprvse.exe; or ANY other wmiprvse.exe child (implant EXE via Win32_Process.Create)
+  # unless it is a benign WMI provider/host child (allow-list below) or runs as a service account (provider work
+  # runs as SYSTEM / NETWORK SERVICE / LOCAL SERVICE / the machine account; Win32_Process.Create runs as the caller);
+  # or wmic process call create.
+  - id: wmi_exec
     kind: match
     where: >-
       action = 'proc_start'
-      AND ((lower(parent_process) = 'wmiprvse.exe' AND lower(process_name) IN ('cmd.exe','powershell.exe'))
+      AND ((lower(parent_process) = 'wmiprvse.exe'
+            AND (lower(process_name) IN ('cmd.exe','powershell.exe','pwsh.exe')
+                 OR (process_name IS NOT NULL
+                     AND lower(process_name) NOT IN ('wmiprvse.exe','werfault.exe','wermgr.exe','wmiadap.exe',
+                                                     'wmiapsrv.exe','mofcomp.exe','unsecapp.exe','msiexec.exe',
+                                                     'conhost.exe')
+                     AND coalesce(lower(src_user), '') NOT IN ('system','local service','network service',
+                                                               'localservice','networkservice')
+                     AND NOT coalesce(is_machine, FALSE) AND NOT ends_with(coalesce(src_user, ''), '$'))))
            OR (command_line ILIKE '%wmic%' AND command_line ILIKE '%process call create%'))
     technique: T1047
     tactic: Execution
@@ -295,11 +342,19 @@ rules:
     severity: 80
 
   # ---------------- coverage round B3 ----------------
-  - id: indicator_removal_files # rm -rf /var/log, del /f /q
+  # indicator_removal_files: rm -rf /var/log, del /f /q; Sysinternals SDelete by image name or command line, or a
+  # renamed SDelete (-accepteula with a pass count -p N and no -u account, which would be PsExec)
+  - id: indicator_removal_files
     kind: match
     where: >-
       action = 'proc_start'
-      AND (command_line ILIKE '%rm -rf /var/log%' OR command_line ILIKE '%del /f /q%')
+      AND (command_line ILIKE '%rm -rf /var/log%' OR command_line ILIKE '%del /f /q%'
+           OR lower(process_name) IN ('sdelete.exe','sdelete64.exe','sdelete64a.exe')
+           OR (command_line ILIKE '%sdelete%'
+               AND regexp_matches(command_line, '(?i)(^|[\\/"\s])sdelete(64a?)?(\.exe)?"?(\s|$)'))
+           OR (command_line ILIKE '%-accepteula%' AND regexp_matches(command_line, '(?i)\s[-/]p\s+\d\d?(\s|$)')
+               AND NOT regexp_matches(command_line, '(?i)\s[-/]u\s')
+               AND coalesce(lower(process_name), '') NOT IN ('psexec.exe','psexec64.exe','paexec.exe')))
     technique: T1070
     sub_technique: T1070.004
     tactic: Defense Impairment
@@ -308,12 +363,71 @@ rules:
   - id: disable_security_tools  # Set-MpPreference with -Disable
     kind: match
     where: >-
-      action = 'proc_start'
+      action IN ('proc_start','script_exec')
       AND command_line ILIKE '%set-mppreference%' AND command_line ILIKE '%-disable%'
     technique: T1562
     sub_technique: T1562.001
     tactic: Defense Impairment
     severity: 80
+
+  # ---------------- Windows endpoint round W (public-dataset gaps, reports/ext/win_eval.md) ----------------
+  # eventlog_service_disabled: the EventLog service start type written (Sysmon 13 on ...\Services\EventLog\Start;
+  # the value data is not a canonical column, so any write fires: Windows itself does not rewrite it), or a command
+  # / PowerShell script block that disables or stops the EventLog service (sc config|stop, Set-Service, Stop-Service,
+  # net stop, reg add / Set-ItemProperty of Start = 4). Script blocks (4103/4104) are action 'script_exec'.
+  - id: eventlog_service_disabled
+    kind: match
+    where: >-
+      (action = 'reg_set'
+       AND regexp_matches(registry_path, '(?i)\\(currentcontrolset|controlset\d\d\d)\\services\\eventlog\\start$'))
+      OR ((action = 'proc_start' OR event_id IN (4103, 4104))
+          AND (command_line ILIKE '%eventlog%' OR command_line ILIKE '%event log%')
+          AND (regexp_matches(command_line,
+                 '(?i)\bsc(\.exe)?"?\s+(\\\\\S+\s+)?config\s+"?eventlog"?\s+start\s*=\s*"?disabled')
+               OR regexp_matches(command_line,
+                 '(?i)\b(sc(\.exe)?"?\s+(\\\\\S+\s+)?|net1?(\.exe)?"?\s+)stop\s+"?eventlog\b')
+               OR (regexp_matches(command_line, '(?i)\b(set|stop)-service\b')
+                   AND regexp_matches(command_line, '(?i)(^|[\s"''=:(])(eventlog|"windows event log")\b')
+                   AND (regexp_matches(command_line, '(?i)\bstop-service\b')
+                        OR regexp_matches(command_line, '(?i)-start(up)?(type|mode)\s+["'']?(disabled|4)\b')))
+               OR (regexp_matches(command_line, '(?i)\\services\\eventlog\b')
+                   AND regexp_matches(command_line, '(?i)\bstart\b')
+                   AND regexp_matches(command_line, '(?i)(/d\s+|-value\s+|=\s*)["'']?(4|0x0*4)["'']?(\s|$|;|\))'))))
+    technique: T1685
+    sub_technique: T1685.001
+    tactic: Defense Impairment
+    severity: 80
+
+  # com_hijack: a per-user COM server registration (Sysmon 12 key create / 13 value set) for a CLSID's
+  # InprocServer32 / LocalServer32 under HKCU\Software\Classes (Sysmon: HKU\<SID>_Classes); it overrides the
+  # machine-wide HKLM entry for that user. Known per-user COM installers (OneDrive, Teams, MSI) are skipped.
+  # Sysmon 12 also logs DeleteKey (no EventType column): a hijack removal fires too.
+  - id: com_hijack
+    kind: match
+    where: >-
+      (action = 'reg_set' OR (event_id = 12 AND action = 'other'))
+      AND registry_path ILIKE '%clsid%'
+      AND regexp_matches(registry_path,
+            '(?i)^(hkcu|hkey_current_user|hku\\[^\\]+|hkey_users\\[^\\]+)(\\software\\classes|_classes)'
+            || '\\(wow6432node\\)?clsid\\\x7b[0-9a-f-]+\x7d\\(inprocserver32|localserver32)(\\|$)')
+      AND coalesce(lower(process_name), '') NOT IN ('onedrive.exe','onedrivesetup.exe','filecoauth.exe',
+                                                    'filesyncconfig.exe','teams.exe','ms-teams.exe','msteams.exe',
+                                                    'msiexec.exe','officeclicktorun.exe')
+    technique: T1546
+    sub_technique: T1546.015
+    tactic: Persistence
+    severity: 75
+
+  # remote_service_exec: PsExec-style service execution (detect_templates2.remote_service_exec; thresholds
+  # remote_svc_*). Secondary T1021.002 when a network logon to the host from a remote IP precedes it.
+  - id: remote_service_exec
+    kind: template
+    template: remote_service_exec
+    technique: T1569
+    sub_technique: T1569.002
+    tactic: Execution
+    severity: 75
+    secondary: {technique: T1021, sub_technique: T1021.002, tactic: Lateral Movement, severity: 75}
 
   - id: sudo_escalation         # sudo on a rare (user, host) pair
     kind: template
@@ -324,10 +438,10 @@ rules:
     severity: 60
 
   # ---------------- coverage round B4 ----------------
-  - id: lsass_dump              # mimikatz, sekurlsa, procdump+lsass, comsvcs+minidump
+  - id: lsass_dump              # mimikatz, sekurlsa, procdump+lsass, comsvcs+minidump (also script blocks)
     kind: match
     where: >-
-      action = 'proc_start'
+      action IN ('proc_start','script_exec')
       AND (command_line ILIKE '%mimikatz%' OR lower(process_name) LIKE '%mimikatz%' OR command_line ILIKE '%sekurlsa%'
            OR (command_line ILIKE '%procdump%' AND command_line ILIKE '%lsass%')
            OR (command_line ILIKE '%comsvcs%' AND command_line ILIKE '%minidump%'))
@@ -390,21 +504,25 @@ rules:
     kind: template
     template: signature_map
     action: ips_alert
-    filter: "coalesce(lower(outcome), '') NOT IN ('failure', 'blocked', 'dropped', 'reset', 'deny')"   # allowed hits only; blocked: ips_blocked
+    exclude_blocked: true         # allowed hits only (blocked: ips_blocked)
     technique: T1190
     tactic: Initial Access
     severity: 90
-    signatures:
+    signatures: &ips_signature_map   # first match wins; optional direction: inbound | outbound | internal
+      - {pattern: 'Buffer.Overflow|Remote.Code.Execution', direction: internal,
+         technique: T1210, tactic: Lateral Movement}
       - {pattern: 'SSLVPN.*Path.Traversal|Log4j|PHP.CGI|HTTP\.sys|Buffer.Overflow|Remote.Code.Execution',
          technique: T1190, tactic: Initial Access}
       - {pattern: 'SSH.*Brute.Force', technique: T1110, tactic: Credential Access}
+      - {pattern: 'Mirai|Botnet', direction: inbound, technique: T1595, tactic: Reconnaissance}
       - {pattern: 'Mirai|Botnet', technique: T1071, tactic: Command and Control}
       - {pattern: 'DNS.Zone.Transfer', technique: T1590, sub_technique: T1590.002, tactic: Reconnaissance}
       - {pattern: 'SMB.*Information.Disclosure', technique: T1210, tactic: Lateral Movement}
 
   - id: av_malware_download     # antivirus detection the device let through (blocked ones: av_blocked)
     kind: match
-    where: "action = 'av_alert' AND coalesce(lower(outcome), '') NOT IN ('failure', 'blocked', 'dropped', 'reset', 'deny')"   # outcome list = thresholds.blocked_outcomes
+    where: "action = 'av_alert'"
+    exclude_blocked: true         # outcome not in thresholds.blocked_outcomes (blocked: av_blocked)
     technique: T1105
     tactic: Command and Control
     severity: 80
@@ -416,6 +534,7 @@ rules:
     technique: T1046
     tactic: Discovery
     severity: 55
+    secondary: {technique: T1595, tactic: Reconnaissance, severity: 30}   # external (internet) scanner
 
   - id: internal_lateral        # rare internal -> internal SMB/RDP/WinRM/SSH connection
     kind: template
@@ -469,6 +588,14 @@ rules:
     kind: template
     template: blocked_daily
     actions: [ips_alert]
+    signatures: *ips_signature_map    # same labels as ips_signatures; unmatched -> T1190
     technique: T1190
     tactic: Initial Access
     severity: 30
+
+  - id: vpn_login_context       # VPN login from an IP that just exploited the portal or failed repeatedly
+    kind: template
+    template: vpn_login_context
+    technique: T1133
+    tactic: Initial Access
+    severity: 75

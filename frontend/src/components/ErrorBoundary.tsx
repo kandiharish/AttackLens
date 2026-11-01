@@ -26,14 +26,14 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, State> {
     if (!error) return this.props.children
     return (
       <div role="alert" className="flex h-full items-center justify-center p-6">
-        <div className="max-w-lg rounded-md border border-rose-800 bg-rose-950/40 p-4 text-sm text-rose-100">
-          <h1 className="mb-1 text-base font-bold">AttackLens hit a display error</h1>
-          <p className="text-rose-200">The data is fine; this screen could not be drawn. Reload to try again.</p>
+        <div className="card max-w-lg p-6 text-[14px] text-ink">
+          <h1 className="headline mb-1 text-[18px]">AttackLens hit a display error</h1>
+          <p className="text-ink-2">The data is fine; this screen could not be drawn. Reload to try again.</p>
           {/* Plain text only, truncated; error messages may contain log-derived strings. */}
-          <pre className="mt-2 whitespace-pre-wrap break-all rounded bg-slate-950 p-2 font-mono text-[11px] text-slate-300">
+          <pre className="mt-3 rounded-lg border border-line bg-subtle p-3 font-mono text-[12px] break-all whitespace-pre-wrap text-ink">
             {String(error.message).slice(0, 300)}
           </pre>
-          <button type="button" onClick={this.reset} className="mt-3 rounded bg-rose-700 px-3 py-1 font-semibold text-white hover:bg-rose-600">
+          <button type="button" onClick={this.reset} className="focus-ring mt-4 h-9 rounded-full border border-ink bg-ink px-4 text-[13px] font-medium text-white hover:bg-[#262626]">
             Try again
           </button>
         </div>

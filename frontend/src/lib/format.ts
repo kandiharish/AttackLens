@@ -52,20 +52,49 @@ export function fmtInt(n: number): string {
 
 export interface RiskStyle {
   label: string
-  badge: string
+  /** pill: tinted background + AA text + border */
+  pill: string
+  /** solid left bar / swatch */
   bar: string
+  text: string
 }
 
 export function riskStyle(risk: number): RiskStyle {
-  if (risk >= 80) return { label: 'Critical', badge: 'bg-rose-600 text-white', bar: 'bg-rose-500' }
-  if (risk >= 60) return { label: 'High', badge: 'bg-orange-500 text-slate-950', bar: 'bg-orange-400' }
-  if (risk >= 40) return { label: 'Medium', badge: 'bg-amber-400 text-slate-950', bar: 'bg-amber-300' }
-  return { label: 'Low', badge: 'bg-slate-600 text-slate-100', bar: 'bg-slate-400' }
+  if (risk >= 80) return { label: 'Critical', pill: 'bg-crit-bg text-crit-ink border-crit/40', bar: 'bg-crit', text: 'text-crit-ink' }
+  if (risk >= 60) return { label: 'High', pill: 'bg-high-bg text-high-ink border-high/40', bar: 'bg-high', text: 'text-high-ink' }
+  if (risk >= 40) return { label: 'Medium', pill: 'bg-med-bg text-med-ink border-med/40', bar: 'bg-med', text: 'text-med-ink' }
+  return { label: 'Low', pill: 'bg-low-bg text-low-ink border-low/40', bar: 'bg-low', text: 'text-low-ink' }
 }
 
 export function confidenceColor(c: number): string {
-  if (c >= 80) return 'bg-emerald-400'
-  if (c >= 60) return 'bg-sky-400'
-  if (c >= 40) return 'bg-amber-400'
-  return 'bg-slate-500'
+  if (c >= 80) return 'bg-low'
+  if (c >= 60) return 'bg-accent'
+  if (c >= 40) return 'bg-med'
+  return 'bg-muted'
+}
+
+/** "02:00–02:54 UTC" (adds dates when the span crosses days). */
+export function fmtShortSpan(first: string, last: string): string {
+  const a = new Date(first)
+  const b = new Date(last)
+  if (Number.isNaN(a.getTime()) || Number.isNaN(b.getTime())) return `${first} – ${last}`
+  const hm = (d: Date) => `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`
+  const md = (d: Date) => `${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`
+  const same = a.toISOString().slice(0, 10) === b.toISOString().slice(0, 10)
+  return same ? `${md(a)} ${hm(a)}–${hm(b)} UTC` : `${md(a)} ${hm(a)} – ${md(b)} ${hm(b)} UTC`
+}
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+/** "Oct 24, 02:00 UTC" */
+export function fmtDay(iso: string): string {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return iso
+  return `${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}, ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())} UTC`
+}
+
+/** Last path segment of a POSIX or Windows path ("data/out/f1/" -> "f1"). */
+export function baseName(p: string): string {
+  const parts = p.split(/[\\/]+/).filter(Boolean)
+  return parts.length ? parts[parts.length - 1] : p
 }

@@ -1,0 +1,121 @@
+# Log integrity / tamper-detection engine (attacklens.integrity). Loaded as cfg["integrity"].
+# Every threshold, list and pattern used by the checks lives here. Keys are flat (names from the contract).
+# Report: <out>/integrity_report.json. CLI: python -m attacklens.integrity check --raw DIR --out DIR
+
+# --- scoring / verdict ---------------------------------------------------------------------------------------
+severity_weights: {critical: 40, high: 20, medium: 8, low: 2}
+max_penalty_per_check: 40     # a single check never takes more than this off the score
+suspect_below: 70             # score below this -> suspect (any critical -> tampered, any high -> suspect)
+max_findings_per_check: 25    # findings kept per check in the report (the check's `findings` count is uncapped)
+evidence_max_items: 3
+evidence_max_chars: 300
+
+# --- raw files (one streaming pass per file: SHA-256 + seal digest + NUL-run search + tail byte) --------------
+raw_scan: true
+raw_chunk_bytes: 16777216     # 16 MiB read size
+raw_threads: 8                # files scanned in parallel (hashlib releases the GIL)
+nul_min_run: 64               # >= this many consecutive NUL bytes inside a text log = zeroed (wiped) region
+# Files that are binary by design: no NUL search (they are still hashed and sealed).
+binary_suffixes: [".gz", ".zip", ".bz2", ".xz", ".7z", ".zst", ".parquet", ".evtx", ".evt", ".etl", ".pcap", ".pcapng",
+                  ".db", ".duckdb"]
+seal_path: null               # null -> <raw_dir>/.meta/integrity_seal.json (seal key: env ATTACKLENS_SEAL_KEY)
+
+# --- log_cleared: raw/canonical fields only (never generator labels) ------------------------------------------
+clear_event_ids: [1102, 104, 517]               # critical
+audit_tamper_event_ids: [1100, 4719, 4906, 1101] # high
+clear_actions: [log_cleared]                    # canonical action derived from raw event IDs / event.action
+event_id_exclude_source_types: [fortigate_kv, firewall_csv]  # their event_id is not a Windows event ID
+event_id_labels:
+  1102: "security audit log cleared (1102)"
+  104: "event log cleared (104)"
+  517: "audit log cleared (517)"
+  1100: "event logging service shut down (1100)"
+  4719: "system audit policy changed (4719)"
+  4906: "CrashOnAuditFail value changed (4906)"
+  1101: "audit events dropped by transport (1101)"
+# Rows checked for command patterns: action in proc_actions, or command_line present, or source_type below.
+proc_actions: [proc_start]
+command_source_types: [syslog]
+# Matched on lower(command_line || ' ' || process_name || ' ' || raw_line).
+# like: ILIKE patterns, any-of (cheap prefilter). regex: RE2 patterns, all-of (confirmation). First match wins,
+# so critical patterns come first.
+command_patterns:
+  - {label: "wevtutil clear-log", severity: critical, like: ["%wevtutil%"],
+     regex: ['(?i)wevtutil(\.exe)?"?\s+(cl|clear-log)\b']}
+  - {label: "Clear-EventLog / Remove-EventLog", severity: critical,
+     like: ["%clear-eventlog%", "%remove-eventlog%", "%clearlog(%"]}
+  - {label: "auditpol /clear", severity: critical, like: ["%auditpol%/clear%", "%auditpol%/remove%"]}
+  - {label: "shell history cleared (history -c)", severity: critical, like: ["%history -c%"]}
+  - {label: "unset HISTFILE", severity: critical, like: ["%unset histfile%"]}
+  - {label: "HISTFILE=/dev/null", severity: critical, like: ["%histfile=/dev/null%", "%histsize=0%"]}
+  - {label: "log file wiped under /var/log", severity: critical, like: ["%/var/log/%"],
+     regex: ['(?i)(\bshred\b[^|;&]*/var/log/|\brm\s+(-\S+\s+)*[^|;&\s]*/var/log/|\btruncate\s+(-s\s*0|--size[= ]0)[^|;&]*/var/log/|(^|[^>0-9&])>\s*/var/log/)']}
+  - {label: "event log files deleted (winevt\\Logs)", severity: critical, like: ["%winevt%logs%"],
+     regex: ['(?i)(remove-item|\bdel\b|\berase\b|\brm\b)[^|;&]*winevt.{1,2}logs']}
+  - {label: "journalctl --vacuum", severity: critical, like: ["%journalctl%--vacuum%"]}
+  - {label: "auditctl -D (all audit rules deleted)", severity: critical, like: ["%auditctl%"],
+     regex: ['\bauditctl\b.*\s-D(\s|$)']}
+  - {label: "PSReadline history disabled (SaveNothing)", severity: critical, like: ["%historysavestyle%savenothing%"]}
+  - {label: "fsutil usn deletejournal", severity: critical, like: ["%fsutil%usn%deletejournal%"]}
+  - {label: "logging service stopped", severity: high,
+     like: ["%eventlog%", "%syslog%", "%auditd%", "%journald%"],
+     regex: ['(?i)(\bsc(\.exe)?\s+(stop|config)\s+"?eventlog|stop-service\s+(-name\s+)?"?eventlog|\bnet\s+stop\s+"?eventlog|\bsystemctl\s+(stop|disable|mask|kill)\s+(\S+\s+)*(rsyslog|auditd|syslog-ng|systemd-journald|syslog)\b|\bservice\s+(rsyslog|auditd|syslog-ng|syslog)\s+stop\b)']}
+  - {label: "audit policy disabled", severity: high, like: ["%auditpol%disable%", "%auditctl%-e%0%"],
+     regex: ['(?i)(auditpol.*disable|auditctl\s+(-\S+\s+)*-e\s*0\b)']}
+# Matched on raw_line of rows whose source_type is a key below.
+raw_patterns:
+  fortigate_kv:
+    - {label: "device logs deleted / cleared / formatted", severity: critical, like: ["%logdesc=%", "%msg=%"],
+       regex: ['(?i)(logdesc|msg)="[^"]*(\blogs?\b[^"]*\b(delet|clear|format|purg|eras|wip)|\b(delet|clear|format|purg|eras|wip)[^"]*\blogs?\b)']}
+    - {label: "logging configuration changed (cfgpath log.*)", severity: high, like: ["%cfgpath=%log.%"],
+       regex: ['(?i)\bcfgpath="?log\.', '(?i)\baction="?(edit|delete|set|unset|purge|add)\b']}
+
+# --- silence_gap / went_dark (small per-host bucket table; windows only on that table) -------------------------
+bucket_minutes: 5
+min_host_events: 200          # only hosts with at least this many events are compared
+min_gap_minutes: 60
+gap_factor: 10                # gap threshold = max(min_gap_minutes, gap_factor x host median gap)
+peer_active_ratio: 0.5        # share of other eligible hosts that logged during the gap / after the host went dark
+single_host_gap_minutes: 360  # with one eligible host, gaps longer than this are medium (if the cut is abrupt)
+# Abrupt cut: share of the host's buckets that logged in the gap_context_minutes just before AND just after a gap
+# (lower side). Deleting a window from a steady stream leaves dense edges; a bursty/diurnal host going idle does not.
+# Measured (5-min buckets, 60 min context): 60 seeds of the bursty/diurnal test fleet -> 357 gaps over the base
+# threshold, edge share <= 0.67 (max 8/12), none >= 0.75; 2-3 h windows deleted from steady or daytime hosts
+# -> 0.75-1.0. A host's own p95 gap did not separate them (natural gaps up to 8.5x p95, deletions down to 3x).
+gap_context_minutes: 60
+gap_cut_density_high: 0.75    # >= this on both sides -> high
+gap_cut_density_medium: 0.5   # >= this on both sides and gap > gap_medium_factor x threshold -> medium; else idle
+gap_medium_factor: 2
+dark_minutes: 120             # went_dark threshold = max(dark_minutes, gap_factor x host median gap)
+
+# --- timestamps -------------------------------------------------------------------------------------------------
+bad_ts_warn: 0.01             # ts_ok=false share per source_type -> medium
+bad_ts_high: 0.10             # -> high
+future_tolerance_hours: 24    # ts_ms > now + this -> high
+min_valid_year: 2000          # ts_ms before Jan 1 of this year -> medium
+
+# --- duplicates (possible replay / injected copies) ---------------------------------------------------------------
+dup_min_rows: 1000
+dup_warn: 0.05
+dup_high: 0.20
+# approx_count_distinct (HLL) was measured at up to +-9 % error between 10k and 3M distinct lines (DuckDB 2.0),
+# more than dup_warn. Instead: dup_ratio = 1 - distinct / rows with rows counted exactly and distinct = exact
+# distinct count in a deterministic hash sample (hash(raw_line) % k = 0) x k. Every distinct line is sampled with
+# p = 1/k whatever its number of copies, so heavy-hitter lines do not swing the estimate (n10: 11.2 % exact vs
+# 11.1 % estimated; relative error ~ sqrt(k / distinct)). k = ceil(rows / dup_sample_rows); k = 1 -> exact.
+dup_sample_rows: 2000000
+
+# --- embedded_time_mismatch (header time vs the time embedded in the line) -----------------------------------------
+# source_type -> RE2 pattern with one group capturing the epoch (10 s / 13 ms / 16 us / 19 ns digits).
+embedded_time_source_types:
+  fortigate_kv: 'eventtime=(\d+)'
+embedded_round_minutes: 15     # offsets grouped to this grid; each host's modal group is its normal offset
+time_mismatch_tolerance_s: 300 # rows in a group whose mean offset is further than this from the modal one
+mismatch_min_ratio: 0.001
+mismatch_min_rows: 20
+
+# --- ingest_drops (out_dir/ingest_accounting.json) ------------------------------------------------------------------
+drop_warn: 0.001
+drop_high: 0.05
+# Drop reasons (prefix match) that the `timestamps` check already scores; ignored here when that check ran.
+drop_ignore_reasons_if_timestamps_ran: ["timestamp_pileup", "missing_or_unparseable_timestamp"]

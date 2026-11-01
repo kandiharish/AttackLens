@@ -1,0 +1,17 @@
+# Elasticsearch 8.x single node, security ON, HTTPS with the auto-generated CA (copied out as http_ca.crt), basic
+# licence. Started / stopped by backend/tests/live/test_live_elastic.py through tools/live/livectl.py.
+# Ports: loopback only. ELASTIC_PASSWORD: throwaway, generated per run, passed as an env var (never committed).
+services:
+  es:
+    image: ${ES_IMAGE:-docker.elastic.co/elasticsearch/elasticsearch:8.19.5}
+    container_name: al-live-es
+    environment:
+      discovery.type: single-node
+      ELASTIC_PASSWORD: ${ELASTIC_PASSWORD:-}
+      xpack.license.self_generated.type: basic
+      ES_JAVA_OPTS: -Xms1g -Xmx1g
+      cluster.routing.allocation.disk.threshold_enabled: "false"
+    ports:
+      - "127.0.0.1:${AL_ES_PORT:-19200}:9200"
+    mem_limit: 2g
+    memswap_limit: 2g

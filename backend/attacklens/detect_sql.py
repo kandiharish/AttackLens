@@ -66,8 +66,18 @@ def sql_list(values: list[Any]) -> str:
 TIE_ORDER = "{'t': ts_ms, 's': source_seq}"   # deterministic ordering key: time, then source_seq
 
 
+def evidence_chars(th: dict[str, Any]) -> int:
+    """Evidence lines are cut at evidence_max_chars + 1: one extra char lets the incident clip show the cut."""
+    return int(th.get("evidence_max_chars", 300)) + 1
+
+
+def not_blocked_sql(th: dict[str, Any], col: str = "outcome") -> str:
+    """Predicate: the device did not block the event (outcome not in thresholds.blocked_outcomes)."""
+    return f"coalesce(lower({col}), '') NOT IN {sql_list([str(o).lower() for o in th.get('blocked_outcomes') or []])}"
+
+
 def ev_lines(th: dict[str, Any], col: str = "raw_line", order: str = TIE_ORDER) -> str:
-    return (f"min_by(left({col}, {int(th.get('evidence_max_chars', 300))}), {order}, "
+    return (f"min_by(left({col}, {evidence_chars(th)}), {order}, "
             f"{int(th.get('evidence_max_lines', 3))})")
 
 
@@ -90,6 +100,22 @@ def internal_ip_expr(e: str, th: dict[str, Any] | None = None) -> str:
             f"THEN {e}.dst_ip END")
 
 
+def ip_host_joins(e: str, m: str = "m") -> str:
+    """The two al_ip_host joins subject_host_expr needs: `m` on src_ip, `{m}d` on dst_ip."""
+    return f"LEFT JOIN al_ip_host {m} ON {m}.ip = {e}.src_ip LEFT JOIN al_ip_host {m}d ON {m}d.ip = {e}.dst_ip"
+
+
+def resolved_internal_expr(e: str, m: str, th: dict[str, Any] | None = None) -> str:
+    """internal_ip_expr, resolved to a host name through al_ip_host whichever IP is chosen, so one endpoint never
+    appears both as an IP and as its name. Callers join al_ip_host twice: `m` on src_ip and `{m}d` on dst_ip
+    (see ip_host_joins)."""
+    zones = sql_list([str(z).lower() for z in (th or {}).get("entity_internal_zones", ["lan", "dmz"])])
+    return (f"CASE WHEN {e}.src_ip IS NOT NULL AND (al_is_internal_ip({e}.src_ip) OR lower({e}.src_zone) IN {zones}) "
+            f"THEN coalesce({m}.host, {e}.src_ip) "
+            f"WHEN {e}.dst_ip IS NOT NULL AND (al_is_internal_ip({e}.dst_ip) OR lower({e}.dst_zone) IN {zones}) "
+            f"THEN coalesce({m}d.host, {e}.dst_ip) END")
+
+
 def subject_host_expr(e: str = "e", m: str = "m", th: dict[str, Any] | None = None) -> str:
     """Network rows: the host owning src_ip (al_ip_host joined as `m`), else the reporting host. With
     thresholds.entity_fallback_ip, rows of entity_fallback_source_types (firewalls: the reporting host is the
@@ -100,7 +126,7 @@ def subject_host_expr(e: str = "e", m: str = "m", th: dict[str, Any] | None = No
         acts = sql_list(list(th.get("entity_fallback_actions") or FALLBACK_ACTIONS))
         srcs = sql_list([str(x) for x in th.get("entity_fallback_source_types") or FALLBACK_SOURCE_TYPES])
         return (f"CASE WHEN {e}.action IN {acts} AND {e}.source_type IN {srcs} "
-                f"THEN coalesce({m}.host, {internal_ip_expr(e, th)}, {e}.host) "
+                f"THEN coalesce({m}.host, {resolved_internal_expr(e, m, th)}, {e}.host) "
                 f"WHEN {e}.action IN {sql_list(list(NET_ACTIONS))} THEN coalesce({m}.host, {e}.host) "
                 f"ELSE {e}.host END")
     return (f"CASE WHEN {e}.action IN {sql_list(list(NET_ACTIONS))} THEN coalesce({m}.host, {e}.host) "
@@ -172,9 +198,11 @@ def register_macros(con: duckdb.DuckDBPyConnection) -> None:
 
 def create_attack_table(con: duckdb.DuckDBPyConnection, attack: dict[str, Any]) -> None:
     con.execute("CREATE OR REPLACE TEMP TABLE al_attack(technique_id VARCHAR, name VARCHAR, tactic VARCHAR)")
-    rows = [(k, v.get("name"), v.get("tactic")) for k, v in (attack.get("techniques") or {}).items()]
-    if rows:
-        con.executemany("INSERT INTO al_attack VALUES (?, ?, ?)", rows)
+    tech = attack.get("techniques") or {}
+    if tech:   # one columnar INSERT (~700 rows): executemany costs ~0.3 s per call
+        con.execute("INSERT INTO al_attack SELECT unnest($1::VARCHAR[]), unnest($2::VARCHAR[]), "
+                    "unnest($3::VARCHAR[])",
+                    [list(tech), [v.get("name") for v in tech.values()], [v.get("tactic") for v in tech.values()]])
 
 
 def create_ip_host_table(con: duckdb.DuckDBPyConnection, host_ip_map: Path | None) -> None:

@@ -14,6 +14,8 @@ Per cycle with new data (one transaction: nothing is committed unless the stages
    alert exists once per (rule, key, window). Success -> commit (window, accounting, offsets, watermark in one
    atomic live_state.json); failure -> rollback, and the same bytes are re-read next cycle (no double ingest).
 6. Incidents entirely before the window start are kept from the previous index (frozen).
+7. Alert-input mode (integrations.yaml alert_input.enabled): detect also unions the SIEM alert spool; a change in
+   the spool alone (no new event bytes) triggers a stages-only cycle. live_status.json `inputs` records it.
 State lives in <parquet_root>/<out name>; it is discarded if it belongs to another watch/out dir. --reset also
 clears this out dir's published incidents. live_status.json is the heartbeat (GET /api/live/status).
 """
@@ -21,6 +23,7 @@ clears this out dir's published incidents. live_status.json is the heartbeat (GE
 from __future__ import annotations
 
 import argparse
+import hashlib
 import logging
 import os
 import shutil
@@ -31,6 +34,8 @@ from pathlib import Path
 from typing import Any
 
 from attacklens import ingest, profile
+from attacklens import integrations as ig
+from attacklens import live_incidents as li
 from attacklens import live_window as lw
 from attacklens import run as batch
 from attacklens.config import REPO_ROOT, load_config
@@ -101,21 +106,29 @@ class LiveEngine:
             saved = {}
         elif not saved:  # no committed batch: any window files are leftovers
             shutil.rmtree(self.state, ignore_errors=True)
-        for leftover in ("batches", "trash"):  # transient dirs of a killed cycle
-            shutil.rmtree(self.state / leftover, ignore_errors=True)
+        shutil.rmtree(self.state / "batches", ignore_errors=True)  # transient dir of a killed cycle
+        lw.recover(self.state / "window", self.state / "trash", int(saved.get("batch_no", 0)))
         sources = cfg.get("sources") or {}
         self.tailer = Tailer(watch, pipe.get("profile") or {}, int(self.lcfg.get("max_read_bytes", 256 * 2**20)),
                              lambda line: profile.sniff(line, sources).get("format") == "csv", saved.get("tail"))
         self.batch_no = int(saved.get("batch_no", 0))
         self.watermark: int | None = saved.get("watermark_ms")
+        self.wm_sample: list[int] = list(saved.get("watermark_sample") or [])
+        self.frozen: li.Frozen = dict(saved.get("frozen") or {})
         self.accounting: dict[str, dict[str, Any]] = saved.get("accounting", {})
+        self.alert_input = bool((ig.icfg(cfg).get("alert_input") or {}).get("enabled"))
+        self.alert_sig: str | None = saved.get("alert_sig")
         self.status: dict[str, Any] = {"enabled": True, "running": True, "pid": os.getpid(),
                                        "watch_dir": watch.as_posix(), "out_dir": out.as_posix(),
                                        "lookback_ms": self.lookback, "cycles": 0, "batches": self.batch_no,
                                        "rows": sum(a["rows_in"] for a in self.accounting.values()),
                                        "last_batch_ts": saved.get("last_batch_ts"), "last_cycle_s": None,
                                        "incidents": len(_read_json(out / "incidents_index.json", [])),
-                                       "last_error": None}
+                                       "last_error": None,
+                                       "input_mode": "live+siem_alerts" if self.alert_input else "live",
+                                       "inputs": {"raw_events": watch.as_posix(), "siem_alerts": self.alert_input,
+                                                  "siem_alert_dir": ig.alerts_spool_dir(cfg).as_posix()
+                                                  if self.alert_input else None}}
 
     def _con(self) -> Any:
         con = connect(memory_limit=str(self.lcfg.get("memory_limit", "1.5GB")), threads=self.lcfg.get("threads"),
@@ -127,8 +140,12 @@ class LiveEngine:
         """Pending batch: raw chunks -> profile + ingest -> bdir/pq. Returns its accounting (not yet applied)."""
         raw = bdir / "raw"
         raw.mkdir(parents=True)
-        for rel, data in chunks.items():
-            (raw / rel.replace("/", "__")).write_bytes(data)
+        names = {}
+        for i, (rel, data) in enumerate(sorted(chunks.items())):
+            name = f"{i:05d}_{hashlib.sha1(rel.encode('utf-8')).hexdigest()[:8]}{Path(rel).suffix}"
+            names[name] = rel
+            (raw / name).write_bytes(data)
+        _write_json(bdir / "chunk_map.json", names)  # chunk file -> watched path (outside raw/, never ingested)
         bctx = RunContext(set_name=f"live-{tag}", raw_dir=raw, parquet_dir=bdir / "pq", out_dir=bdir / "meta",
                           con=con, cfg=self.cfg)
         profile.run(bctx)
@@ -137,39 +154,9 @@ class LiveEngine:
         _merge_acc(acc, {a["source_type"]: a for a in _read_json(bdir / "meta" / "ingest_accounting.json", [])})
         return acc
 
-    def _open_incident_day(self, cutoff_iso: str) -> str | None:
-        """Earliest first_ts day of a published incident that is still open (last_ts >= cutoff)."""
-        days = [str(r.get("first_ts", ""))[:10] for r in _read_json(self.out / "incidents_index.json", [])
-                if isinstance(r, dict) and str(r.get("last_ts", "")) >= cutoff_iso and r.get("first_ts")]
-        return min(days) if days else None
-
-    def _frozen(self, start_iso: str | None) -> list[tuple[dict[str, Any], dict[str, Any]]]:
-        """Previously published incidents that ended before the window start (kept as-is)."""
-        if start_iso is None or self.batch_no == 0:  # first batch: an existing index is not ours
-            return []
-        keep = []
-        for row in _read_json(self.out / "incidents_index.json", []):
-            if isinstance(row, dict) and str(row.get("last_ts", "")) < start_iso:
-                inc = _read_json(self.out / "incidents" / f"{row['id']}.json", None)
-                if isinstance(inc, dict):
-                    keep.append((row, inc))
-        return keep
-
-    def _merge_frozen(self, frozen: list[tuple[dict[str, Any], dict[str, Any]]]) -> int:
-        index = _read_json(self.out / "incidents_index.json", [])
-        have = {r["id"] for r in index}
-        added = [(r, inc) for r, inc in frozen if r["id"] not in have]
-        if added:
-            for r, inc in added:
-                _write_json(self.out / "incidents" / f"{r['id']}.json", inc)
-            index += [r for r, _ in added]
-            index.sort(key=lambda x: (-(x.get("risk") or 0), x.get("first_ts", ""), x["id"]))
-            _write_json(self.out / "incidents_index.json", index)
-        return len(index)
-
     def _run_stages(self, con: Any) -> dict[str, float]:
         ctx = RunContext(set_name=self.out.name, raw_dir=self.watch, parquet_dir=self.window, out_dir=self.out,
-                         con=con, cfg=self.cfg)
+                         con=con, cfg=self.cfg, siem_alerts=self.alert_input)
         if lw.parquet_glob(self.window):
             register_events(con, ctx.events_glob)
         walls: dict[str, float] = {}
@@ -186,17 +173,28 @@ class LiveEngine:
         _write_json(self.state / "live_state.json", {
             "batch_no": self.batch_no, "watch_dir": self.watch.as_posix(), "out_dir": self.out.as_posix(),
             "watermark_ms": self.watermark, "accounting": self.accounting, "tail": self.tailer.state(),
-            "last_batch_ts": self.status.get("last_batch_ts")})
+            "last_batch_ts": self.status.get("last_batch_ts"), "alert_sig": self.alert_sig,
+            "watermark_sample": self.wm_sample, "frozen": self.frozen})
 
     def write_status(self, **extra: Any) -> None:
+        """Best effort: a heartbeat write failure is logged, never raised (write_json retries PermissionError)."""
         self.status.update(extra, updated_at=_now_iso())
-        _write_json(self.out / STATUS_FILE, self.status)
+        try:
+            _write_json(self.out / STATUS_FILE, self.status)
+        except OSError as exc:
+            log.warning("live: cannot write %s: %s", STATUS_FILE, exc)
 
     def cycle(self) -> bool:
         """Process whatever is new as one transaction. Returns True if a batch was committed."""
         self.status["cycles"] += 1
         chunks = self.tailer.poll()
+        sig = self._alert_sig()
         if not chunks:
+            if self.tailer.has_pending():  # size/identity/rename updates only (no bytes consumed)
+                self.tailer.commit()
+                self._save()
+            if sig != self.alert_sig:
+                return self._alerts_cycle(sig)
             self.write_status()
             return False
         t0 = time.perf_counter()
@@ -210,9 +208,8 @@ class LiveEngine:
             t_ing = time.perf_counter() - t0
             skew_ms = int(float(self.lcfg.get("max_future_skew_s", 300)) * 1000)
             limit = int(time.time() * 1000) + skew_ms
-            bs = lw.batch_stats(con, bdir / "pq", limit, int(self.lcfg.get("watermark_min_rows", 100)))
-            wm = max(w for w in (self.watermark, bs.watermark) if w is not None) \
-                if (self.watermark is not None or bs.watermark is not None) else None
+            bs = lw.batch_stats(con, bdir / "pq", limit, int(self.lcfg.get("watermark_sample", 1000)))
+            wm, wsample = lw.robust_watermark(self.watermark, self.wm_sample, bs.sample, self.lcfg)
             for st, n in bs.future.items():
                 a = acc[st]
                 a["rows_ok"] -= n
@@ -224,7 +221,7 @@ class LiveEngine:
             if cutoff is not None:
                 cutoff_iso = str(_iso_ms(cutoff))
                 prune_day = cutoff_iso[:10]
-                open_day = self._open_incident_day(cutoff_iso)
+                open_day = li.open_incident_day(self.out, cutoff_iso)
                 floor_day = str(_iso_ms(wm - int(self.lcfg.get("max_window_ms", 7 * DAY_MS))))[:10]
                 if open_day and open_day < prune_day:  # keep the early steps of incidents still open
                     prune_day = max(open_day, floor_day)
@@ -233,9 +230,9 @@ class LiveEngine:
                 _merge_acc(acc, {st: {"pruned_outside_window": n}})
             start_iso = lw.kept_start_iso(self.window)
             t_win = time.perf_counter() - t0 - t_ing
-            frozen = self._frozen(start_iso)
+            frozen = li.frozen_now(self.out, self.frozen, start_iso, self.batch_no == 0)
             walls = self._run_stages(con)
-            n_inc = self._merge_frozen(frozen)
+            n_inc = li.merge_frozen(self.out, frozen)
         except Exception as exc:
             log.exception("live: cycle failed; rolling back batch %s", tag)
             txn.rollback()
@@ -243,29 +240,81 @@ class LiveEngine:
             con.close()
             shutil.rmtree(bdir, ignore_errors=True)
             raise
-        # ---- commit: window, accounting, watermark, offsets (one atomic live_state.json) ----
+        # ---- commit: window, accounting, watermark, offsets, frozen (one atomic live_state.json) ----
         txn.commit()
         shutil.rmtree(bdir, ignore_errors=True)
-        self.batch_no += 1
-        self.watermark = wm
-        _merge_acc(self.accounting, acc)
-        self.tailer.commit()
         try:
-            lw.compact(con, self.window, int(self.lcfg.get("compact_max_files", 200)))
-            wrows = lw.count_rows(con, self.window)
-        finally:
-            con.close()
+            self.batch_no += 1
+            self.watermark, self.wm_sample = wm, wsample
+            self.alert_sig = sig
+            self.frozen = frozen
+            _merge_acc(self.accounting, acc)
+            self.tailer.commit()
+        finally:  # the window is already committed: the state that describes it must be saved
+            self._save()
+            self._write_accounting()
+        post_err = self._post_commit(con)
         dt = round(time.perf_counter() - t0, 3)
         self.write_status(last_batch_ts=_now_iso(), batches=self.batch_no, last_cycle_s=dt,
                           ingest_s=round(t_ing, 3), window_s=round(t_win, 3), stage_wall_s=walls,
-                          watermark_ts=_iso_ms(wm), window_start_ts=start_iso, window_rows=wrows, incidents=n_inc,
-                          frozen=len(frozen), rows=sum(a["rows_in"] for a in self.accounting.values()),
-                          new_bytes=sum(len(b) for b in chunks.values()), last_error=None)
-        self._save()
+                          watermark_ts=_iso_ms(wm), window_start_ts=start_iso, window_rows=self.status.get("window_rows"),
+                          incidents=n_inc, frozen=len(frozen), rows=sum(a["rows_in"] for a in self.accounting.values()),
+                          new_bytes=sum(len(b) for b in chunks.values()), tail=self.tailer.counters,
+                          last_error=post_err)
+        self._save()  # last_batch_ts
+        log.info("live: batch %d: %d bytes, window %s rows, %d incidents in %.2f s",
+                 self.batch_no, self.status["new_bytes"], self.status.get("window_rows"), n_inc, dt)
+        return True
+
+    def _write_accounting(self) -> None:
         _write_json(self.out / "ingest_accounting.json", sorted(self.accounting.values(),
                                                                  key=lambda a: a["source_type"]))
-        log.info("live: batch %d: %d bytes, window %d rows, %d incidents in %.2f s",
-                 self.batch_no, self.status["new_bytes"], wrows, n_inc, dt)
+
+    def _post_commit(self, con: Any) -> str | None:
+        """Compaction + row count after the state is saved; a failure here is reported, never re-ingests."""
+        err = None
+        try:
+            lw.compact(con, self.window, int(self.lcfg.get("compact_max_files", 200)))
+        except Exception as exc:  # noqa: BLE001 - window is intact (compact restores it); report and go on
+            log.exception("live: compaction failed")
+            err = f"compaction: {type(exc).__name__}: {exc}"
+        try:
+            self.status["window_rows"] = lw.count_rows(con, self.window)
+        except Exception as exc:  # noqa: BLE001
+            err = err or f"count: {type(exc).__name__}: {exc}"
+        finally:
+            con.close()
+        return err
+
+    def _alert_sig(self) -> str | None:
+        """Cheap change signature of the SIEM alert spool (names, sizes, mtimes); None when alert input is off."""
+        if not self.alert_input:
+            return None
+        d = ig.alerts_spool_dir(self.cfg)
+        files = sorted(p for p in d.rglob("*.jsonl") if not p.name.startswith(".")) if d.is_dir() else []
+        key = "|".join(f"{p.as_posix()}:{p.stat().st_size}:{p.stat().st_mtime_ns}" for p in files)
+        return hashlib.sha1(key.encode("utf-8")).hexdigest()
+
+    def _alerts_cycle(self, sig: str | None) -> bool:
+        """New SIEM alerts but no new event bytes: re-run Stages 2-7 over the unchanged window."""
+        t0 = time.perf_counter()
+        con = self._con()
+        try:
+            frozen = li.frozen_now(self.out, self.frozen, lw.kept_start_iso(self.window), self.batch_no == 0)
+            walls = self._run_stages(con)
+            n_inc = li.merge_frozen(self.out, frozen)
+        except Exception as exc:
+            log.exception("live: alerts-only cycle failed")
+            self.write_status(last_error=f"{type(exc).__name__}: {exc}")
+            raise
+        finally:
+            con.close()
+        self.alert_sig = sig
+        self.frozen = frozen
+        self.write_status(last_alerts_cycle_ts=_now_iso(), last_cycle_s=round(time.perf_counter() - t0, 3),
+                          stage_wall_s=walls, incidents=n_inc, last_error=None)
+        self._save()
+        log.info("live: alerts-only cycle: %d incidents", n_inc)
         return True
 
     def loop(self, poll_s: float) -> None:
@@ -275,8 +324,9 @@ class LiveEngine:
                 t = time.monotonic()
                 try:
                     self.cycle()
-                except Exception:  # keep serving; error is in live_status.json
-                    pass
+                except Exception as exc:  # keep serving; the error is recorded in live_status.json
+                    log.exception("live: cycle error")
+                    self.write_status(last_error=f"{type(exc).__name__}: {exc}")
                 time.sleep(max(0.05, poll_s - (time.monotonic() - t)))
         except KeyboardInterrupt:
             log.info("live: stopped")

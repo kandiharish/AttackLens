@@ -1,0 +1,538 @@
+# SIEM integrations: AttackLens as a correlation / attack-path layer ON TOP of an existing SIEM.
+# The SIEM keeps collecting and storing logs; AttackLens pulls from it (connectors), links the alerts into attack
+# paths, and pushes incidents back (sinks). File ingest of the scored tiers does not read anything here.
+#
+# Read by: attacklens/connectors/* (python -m attacklens.connect), attacklens/sinks/* (called from publish.py),
+#          attacklens/siem_alerts.py (detect stage, alert-input mode), attacklens/pivots.py (GET .../pivots).
+#
+# Rules for this file:
+# - Every connector and sink is disabled by default: nothing here touches the network unless you set enabled: true.
+#   (Pivot queries are generated text only, so they are on by default; see `pivots`.)
+# - Secrets are NEVER written here, only the NAME of the environment variable holding them (token_env, ...).
+#   A connector whose *_env names are set but unresolved refuses to call the SIEM (counted error, names logged);
+#   set those keys to null for a SIEM without auth (e.g. tools/mock_siem.py started without tokens).
+# - base_url is config, never code: point it at the real SIEM or at the local mock (tools/mock_siem.py).
+# - Relative paths are resolved against the repo root.
+# - Field paths: dotted paths into the vendor JSON ("kibana.alert.rule.name"); a key containing dots that exists
+#   literally in the object wins over the nested lookup. The first non-empty path of a list wins.
+
+# ---- Spool + state (the hand-off between connectors and the pipeline) -------------------------------------------
+spool:
+  events_dir: null            # raw events land here as JSONL / CEF / syslog files; null -> <live.yaml watch_dir>/siem
+                              #   so live mode (python -m attacklens.live) tails, windows, rolls back and accounts them
+  alerts_dir: data/spool/siem_alerts   # SIEM alerts mapped to raw_alerts rows (JSONL). Read ONLY by alert-input mode.
+  state_dir: data/spool/state          # connector checkpoints (<source>_<mode>.json) + sink de-dup state
+  status_file: data/spool/connector_status.json   # pulled / written / failed per cycle (GET /api/integrations/status)
+  # Never write generator / vendor label fields into the EVENTS spool (CLAUDE.md "detect from raw fields only").
+  # Top-level keys and nested {parent: [child, ...]} keys; extends sources.yaml label_keys / label_nested_keys.
+  strip_keys: [threat, rule, labels, labels_extra, signal, kibana]
+  strip_nested_keys: {event: [kind, severity, module, dataset, risk_score]}
+
+# ---- Alert-input mode (SIEM alerts -> raw_alerts.parquet) -------------------------------------------------------
+# Vendor MITRE labels are allowed ONLY here. The scored eval run stays raw-events-only:
+# - batch runs read the alert spool only with `python -m attacklens.run ... --siem-alerts`, which is refused
+#   together with --ground-truth;
+# - live mode reads it only when enabled below. run_metrics.json / live_status.json record the inputs used.
+alert_input:
+  enabled: false              # live mode: union the alert spool into raw_alerts every cycle
+  lookback_ms: null           # alerts older than (first event in the window, or newest alert - lookback) are
+                              #   skipped (counted); null -> longest rules.yaml *_window_ms / linking.yaml *tau_ms
+  max_future_skew_s: 300      # alerts dated later than now + this are skipped (counted)
+  default_severity: 60        # when the alert has no usable severity
+  severity_map:               # vendor severity word -> 0..100 (numbers 0..100 are used as-is; 0..10 CEF x10)
+    informational: 20
+    info: 20
+    low: 40
+    medium: 60
+    high: 80
+    critical: 95
+  evidence_max_chars: 300
+  # rule name (lower-case substring match, first hit wins) -> technique, for alerts without a MITRE field.
+  # Alerts with neither are dropped with reason "no_technique" (counted in connector_status.json).
+  rule_technique_map:
+    "brute force": T1110
+    "password spray": T1110.003
+    "kerberoast": T1558.003
+    "pass the hash": T1550.002
+    "lsass": T1003.001
+    "credential dump": T1003
+    "powershell": T1059.001
+    "scheduled task": T1053.005
+    "new service": T1543.003
+    "service install": T1543.003
+    "run key": T1547.001
+    "log cleared": T1070.001
+    "audit log": T1070.001
+    "remote desktop": T1021.001
+    "rdp": T1021.001
+    "smb": T1021.002
+    "admin share": T1021.002
+    "winrm": T1021.006
+    "port scan": T1046
+    "ransom": T1486
+    "exfil": T1048
+    "phish": T1566
+    # track Azure (P1-3): Defender for Cloud / Defender XDR / Entra ID Protection alert names without a MITRE field
+    "key vault": T1555.006
+    "mfa fraud": T1621
+    "mfa fatigue": T1621
+    "inbox forwarding": T1114.003
+    "inbox manipulation": T1114.003
+    "impossible travel": T1078.004
+    "atypical travel": T1078.004
+    "anomalous token": T1550.001
+    "token theft": T1550.001
+    "azurehound": T1087.004
+    "roadtools": T1087.004
+    "mass download": T1530
+    "storage account": T1530
+  # technique alias for v20 tactic renames (vendor "Defense Evasion" -> AttackLens default tactic of the technique)
+  tactic_aliases:
+    "defense evasion": null   # null -> use attack_v20.json default tactic of the technique
+
+# ---- Inbound connectors (SIEM -> AttackLens) ---------------------------------------------------------------------
+# Common keys: enabled, base_url, verify_tls, ca_file (extra CA bundle, PEM), timeout_s, page_size, poll_interval_s,
+# default_since (first pull when there is no checkpoint: 24h / 30m / 7d), max_pages_per_cycle. events / alerts = the
+# two input modes; each has its own query and checkpoint. Checkpoint = (last ts, ids seen at that ts, ids seen inside
+# the overlap window) in <state_dir>/<source>_<mode>.json.
+# Time window (all pull connectors; defaults shown):
+#   ingest_lag: 5m   query only up to now - lag (rows not yet settled in the index wait for the next cycle; a row
+#                    past it is skipped "after_lag", a row dated in the future "future_ts"; the checkpoint never
+#                    moves past now - lag)
+#   overlap: 10m     every cycle re-reads [checkpoint - overlap, ...]: late-indexed rows are pulled, rows already
+#                    written are recognised by id and skipped "duplicate"
+#   retries: 3       HTTP 429 / 502 / 503 / 504 retried with jittered backoff, Retry-After honoured
+#   commit_every_pages: 0   0 = spool + checkpoint committed once per cycle (all or nothing); N = after every N
+#                    pages / chunks (a later failure re-pulls only the rows since the last commit)
+connectors:
+  elastic:                    # Elastic / OpenSearch _search, search_after paging (PIT when supported)
+    enabled: false
+    base_url: http://127.0.0.1:9200
+    flavor: elastic           # elastic: POST /<index>/_pit ; opensearch: POST /<index>/_search/point_in_time
+    use_pit: true             # PIT + _shard_doc tie-break; falls back to sort on tiebreak_field if PIT fails
+    api_key_env: ELASTIC_API_KEY      # "Authorization: ApiKey <value>" if the env var is set
+    user_env: ELASTIC_USER            # basic auth if both user_env and password_env are set
+    password_env: ELASTIC_PASSWORD
+    verify_tls: true
+    timeout_s: 30
+    page_size: 1000
+    poll_interval_s: 10
+    default_since: 24h
+    max_pages_per_cycle: 100
+    events:
+      index: "logs-*"
+      ts_field: "@timestamp"
+      id_field: _id           # tie-break id (hit metadata key or document path)
+      tiebreak_field: "event.id"   # sort tie-break when PIT is unavailable
+      query: {match_all: {}}  # extra ES query DSL ANDed with the checkpoint range
+    alerts:
+      index: ".alerts-security.alerts-*"
+      ts_field: "@timestamp"
+      id_field: _id
+      tiebreak_field: "kibana.alert.uuid"
+      query: {match_all: {}}
+      fields:                 # alert -> raw_alerts mapping (first non-empty path wins)
+        rule_name: ["kibana.alert.rule.name", "signal.rule.name", "rule.name"]
+        technique: ["kibana.alert.rule.threat.technique.subtechnique.id", "kibana.alert.rule.threat.technique.id",
+                    "signal.rule.threat.technique.id", "threat.technique.id"]
+        tactic: ["kibana.alert.rule.threat.tactic.name", "signal.rule.threat.tactic.name"]
+        severity: ["kibana.alert.severity", "kibana.alert.risk_score", "signal.rule.severity"]
+        host: ["host.name", "host.hostname"]
+        src_user: ["source.user.name"]
+        target_user: ["user.name", "user.target.name"]
+        src_ip: ["source.ip"]
+        dst_ip: ["destination.ip"]
+        id: ["kibana.alert.uuid", "_id"]
+
+  splunk:                     # Splunk REST services/search/jobs/export, output_mode=json (streamed line by line)
+    enabled: false
+    base_url: https://127.0.0.1:8089
+    token_env: SPLUNK_TOKEN   # "Authorization: <auth_scheme> <value>"
+    auth_scheme: Bearer       # Bearer (JWT auth token) | Splunk (session key)
+    verify_tls: true
+    timeout_s: 300            # one export request per chunk; large chunks stream for a while
+    poll_interval_s: 10
+    default_since: 24h
+    chunk: 15m                # export time slices, oldest first (widened to keep <= max_chunks_per_cycle requests)
+    max_chunks_per_cycle: 24
+    commit_every_pages: 1     # commit spool + checkpoint after every chunk (a failure re-pulls only that chunk)
+    events:
+      search: "search index=main"     # earliest/latest come from the checkpoint
+      ts_field: _time
+      id_field: _cd
+      raw_field: _raw          # write the original line (routed by content by Stage 0); else the result as JSON
+    alerts:
+      search: "search index=notable"  # Enterprise Security notables
+      ts_field: _time
+      id_field: event_id
+      fields:
+        rule_name: ["rule_name", "search_name", "source"]
+        technique: ["annotations.mitre_attack", "mitre_technique_id", "mitre_attack_id"]
+        tactic: ["annotations.mitre_attack.mitre_tactic", "mitre_tactic"]
+        severity: ["urgency", "severity"]
+        host: ["dest", "host", "dvc"]
+        src_user: ["src_user"]
+        target_user: ["user"]
+        src_ip: ["src", "src_ip"]
+        dst_ip: ["dest_ip"]
+        id: ["event_id", "_cd"]
+
+  sentinel:                   # Azure Log Analytics query API: POST /v1/workspaces/{id}/query (KQL)
+    enabled: false
+    base_url: null            # null -> https://api.loganalytics.azure.com (token scope stays api.loganalytics.io)
+    workspace_id_env: SENTINEL_WORKSPACE_ID
+    # Sign-in: Entra ID client credentials (token cached until 5 min before expiry, refreshed once on HTTP 401) ...
+    tenant_id: null                   # or tenant_id_env
+    tenant_id_env: AZURE_TENANT_ID
+    client_id: null                   # or client_id_env
+    client_id_env: AZURE_CLIENT_ID
+    client_secret_env: AZURE_CLIENT_SECRET
+    login_url: null           # null -> https://login.microsoftonline.com
+    # ... or a static bearer token (override; expires after ~1 h, cannot be refreshed)
+    token_env: SENTINEL_TOKEN
+    verify_tls: true
+    timeout_s: 180            # KQL query; the server is asked to answer within timeout_s - 5 (Prefer: wait)
+    page_size: 5000
+    poll_interval_s: 30
+    default_since: 24h
+    max_pages_per_cycle: 50
+    # Placeholders: {since} {until} (datetime of the window), {page_size}, {after} (keyset clause on
+    # (TimeGenerated, AlId) from the 2nd page on: pages through any number of rows at one timestamp). A template
+    # without {after} pages by TimeGenerated only and fails loudly when one timestamp fills a page.
+    events:
+      query: >-
+        SecurityEvent | where TimeGenerated >= datetime({since}) and TimeGenerated <= datetime({until})
+        | extend AlId = tostring(_ItemId) {after} | order by TimeGenerated asc, AlId asc | take {page_size}
+      ts_field: TimeGenerated
+      id_field: _ItemId
+      keyset_column: AlId
+      raw_field: RawData       # original line when the table keeps it (routed by content by Stage 0); else event_map
+      # column -> ECS path, so Stage 0 sees ECS JSON (ecs_json aliases in sources.yaml); unmapped columns dropped
+      event_map:
+        TimeGenerated: "@timestamp"
+        Computer: host.name
+        EventID: winlog.event_id
+        Activity: event.action
+        TargetUserName: user.name
+        SubjectUserName: winlog.event_data.SubjectUserName
+        TargetLogonId: winlog.logon.id
+        LogonType: winlog.logon.type
+        IpAddress: source.ip
+        IpPort: source.port
+        NewProcessName: process.executable
+        Process: process.name
+        ParentProcessName: process.parent.name
+        CommandLine: process.command_line
+        ServiceName: service.name
+        AuthenticationPackageName: winlog.event_data.AuthenticationPackageName
+        TicketEncryptionType: winlog.event_data.TicketEncryptionType
+        MemberName: winlog.event_data.MemberName
+    alerts:
+      query: >-
+        SecurityAlert | where TimeGenerated >= datetime({since}) and TimeGenerated <= datetime({until})
+        | order by TimeGenerated asc | take {page_size}
+      ts_field: TimeGenerated
+      id_field: SystemAlertId
+      fields:
+        rule_name: ["AlertName", "DisplayName"]
+        technique: ["SubTechniques", "Techniques", "ExtendedProperties.Techniques"]
+        tactic: ["Tactics"]
+        severity: ["AlertSeverity"]
+        host: ["CompromisedEntity", "Entities.HostName"]
+        src_user: []
+        target_user: ["Entities.Name"]
+        src_ip: ["Entities.Address"]
+        dst_ip: []
+        id: ["SystemAlertId"]
+
+  syslog:                     # UDP/TCP listener for syslog / CEF lines forwarded by SIEMs (QRadar, ArcSight, ...)
+    enabled: false
+    bind: 127.0.0.1           # 0.0.0.0 only on a trusted segment
+    udp_port: 5514            # null disables UDP
+    tcp_port: 5514            # null disables TCP
+    max_line_bytes: 65536
+    flush_interval_s: 2       # one spool file per flush (atomic rename)
+    once_seconds: 5           # --once: listen this long, flush, exit
+    max_buffer_lines: 200000  # lines beyond this before a flush are dropped (counted: buffer_full)
+    alerts:                   # CEF alerts: header name = rule name; MITRE from an extension key if present
+      fields:
+        rule_name: ["cef.name"]
+        technique: ["cs1", "cs2", "cs3", "cs4", "mitreTechnique"]   # only values that look like Txxxx count
+        tactic: ["mitreTactic"]
+        severity: ["cef.severity"]
+        host: ["dhost", "dvchost", "shost"]
+        src_user: ["suser"]
+        target_user: ["duser"]
+        src_ip: ["src"]
+        dst_ip: ["dst"]
+        id: ["externalId", "cef.signature_id"]
+
+  # ---- Cloud audit-log sources (events mode; written as JSON, routed by config/sources.yaml) -------------------------
+  # Optional dependencies: pip install "attacklens[cloud]" (boto3 for AWS, cryptography to sign the GCP JWT).
+  aws_cloudtrail:             # CloudTrail LookupEvents (management events, 90 days) or CloudTrail files in S3
+    enabled: false
+    region: us-east-1
+    endpoint_url: null                            # null -> public regional endpoint derived by boto3
+    access_key_id_env: AWS_ACCESS_KEY_ID          # access key pair (+ session token for temporary credentials) ...
+    secret_access_key_env: AWS_SECRET_ACCESS_KEY
+    session_token_env: AWS_SESSION_TOKEN
+    profile: null                                 # ... or a named profile ...
+    use_default_chain: false                      # ... or the default boto3 chain (SSO, instance / task role)
+    role_arn: null                                # optional role assumed via STS
+    external_id: null
+    timeout_s: 30
+    retries: 3                                    # botocore adaptive retry mode (throttling backs off)
+    min_call_interval_s: 0.5                      # LookupEvents: 2 requests / s per account and region
+    poll_interval_s: 300
+    default_since: 24h
+    max_windows_per_cycle: 168
+    commit_every_pages: 1                         # commit after every complete time slice / S3 object
+    events:
+      source: lookup                              # lookup | s3
+      window: 1h                                  # lookup: time slice paged completely before the next
+      lookup_attributes: null                     # e.g. [{AttributeKey: ReadOnly, AttributeValue: "false"}]
+      s3_bucket: null
+      s3_prefix: "AWSLogs/{account}/CloudTrail/{region}/{yyyy}/{mm}/{dd}/"   # only the window's days are listed
+                                                  # (organization trail: "AWSLogs/o-xxxx/{account}/CloudTrail/...")
+      account_id: null                            # {account}; null -> STS GetCallerIdentity of the credentials;
+                                                  #   a list for an organization trail (one prefix per member account)
+      regions: null                               # {region} list; null -> [region]
+      include_insight: false                      # CloudTrail-Digest/ files are always skipped;
+      include_network_activity: false             # CloudTrail-Insight/ and -NetworkActivity/ only when enabled
+      max_objects_per_cycle: 500
+
+  azure_monitor:              # Log Analytics KQL over Activity Log + Entra ID sign-in / audit tables
+    enabled: false
+    base_url: null                                # null -> https://api.loganalytics.azure.com
+    login_url: null                               # null -> https://login.microsoftonline.com
+    workspace_id: null
+    workspace_id_env: AZURE_LA_WORKSPACE_ID
+    tenant_id: null
+    tenant_id_env: AZURE_TENANT_ID
+    client_id: null
+    client_id_env: AZURE_CLIENT_ID
+    client_secret_env: AZURE_CLIENT_SECRET        # client-credentials flow; token cached until 5 min before expiry
+    token_env: null                               # optional static bearer token override
+    verify_tls: true
+    timeout_s: 180                                # KQL query; Prefer: wait=timeout_s - 5
+    retries: 3
+    page_size: 5000
+    poll_interval_s: 60
+    default_since: 24h
+    max_pages_per_cycle: 50
+    commit_every_pages: 1
+    events:
+      # Non-interactive / service-principal / managed-identity sign-ins route to azure_signin_json by content;
+      # union isfuzzy=true skips tables the workspace does not have.
+      tables: [AzureActivity, SigninLogs, AuditLogs, AADNonInteractiveUserSignInLogs, AADServicePrincipalSignInLogs,
+               AADManagedIdentitySignInLogs]
+      optional_tables:        # appended when true; StorageBlobLogs = blob data plane (high volume) -> azure_storageblob_json
+        StorageBlobLogs: false
+        # track Azure: Key Vault data plane -> azure_keyvault_json, Graph activity (high volume) -> azure_graph_json,
+        # Entra ID Protection -> azure_risk_json (each routed by content like every other table)
+        AZKVAuditLogs: false
+        MicrosoftGraphActivityLogs: false
+        AADUserRiskEvents: false
+        AADServicePrincipalRiskEvents: false
+        AADRiskyUsers: false
+      # {tables} = tables + switched-on optional_tables; keyset paging on (TimeGenerated, AlId) via {after}
+      query: >-
+        union isfuzzy=true {tables} | where TimeGenerated >= datetime({since}) and TimeGenerated <= datetime({until})
+        | extend AlId = tostring(_ItemId) {after} | order by TimeGenerated asc, AlId asc | take {page_size}
+      ts_field: TimeGenerated
+      id_field: _ItemId
+      keyset_column: AlId
+    alerts:                   # Defender for Cloud / Sentinel alerts in the same workspace
+      query: >-
+        SecurityAlert | where TimeGenerated >= datetime({since}) and TimeGenerated <= datetime({until})
+        | extend AlId = tostring(_ItemId) {after} | order by TimeGenerated asc, AlId asc | take {page_size}
+      ts_field: TimeGenerated
+      id_field: SystemAlertId
+      keyset_column: AlId
+      fields:
+        rule_name: ["AlertName", "DisplayName"]
+        technique: ["SubTechniques", "Techniques", "ExtendedProperties.Techniques"]
+        tactic: ["Tactics"]
+        severity: ["AlertSeverity"]
+        host: ["CompromisedEntity", "Entities.HostName"]
+        src_user: []
+        target_user: ["Entities.Name"]
+        src_ip: ["Entities.Address"]
+        dst_ip: []
+        id: ["SystemAlertId"]
+
+  gcp_logging:                # Cloud Logging entries.list over Cloud Audit Logs
+    enabled: false
+    base_url: null                                # null -> https://logging.googleapis.com/v2/entries:list
+    project_ids: []                               # e.g. [my-project]; or resource_names: [organizations/123]
+    resource_names: []
+    service_account_json_env: GCP_SERVICE_ACCOUNT_JSON   # the JSON key TEXT (not a path)
+    token_env: null                               # optional static OAuth token override
+    token_uri: null                               # null -> the key's token_uri (https://oauth2.googleapis.com/token)
+    verify_tls: true
+    timeout_s: 30
+    retries: 3
+    page_size: 1000                               # API maximum
+    min_page_interval_s: 1.0                      # entries.list: 60 requests / minute
+    poll_interval_s: 60
+    default_since: 24h
+    max_pages_per_cycle: 100
+    commit_every_pages: 1
+    events:
+      filter: 'logName:"cloudaudit.googleapis.com"'   # timestamp window added by the connector
+
+  # ---- SaaS identity / productivity audit logs (kind "identity"; events mode, written as the vendor's JSON) ------
+  # Mock for tests and offline demos: tools/mock_saas.py (Okta, Office 365 Management API, Google Reports API).
+  okta:                       # Okta System Log API: GET {base_url}/api/v1/logs, Link rel="next" paging
+    enabled: false
+    base_url: null                                # https://<org>.okta.com (or your custom Okta domain)
+    token_env: OKTA_API_TOKEN                     # API token -> "Authorization: SSWS <token>" (read-only admin) ...
+    client_id: null                               # ... or an OAuth API service app (scope okta.logs.read) ...
+    private_key_env: null                         # ... signing its private_key_jwt client assertion (PEM text)
+    key_id: null                                  # optional `kid` of that key
+    scope: okta.logs.read
+    verify_tls: true
+    timeout_s: 30
+    retries: 3                                    # 429 waits for X-Rate-Limit-Reset, 5xx back off
+    rate_limit_min_remaining: 2                   # wait for the reset when this few calls remain
+    max_rate_wait_s: 60
+    page_size: 1000                               # limit (API maximum)
+    poll_interval_s: 60
+    default_since: 24h                            # the System Log keeps 90 days
+    max_pages_per_cycle: 100
+    commit_every_pages: 1
+    events:
+      filter: null                                # Okta expression, e.g. 'eventType sw "user.session"'
+
+  m365_ual:                   # Office 365 Management Activity API (unified audit log): subscriptions + content blobs
+    enabled: false
+    base_url: null                                # null -> https://manage.office.com (GCC manage-gcc.office.com,
+                                                  #   GCC High manage.office365.us, DoD manage.protection.apps.mil)
+    login_url: null                               # null -> https://login.microsoftonline.com
+    tenant_id: null
+    tenant_id_env: M365_TENANT_ID
+    client_id: null
+    client_id_env: M365_CLIENT_ID
+    client_secret_env: M365_CLIENT_SECRET         # app permission ActivityFeed.Read (Office 365 Management APIs)
+    scope: null                                   # null -> https://<API host>/.default
+    publisher_id: null                            # PublisherIdentifier (own throttling quota); null -> tenant id
+    auto_start_subscriptions: true                # POST subscriptions/start for content types not enabled yet
+    verify_tls: true
+    timeout_s: 60
+    retries: 3
+    poll_interval_s: 300
+    default_since: 24h                            # content is listed at most 7 days back (API limit)
+    overlap: 30m                                  # checkpoint = blob contentCreated; re-listed blobs dedupe by Id
+    max_blobs_per_cycle: 500
+    commit_every_pages: 1                         # commit after every content blob
+    events:
+      content_types: [Audit.AzureActiveDirectory, Audit.Exchange, Audit.SharePoint, Audit.General]
+      window: 24h                                 # listing slice (API maximum 24h)
+
+  gws_reports:                # Google Workspace Admin SDK Reports API: activities.list per application
+    enabled: false
+    base_url: null                                # null -> https://admin.googleapis.com
+    token_uri: null                               # null -> the key's token_uri
+    service_account_json_env: GWS_SERVICE_ACCOUNT_JSON   # JSON key TEXT; domain-wide delegation for
+                                                  #   https://www.googleapis.com/auth/admin.reports.audit.readonly
+    delegated_admin: null                         # admin e-mail impersonated (JWT sub)
+    customer_id: null                             # null -> my_customer
+    token_env: null                               # optional static OAuth token override
+    verify_tls: true
+    timeout_s: 30
+    retries: 3
+    page_size: 1000                               # maxResults (API maximum)
+    poll_interval_s: 300
+    default_since: 24h
+    ingest_lag: 10m
+    overlap: 1h                                   # some applications are published hours late: raise if needed
+    max_windows_per_cycle: 48
+    commit_every_pages: 1                         # commit after every complete time slice
+    events:
+      applications: [login, admin, token, drive]
+      window: 1h
+
+# ---- Outbound sinks (AttackLens -> SIEM / SOAR) -------------------------------------------------------------------
+# Called from publish.py after incidents are written. A sink failure is logged and recorded (run_metrics.json
+# stage_stats.publish.sinks + connector_status.json sinks); it never fails the run. only_changed: an incident is
+# re-sent only when its content changed (hash in <state_dir>/sink_<name>.json), so live cycles do not spam.
+sinks:
+  splunk_hec:
+    enabled: false
+    base_url: https://127.0.0.1:8088          # POST <base_url>/services/collector/event
+    token_env: SPLUNK_HEC_TOKEN               # "Authorization: Splunk <value>"
+    index: null
+    sourcetype: "attacklens:incident"
+    batch_size: 50                            # upper bound per request; the real cut is batch_bytes
+    batch_bytes: 800000                       # HEC body limit (Splunk default max_content_length 1 MB); 413 -> split
+    verify_tls: true
+    timeout_s: 10
+    only_changed: true
+  elastic_bulk:
+    enabled: false
+    base_url: http://127.0.0.1:9200           # POST <base_url>/_bulk ; doc id = incident id (idempotent)
+    index: attacklens-incidents
+    op_type: auto                             # auto: create for data streams (logs-/metrics-/traces-), else index
+    api_key_env: ELASTIC_API_KEY
+    user_env: ELASTIC_USER
+    password_env: ELASTIC_PASSWORD
+    batch_size: 100
+    verify_tls: true
+    timeout_s: 10
+    only_changed: true
+  webhook:                                    # generic JSON POST: SOAR, Sentinel Logic App, Slack, Teams
+    enabled: false
+    url: http://127.0.0.1:9000/attacklens     # full URL
+    token_env: null                           # "Authorization: Bearer <value>" if set
+    headers: {}                               # extra static, NON-secret headers
+    payload: incident                         # incident (full Incident JSON) | summary (index row) | slack
+    verify_tls: true
+    timeout_s: 10
+    only_changed: true
+  syslog_cef:                                 # one CEF line per incident + one per step
+    enabled: false
+    host: 127.0.0.1
+    port: 5515
+    protocol: udp                             # udp | tcp
+    vendor: Mitigata
+    product: AttackLens
+    version: "0.1"
+    only_changed: true
+
+# ---- Pivot-back queries (GET /api/incidents/{id}/pivots) ---------------------------------------------------------
+# Per step, a ready-to-run query per enabled SIEM, scoped to the step's host / user / IPs within ts +- window_ms.
+# Pivots only GENERATE query text (no network), so they are on by default; a URL is added only when base_url is set.
+# enabled: true / false, or null -> follow connectors.<name>.enabled. Placeholders: {clauses} (entity clauses joined by `join`),
+# {earliest_iso} {latest_iso} {earliest_epoch} {latest_epoch}; url_template also gets {query_url} (URL-encoded) and
+# {base_url}. Entity values are escaped for the query language (never trust log-derived strings).
+pivots:
+  window_ms: 900000           # +- 15 min around the step
+  siems:
+    splunk:
+      enabled: true
+      language: spl
+      base_url: null          # e.g. https://splunk.example:8000 ; null -> no URL
+      clause: {host: 'host="{v}"', user: 'user="{v}"', ip: '(src_ip="{v}" OR dest_ip="{v}")'}
+      join: " OR "
+      template: 'search index=* earliest={earliest_epoch} latest={latest_epoch} ({clauses})'
+      url_template: '{base_url}/en-US/app/search/search?q={query_url}&earliest={earliest_epoch}&latest={latest_epoch}'
+    sentinel:
+      enabled: true
+      language: kql
+      base_url: null
+      clause: {host: 'Computer =~ "{v}"', user: 'Account has "{v}"', ip: 'IpAddress == "{v}"'}
+      join: " or "
+      template: >-
+        SecurityEvent | where TimeGenerated between (datetime({earliest_iso}) .. datetime({latest_iso}))
+        | where {clauses}
+      url_template: null
+    elastic:
+      enabled: true
+      language: lucene        # also returns an ES query DSL body (key "dsl")
+      base_url: null          # Kibana base URL, e.g. http://127.0.0.1:5601
+      clause: {host: 'host.name:"{v}"', user: 'user.name:"{v}"', ip: '(source.ip:"{v}" OR destination.ip:"{v}")'}
+      join: " OR "
+      template: '({clauses})'
+      ts_field: "@timestamp"
+      dsl_fields: {host: [host.name], user: [user.name], ip: [source.ip, destination.ip]}
+      url_template: "{base_url}/app/discover#/?_g=(time:(from:'{earliest_iso}',to:'{latest_iso}'))&_a=(query:(language:lucene,query:'{query_url}'))"

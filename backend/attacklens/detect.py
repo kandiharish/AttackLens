@@ -18,8 +18,8 @@ from typing import Any
 import duckdb
 
 from attacklens.context import RunContext
-from attacklens.detect_sql import (OK, RAW_ALERT_COLUMNS, create_empty_events, ensure_events, finish, prepare, q,
-                                   sql_list, sql_path, subject_host_expr)
+from attacklens.detect_sql import (OK, RAW_ALERT_COLUMNS, create_empty_events, ensure_events, evidence_chars, finish,
+                                   not_blocked_sql, prepare, q, sql_list, sql_path, subject_host_expr)
 from attacklens.detect_templates import TEMPLATES
 from attacklens.schemas import TACTIC_IDX
 
@@ -68,28 +68,42 @@ def rule_sql(con: duckdb.DuckDBPyConnection, rule: dict[str, Any], th: dict[str,
         fn = TEMPLATES.get(str(rule.get("template")))
         if fn is None:
             raise RuleError(f"{rule.get('id')}: unknown template {rule.get('template')!r}")
-        return fn(con, rule, {**th, **(rule.get("params") or {})})
+        return fn(con, with_blocked_filter(rule, th), {**th, **(rule.get("params") or {})})
     if rule.get("kind") == "match":
-        mc = int(th.get("evidence_max_chars", 300))
+        mc = evidence_chars(th)
         core = f"""
         SELECT 'primary' AS label, NULL AS sub_technique_id, h.ts_ms, h.ts_ms AS last_ts_ms, h.source_seq, h.host,
                {subject_host_expr('h', 'm', th)} AS subject_host, h.src_user, h.target_user, h.src_ip, h.dst_ip,
                1 AS raw_alert_count, [left(h.raw_line, {mc})] AS evidence_lines, [h.source_seq] AS source_keys
-        FROM al_match_hits h LEFT JOIN al_ip_host m ON m.ip = h.src_ip
+        FROM al_match_hits h LEFT JOIN al_ip_host m ON m.ip = h.src_ip LEFT JOIN al_ip_host md ON md.ip = h.dst_ip
         WHERE list_contains(h.rule_ids, {sql_list([rule['id']])[1:-1]})"""
         return finish(rule, core)
     raise RuleError(f"{rule.get('id')}: unsupported kind {rule.get('kind')!r}")
+
+
+def effective_where(rule: dict[str, Any], ioc: dict[str, Any], th: dict[str, Any]) -> str:
+    """expand_where plus the rule's exclude_blocked flag (one blocked list: thresholds.blocked_outcomes)."""
+    w = expand_where(rule, ioc)
+    return f"({w}) AND {not_blocked_sql(th)}" if rule.get("exclude_blocked") else w
+
+
+def with_blocked_filter(rule: dict[str, Any], th: dict[str, Any]) -> dict[str, Any]:
+    """Template rules: exclude_blocked ANDs the not-blocked predicate onto the rule's `filter`."""
+    if not rule.get("exclude_blocked"):
+        return rule
+    f = rule.get("filter")
+    return {**rule, "filter": f"({f}) AND {not_blocked_sql(th)}" if f else not_blocked_sql(th)}
 
 
 def build_match_hits(con: duckdb.DuckDBPyConnection, rules: list[dict[str, Any]], ioc: dict[str, Any],
                      th: dict[str, Any]) -> None:
     """One scan of events: rows matching any match rule, with the list of rule ids they match."""
     mrules = [r for r in rules if r.get("kind") == "match"]
-    mc = int(th.get("evidence_max_chars", 300))
+    mc = evidence_chars(th)
     if not mrules:
         cond, ids = "FALSE", "[]::VARCHAR[]"
     else:
-        preds = [(r["id"], expand_where(r, ioc)) for r in mrules]
+        preds = [(r["id"], effective_where(r, ioc, th)) for r in mrules]
         cond = " OR ".join(f"({p})" for _, p in preds)
         ids = "list_filter([" + ", ".join(f"CASE WHEN ({p}) THEN {sql_list([i])[1:-1]} END" for i, p in preds) + \
               "], lambda x: x IS NOT NULL)"
@@ -217,6 +231,27 @@ def run(ctx: RunContext) -> dict[str, Any]:
     ctx_ms = int(th.get("lateral_context_window_ms", 86400000))
     relabelled = {str(r["id"]): relabel_without_context(con, r, ctx_ms)
                   for r in rules if r.get("relabel_without_context")}
+    # native cloud rules (config/rules_cloud.yaml, config/cloud.yaml) -> al_raw BEFORE Sigma, so the Sigma dedupe sees
+    # them (sigma_detect.dedupe_against_native, native_cloud_ids); after the relabel, which only reads rules.yaml alerts
+    from attacklens import detect_cloud
+    cloud = detect_cloud.run_cloud(con, cfg, ctx)
+    cloud_ids: list[str] = []
+    if cloud.get("parquet"):
+        src = f"read_parquet({sql_path(cloud['parquet'])})"
+        con.execute(f"INSERT INTO al_raw BY NAME SELECT * FROM {src}")
+        cloud_ids = [str(r[0]) for r in con.execute(f"SELECT DISTINCT rule_id FROM {src}").fetchall()]
+    secs["cloud"] = float(cloud.get("wall_s") or 0.0)
+    # SigmaHQ rules (pipeline.yaml sigma.enabled) -> al_raw, after the relabel so generic community rules never
+    # count as the "earlier foothold" context of a native label
+    from attacklens import sigma_detect
+    t0 = time.perf_counter()
+    live = bool(getattr(ctx, "live", False)) or ctx.parquet_dir.name == "window"   # live.py: state/window
+    sigma = sigma_detect.run(con, cfg, th, ctx.work_dir, live=live, native_cloud_ids=cloud_ids)
+    secs["sigma"] = round(time.perf_counter() - t0, 3)
+    siem: dict[str, Any] = {"enabled": False}
+    if ctx.siem_alerts:  # alert-input mode only (explicit); the scored eval never gets here
+        from attacklens import siem_alerts
+        siem = siem_alerts.union_into(con, cfg, ctx.ground_truth is not None)
     for rid, n in con.execute("SELECT rule_id, count(*) FROM al_raw GROUP BY rule_id").fetchall():
         per_rule[str(rid)] = int(n)
     for r in rules:
@@ -232,4 +267,5 @@ def run(ctx: RunContext) -> dict[str, Any]:
              total, hits, per_rule, relabelled)
     log.debug("detect: seconds per rule %s", secs)
     return {"alerts_per_rule": per_rule, "raw_alerts": total, "match_hits": int(hits), "relabelled": relabelled,
-            "rule_seconds": secs}
+            "rule_seconds": secs, "siem_alerts": siem, "sigma": sigma, "cloud": cloud,
+            **{k: v for k, v in sigma.items() if k.startswith("sigma_")}}

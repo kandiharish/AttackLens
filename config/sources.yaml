@@ -22,47 +22,98 @@
 # event.module, event.dataset (and the CEF header name/signature or cs2 "mitre", which carry rule labels).
 
 json_sources:
-  # ECS JSON lines: the provided generator (reports/edr_log_generator.py), tools/scenarios.py, winlogbeat.
+  # How profile.py picks a JSON source (on the sampled rows of each file):
+  #   1. detect_signatures, every source in file order: a signature is a list of field paths that must ALL be present,
+  #      each in >= detect_min_share (default 0.5) of the sampled rows. The first source with a matching signature wins.
+  #   2. else detect_any, every source in file order: the first source with any listed path present wins.
+  # So flat Windows events from NXLog / Logstash (top-level EventID + Channel / SourceName next to a collector
+  # '@timestamp') are win_json, while Winlogbeat (winlog.*, '@timestamp', host.*) and generic ECS stay ecs_json.
+  #
+  # ts_policy (attacklens/ingest_maps.py): the fields.ts aliases are tried in order and the first value that QUALIFIES
+  # wins. Zone class per alias: utc = UTC by definition (Sysmon UtcTime), explicit (default) = must carry Z / an offset
+  # / UTC (or be epoch digits / .NET /Date(ms)/), local = a local wall clock. A naive value of an explicit or local alias
+  # counts only when naive_tz is set (IANA name, e.g. America/New_York); otherwise it is ignored and the next alias is
+  # tried. A row left without any qualifying value keeps ts_ms NULL (ts_ok=false), counted in ingest_accounting.json.
+  # source_profile.json records, per file, which alias set ts, the naive values ignored and the measured skew of every
+  # alias against the utc alias (warning above skew_warn_s). Sources without ts_policy read their aliases as before.
+
+  # ECS JSON lines: the provided generator (reports/edr_log_generator.py), tools/scenarios.py, Winlogbeat. Raw
+  # Winlogbeat without ECS processors carries the EventData under winlog.event_data.*: those are fallbacks after the
+  # ECS paths. winlog.computer_name (the machine that logged the event) beats host.name (the beat's host: the
+  # collector under Windows Event Forwarding).
   ecs_json:
     detect_any: ["@timestamp", "event.action", "ecs.version"]
     fields:
-      ts:            ['$."@timestamp"', '$.timestamp', '$.event.created']
+      ts:            ['$."@timestamp"', '$.timestamp', '$.event.created', '$.winlog.event_data.UtcTime']
       event_id:      ['$.winlog.event_id', '$.event.code']
       event_action:  ['$.event.action']
       outcome:       ['$.event.outcome']
       logon_id:      ['$.winlog.logon.id', '$.winlog.event_data.TargetLogonId', '$.winlog.event_data.SubjectLogonId']
       logon_type:    ['$.winlog.logon.type', '$.winlog.event_data.LogonType']
-      host:          ['$.host.name', '$.host.hostname', '$.agent.hostname']
+      host:          ['$.winlog.computer_name', '$.host.name', '$.host.hostname', '$.agent.hostname']
       host_ip:       ['$.host.ip[0]', '$.host.ip']
-      user:          ['$.user.name', '$.winlog.event_data.TargetUserName']
+      user:          ['$.user.name', '$.winlog.event_data.User', '$.winlog.event_data.TargetUserName']
       subject_user:  ['$.winlog.event_data.SubjectUserName']
-      target_name:   ['$.user.target.name']
+      target_name:   ['$.user.target.name', '$.winlog.event_data.TargetUserName']
       member_name:   ['$.winlog.event_data.MemberName']
       group:         ['$.group.name', '$.user.target.group.name']
-      src_ip:        ['$.source.ip', '$.winlog.event_data.IpAddress']
-      src_port:      ['$.source.port', '$.winlog.event_data.IpPort']
-      dst_ip:        ['$.destination.ip']
-      dst_port:      ['$.destination.port']
-      dst_domain:    ['$.destination.domain', '$.dns.question.name', '$.url.domain']
+      src_ip:        ['$.source.ip', '$.winlog.event_data.IpAddress', '$.winlog.event_data.SourceIp']
+      src_port:      ['$.source.port', '$.winlog.event_data.IpPort', '$.winlog.event_data.SourcePort']
+      dst_ip:        ['$.destination.ip', '$.winlog.event_data.DestinationIp']
+      dst_port:      ['$.destination.port', '$.winlog.event_data.DestinationPort']
+      dst_domain:    ['$.destination.domain', '$.dns.question.name', '$.url.domain', '$.winlog.event_data.QueryName',
+                      '$.winlog.event_data.DestinationHostname']
       process_name:  ['$.process.name']
-      process_path:  ['$.process.executable']
-      parent_process: ['$.process.parent.name', '$.process.parent.executable']
-      command_line:  ['$.process.command_line']
-      file_path:     ['$.file.path']
+      process_path:  ['$.process.executable', '$.winlog.event_data.Image', '$.winlog.event_data.NewProcessName',
+                      '$.winlog.event_data.ImagePath']
+      parent_process: ['$.process.parent.name', '$.process.parent.executable', '$.winlog.event_data.ParentImage',
+                       '$.winlog.event_data.ParentProcessName']
+      command_line:  ['$.process.command_line', '$.winlog.event_data.CommandLine']
+      file_path:     ['$.file.path', '$.winlog.event_data.TargetFilename']
       file_ext:      ['$.file.extension']
-      registry_path: ['$.registry.path']
+      registry_path: ['$.registry.path', '$.winlog.event_data.TargetObject']
       bytes:         ['$.network.bytes', '$.source.bytes']
       direction:     ['$.network.direction']
       service_name:  ['$.service.name', '$.winlog.event_data.ServiceName']
       auth_package:  ['$.winlog.event_data.AuthenticationPackageName', '$.winlog.event_data.LmPackageName']
       ticket_encryption: ['$.winlog.event_data.TicketEncryptionType']
 
-  # Windows EVTX exported as JSON (flat, or nested Event.System / Event.EventData).
+  # Windows EVTX exported as JSON (flat, or nested Event.System / Event.EventData), and flat collector JSON: NXLog
+  # im_msvistalog / Logstash (OTRF Security-Datasets "Mordor" shape: top-level EventID, Channel, SourceName,
+  # Hostname, EventTime, EventData fields flattened, plus a collector '@timestamp' and the collector's own `host`,
+  # which is never read as the host).
   win_json:
+    # '@timestamp' is not proof of ECS (7 of 8 OTRF files carry it): a top-level EventID next to a Windows envelope
+    # key decides first (profile.py pass 1). The plain detect_any list is pass 2.
+    detect_signatures:
+      - [EventID, Channel]
+      - [EventID, SourceName]
+      - [EventID, ProviderName]
+      - [EventID, Provider_Name]
+      - [EventID, Computer]
+      - [EventID, Hostname]
+    detect_min_share: 0.5
     detect_any: ["EventID", "TimeCreated", "Event.System.EventID", "System.EventID", "TimeCreated.SystemTime"]
+    # Timestamp precedence (see the json_sources header): Sysmon UtcTime (UTC by definition) > the event's own
+    # TimeCreated (only with Z / offset) > collector '@timestamp' (only with Z / offset) > NXLog EventTime (local clock,
+    # only with naive_tz). Measured on OTRF: '@timestamp' is the collector time (+2 s) or local time labelled Z (-7 h);
+    # TimeCreated can be a naive 12-hour clock without AM/PM ("2020-10-18 07:50:09.089" = 19:50 local). A naive
+    # 12-hour clock is ambiguous in any zone: leave naive_tz null unless the export is known to be 24-hour local.
+    ts_policy:
+      zones:
+        '$.UtcTime': utc
+        '$.Event.EventData.UtcTime': utc
+        '$.EventData.UtcTime': utc
+        '$.EventTime': local
+      naive_tz: null
+      naive_formats: ['%m/%d/%Y %I:%M:%S %p', '%m/%d/%Y %H:%M:%S', '%Y-%m-%d %H:%M:%S']
+      skew_warn_s: 300
+    # Text caps (characters) applied at ingest: a PowerShell 4104 script block is up to 32 KB per record.
+    max_len: {command_line: 32768}
     fields:
-      ts:            ['$.TimeCreated.SystemTime', '$.TimeCreated', '$.Event.System.TimeCreated.SystemTime',
-                      '$.System.TimeCreated.SystemTime', '$.UtcTime', '$.Event.EventData.UtcTime']
+      ts:            ['$.UtcTime', '$.Event.EventData.UtcTime', '$.EventData.UtcTime', '$.TimeCreated.SystemTime',
+                      '$.TimeCreated', '$.Event.System.TimeCreated.SystemTime', '$.System.TimeCreated.SystemTime',
+                      '$."@timestamp"', '$.EventTime']
       event_id:      ['$.EventID', '$.Event.System.EventID', '$.System.EventID', '$.EventID.value']
       event_action:  ['$.Action']
       outcome:       ['$.Keywords']
@@ -84,8 +135,12 @@ json_sources:
       process_name:  ['$.ProcessName', '$.NewProcessName']
       process_path:  ['$.Image', '$.NewProcessName', '$.Event.EventData.Image', '$.ImagePath']
       parent_process: ['$.ParentImage', '$.ParentProcessName', '$.Event.EventData.ParentImage']
-      command_line:  ['$.CommandLine', '$.Event.EventData.CommandLine']
-      file_path:     ['$.TargetFilename', '$.Event.EventData.TargetFilename']
+      # PowerShell/Operational 4104 ScriptBlockText and 4103 Payload: the script text (action 'script_exec', see
+      # action_map.event_ids; only the command_line content rules in rules.yaml read script_exec rows)
+      command_line:  ['$.CommandLine', '$.Event.EventData.CommandLine', '$.ScriptBlockText',
+                      '$.Event.EventData.ScriptBlockText', '$.EventData.ScriptBlockText', '$.Payload',
+                      '$.Event.EventData.Payload']
+      file_path:     ['$.TargetFilename', '$.Event.EventData.TargetFilename', '$.Path', '$.Event.EventData.Path']
       file_ext:      ['$.FileExtension']
       registry_path: ['$.TargetObject', '$.Event.EventData.TargetObject']
       bytes:         ['$.BytesSent']
@@ -95,6 +150,614 @@ json_sources:
                       '$.Event.EventData.LmPackageName', '$.EventData.AuthenticationPackageName']
       ticket_encryption: ['$.TicketEncryptionType', '$.Event.EventData.TicketEncryptionType',
                           '$.EventData.TicketEncryptionType']
+
+  # ---- Cloud audit logs (connectors aws_cloudtrail / azure_monitor / gcp_logging, or exported JSON lines) ----------
+  # Entity conventions: host = the cloud account / subscription resource / project (lower-case), user = the calling
+  # principal (@domain stripped like every other source), src_ip = caller IP only when it is an IP (ip_fields).
+  # signature = the API / operation name, app = the cloud service: kept queryable for cloud rules (action stays
+  # 'other' unless action_map below maps it). outcome_map / action_map / ip_fields: see attacklens/ingest_maps.py.
+  # One CloudTrail record per line ({"Records": [...]} files are unpacked by the aws_cloudtrail connector).
+  cloudtrail_json:
+    detect_any: ["eventSource", "recipientAccountId", "awsRegion"]
+    fields:
+      ts:            ['$.eventTime']
+      event_action:  ['$.eventName']
+      # IAM Identity Center sign-in (signin.amazonaws.com CredentialChallenge / CredentialVerification /
+      # UserAuthentication, eventType AwsServiceEvent): the verdict is serviceEventDetails.<eventName> Success | Failure
+      outcome:       ['$.responseElements.ConsoleLogin', '$.serviceEventDetails.CredentialVerification',
+                      '$.serviceEventDetails.CredentialChallenge', '$.serviceEventDetails.UserAuthentication',
+                      '$.errorCode']
+      host:          ['$.recipientAccountId', '$.userIdentity.accountId']
+      # AssumedRole: the ARN (arn:aws:sts::<acct>:assumed-role/<role>/<session>) comes before the role name, and
+      # value_regex below keeps only <session>: the session is the user (an SSO session "alice@corp.example" -> alice),
+      # the role goes to group_name (second `group` alias; a group in the request, e.g. AddUserToGroup, wins).
+      user:          ['$.userIdentity.userName', '$.userIdentity.arn',
+                      '$.userIdentity.sessionContext.sessionIssuer.userName', '$.userIdentity.principalId']
+      target_name:   ['$.requestParameters.userName']
+      group:         ['$.requestParameters.groupName', '$.userIdentity.sessionContext.sessionIssuer.userName']
+      src_ip:        ['$.sourceIPAddress']
+      signature:     ['$.eventName']
+      app:           ['$.eventSource']
+    outcome_map:     # ConsoleLogin Success / Failure; any other call: errorCode present -> failure, absent -> success
+      values: {success: success, failure: failure}
+      present: failure
+      absent: success
+    action_map:
+      consolelogin: {success: login_success, failure: login_failed, default: other}
+      # Identity Center: the final UserAuthentication is the login; a failed credential check is a failed attempt
+      userauthentication: {success: login_success, failure: login_failed, default: other}
+      credentialverification: {success: other, failure: login_failed, default: other}
+      createuser: user_created
+      addusertogroup: group_member_added
+    value_regex:     # assumed-role / federated-user / IAM-user ARN -> the session / user name (ingest_maps.py)
+      user: ['^arn:aws[a-z-]*:sts::[0-9]*:assumed-role/[^/]+/([^/]+)$',
+             '^arn:aws[a-z-]*:sts::[0-9]*:federated-user/([^/]+)$',
+             '^arn:aws[a-z-]*:iam::[0-9]*:user/(?:.*/)?([^/]+)$']
+    ip_fields: [src_ip]
+
+  # ---- AWS network logs + vendor findings (track AWS: reports/cloud/log_coverage.md P0-5, P0-6, P1-2, P1-3, P1-8) ----
+  # Network entity convention: host = the instance (instance-id / Route 53 srcids.instance), else the ENI, firewall or
+  # VPC; src_ip / dst_ip / ports / bytes = the record as written (bytes = bytes sent by src). No user on network rows.
+  # Every detect_any key below is absent from the sources above and from each other (checked by profiling every
+  # data/raw set; backend/tests/test_ingest_aws_net.py asserts the routing per shape).
+  # VPC Flow Logs (v2..v11) as JSON lines: hyphenated names (header names kept, e.g. Firehose / Lambda conversion),
+  # underscore names (Parquet / Athena / Security Lake raw export) and Sentinel AWSVPCFlow PascalCase columns.
+  # The native text files (S3 with a header, CloudWatch headerless) need the space-delimited CSV patch for profile.py /
+  # ingest (reports/cloud/patches/aws-profile.diff, aws-ingest.diff): until it lands they count as unrecognized.
+  # pkt-srcaddr / pkt-dstaddr (the packet's original addresses behind a NAT gateway) win over srcaddr / dstaddr.
+  # NODATA / SKIPDATA records have '-' everywhere except the times: they are kept (ts from `start`, action 'other').
+  aws_vpcflow_json:
+    detect_any: ["interface-id", "interface_id", "InterfaceId", "log-status", "log_status", "LogStatus"]
+    fields:
+      ts:            ['$.start', '$.Start', '$.TimeGenerated']
+      event_action:  ['$.action', '$.Action']
+      outcome:       ['$.action', '$.Action']
+      host:          ['$."instance-id"', '$.instance_id', '$.InstanceId', '$."interface-id"', '$.interface_id',
+                      '$.InterfaceId']
+      src_ip:        ['$."pkt-srcaddr"', '$.pkt_srcaddr', '$.PktSrcAddr', '$.srcaddr', '$.SrcAddr']
+      src_port:      ['$.srcport', '$.SrcPort']
+      dst_ip:        ['$."pkt-dstaddr"', '$.pkt_dstaddr', '$.PktDstAddr', '$.dstaddr', '$.DstAddr']
+      dst_port:      ['$.dstport', '$.DstPort']
+      bytes:         ['$.bytes', '$.Bytes']
+      signature:     ['$."log-status"', '$.log_status', '$.LogStatus']
+      app:           ['$.protocol', '$.Protocol']          # IANA number (6 tcp, 17 udp, 1 icmp)
+    outcome_map:     # ACCEPT / REJECT -> success / failure (event_action keeps the word: global map -> conn_allowed / denied)
+      values: {accept: success, reject: failure}
+    ip_fields: [src_ip, dst_ip]
+
+  # Route 53 Resolver query logs (+ DNS Firewall verdicts) as delivered to CloudWatch Logs / S3 / Firehose: one JSON
+  # object per query. srcids.instance names the querying instance, so (srcaddr -> instance) feeds host_ip_map and lets
+  # network rules name the instance behind a private IP. answers[0].Rdata (an IP for A / AAAA) -> dst_ip.
+  aws_r53resolver_json:
+    detect_any: ["query_name", "srcids", "srcids.instance", "firewall_rule_action"]
+    fields:
+      ts:            ['$.query_timestamp']
+      event_action:  ['$.query_type']
+      outcome:       ['$.rcode']
+      host:          ['$.srcids.instance', '$.srcids.resolver_endpoint', '$.vpc_id']
+      host_ip:       ['$.srcaddr']
+      src_ip:        ['$.srcaddr']
+      src_port:      ['$.srcport']
+      dst_ip:        ['$.answers[0].Rdata']
+      dst_domain:    ['$.query_name']
+      signature:     ['$.query_type']
+      app:           ['$.firewall_rule_action']           # BLOCK / ALERT / ALLOW (DNS Firewall), NULL otherwise
+    outcome_map:     # rcode: NOERROR = answered; NXDOMAIN / SERVFAIL / REFUSED = not resolved
+      values: {noerror: success, nxdomain: failure, servfail: failure, refused: failure, formerr: failure}
+    action_map: {a: dns_query, aaaa: dns_query, cname: dns_query, txt: dns_query, mx: dns_query, ns: dns_query,
+                 ptr: dns_query, srv: dns_query, soa: dns_query, "null": dns_query, any: dns_query, https: dns_query,
+                 svcb: dns_query, caa: dns_query, naptr: dns_query, ds: dns_query, dnskey: dns_query}
+    ip_fields: [src_ip, dst_ip, host_ip]
+
+  # AWS Network Firewall logs (Suricata EVE inside `event`): alert, netflow (flow log) and tls records. Same pattern as
+  # FortiGate: netflow -> conn_allowed, alert -> ips_alert with the engine verdict as outcome (blocked / allowed),
+  # signature = the Suricata rule message, vendor_severity = Suricata priority (1 high .. 3 low).
+  # event.timestamp is "2026-10-21T11:05:00.123456+0000" (no colon); event_timestamp is epoch seconds (string or int).
+  aws_nfw_json:
+    detect_any: ["firewall_name", "event.event_type"]
+    fields:
+      ts:            ['$.event.timestamp', '$.event_timestamp']
+      event_action:  ['$.event.event_type']
+      outcome:       ['$.event.alert.action']
+      host:          ['$.firewall_name']
+      src_ip:        ['$.event.src_ip']
+      src_port:      ['$.event.src_port']
+      dst_ip:        ['$.event.dest_ip']
+      dst_port:      ['$.event.dest_port']
+      bytes:         ['$.event.netflow.bytes']
+      dst_domain:    ['$.event.tls.sni', '$.event.http.hostname', '$.event.dns.query[0].rrname', '$.event.dns.rrname']
+      file_path:     ['$.event.http.url']
+      signature:     ['$.event.alert.signature']
+      vendor_severity: ['$.event.alert.severity']
+      app:           ['$.event.app_proto', '$.event.proto']
+    action_map: {alert: ips_alert, netflow: conn_allowed, flow: conn_allowed, tls: web_access, http: web_access,
+                 dns: dns_query}
+    ip_fields: [src_ip, dst_ip]
+
+  # GuardDuty findings (bare finding: S3 export / API Findings[] item; EventBridge `detail`). Ingested as CONTEXT rows
+  # only (timeline, no-loss accounting): no scored rule reads them. They become alerts only in alert-input mode
+  # (python -m attacklens.findings_aws -> alert spool, config/aws_findings.yaml), never in a ground-truth run.
+  aws_guardduty_json:
+    detect_any: ["service.detectorId", "detail.service.detectorId"]
+    fields:
+      ts:            ['$.service.eventFirstSeen', '$.createdAt', '$.detail.service.eventFirstSeen', '$.detail.createdAt']
+      host:          ['$.resource.instanceDetails.instanceId', '$.detail.resource.instanceDetails.instanceId',
+                      '$.accountId', '$.detail.accountId']
+      host_ip:       ['$.resource.instanceDetails.networkInterfaces[0].privateIpAddress',
+                      '$.detail.resource.instanceDetails.networkInterfaces[0].privateIpAddress']
+      user:          ['$.resource.accessKeyDetails.userName', '$.detail.resource.accessKeyDetails.userName']
+      src_ip:        ['$.service.action.awsApiCallAction.remoteIpDetails.ipAddressV4',
+                      '$.service.action.networkConnectionAction.remoteIpDetails.ipAddressV4',
+                      '$.service.action.portProbeAction.portProbeDetails[0].remoteIpDetails.ipAddressV4',
+                      '$.detail.service.action.awsApiCallAction.remoteIpDetails.ipAddressV4',
+                      '$.detail.service.action.networkConnectionAction.remoteIpDetails.ipAddressV4']
+      signature:     ['$.type', '$.detail.type']
+      vendor_severity: ['$.severity', '$.detail.severity']
+      app:           ['$.service.serviceName', '$.detail.service.serviceName']
+    ip_fields: [src_ip, host_ip]
+
+  # Security Hub findings in ASFF (bare finding, API Findings[] / EventBridge detail.findings[] -> one row per document
+  # until the Stage 0 unwrap lands). CONTEXT rows only, like GuardDuty; alert-input: attacklens.findings_aws.
+  aws_securityhub_json:
+    detect_any: ["ProductArn", "GeneratorId", "Findings.ProductArn", "detail.findings.ProductArn"]
+    fields:
+      ts:            ['$.FirstObservedAt', '$.CreatedAt', '$.UpdatedAt', '$.Findings[0].CreatedAt',
+                      '$.detail.findings[0].CreatedAt', '$.time']
+      host:          ['$.Resources[0].Id', '$.AwsAccountId', '$.Findings[0].AwsAccountId', '$.account']
+      user:          ['$.Resources[0].Details.AwsIamAccessKey.PrincipalName',
+                      '$.Resources[0].Details.AwsIamAccessKey.UserName']
+      src_ip:        ['$.Network.SourceIpV4', '$.Action.AwsApiCallAction.RemoteIpDetails.IpAddressV4',
+                      '$.Action.NetworkConnectionAction.RemoteIpDetails.IpAddressV4']
+      signature:     ['$.Types[0]', '$.Title', '$.Findings[0].Types[0]', '$.detail.findings[0].Types[0]']
+      vendor_severity: ['$.Severity.Label', '$.Findings[0].Severity.Label', '$.detail.findings[0].Severity.Label']
+      app:           ['$.ProductName', '$.ProductFields."aws/securityhub/ProductName"']
+    value_regex:     # instance ARN -> i-...; any other ARN with an account -> the account id
+      host: ['^arn:aws[a-z-]*:ec2:[^:]*:[0-9]*:instance/(i-[0-9a-f]+)$', '^arn:aws[a-z-]*:[a-z0-9-]+:[^:]*:([0-9]{12}):']
+    ip_fields: [src_ip]
+
+  # Entra ID sign-ins: Log Analytics SigninLogs columns, or the diagnostic-settings export (properties.*).
+  # Listed before azure_activity_json: a sign-in row also carries OperationName / callerIpAddress.
+  # Also AADNonInteractiveUserSignInLogs / AADServicePrincipalSignInLogs / AADManagedIdentitySignInLogs (same columns;
+  # service-principal and managed-identity rows have ServicePrincipalName instead of a UPN).
+  azure_signin_json:
+    detect_any: ["ConditionalAccessStatus", "AuthenticationRequirement", "properties.conditionalAccessStatus",
+                 "ServicePrincipalName", "properties.servicePrincipalName"]
+    fields:
+      ts:            ['$.TimeGenerated', '$.CreatedDateTime', '$.time', '$.properties.createdDateTime']
+      event_action:  ['$.OperationName', '$.operationName']
+      outcome:       ['$.ResultType', '$.resultType', '$.Status.errorCode', '$.properties.status.errorCode']
+      host:          ['$._ResourceId', '$.ResourceId', '$.resourceId', '$.AppDisplayName',
+                      '$.properties.appDisplayName']
+      user:          ['$.UserPrincipalName', '$.properties.userPrincipalName', '$.ServicePrincipalName',
+                      '$.properties.servicePrincipalName', '$.ServicePrincipalId', '$.properties.servicePrincipalId',
+                      '$.identity']
+      src_ip:        ['$.IPAddress', '$.properties.ipAddress', '$.callerIpAddress']
+      signature:     ['$.OperationName', '$.operationName']
+      app:           ['$.AppDisplayName', '$.properties.appDisplayName']
+    outcome_map:     # ResultType 0 = success; interrupts (MFA / KMSI prompts) are neither; any other code = failure
+      values: {"0": success, "50058": null, "50072": null, "50074": null, "50076": null, "50125": null,
+               "50140": null, "50158": null, "53003": failure}
+      present: failure
+    action_map:
+      "sign-in activity": {success: login_success, failure: login_failed, default: other}
+    ip_fields: [src_ip]
+
+  # Azure Storage blob data plane (Log Analytics StorageBlobLogs, or the diagnostic export). Listed before
+  # azure_activity_json: blob rows also carry CallerIpAddress. CallerIpAddress is "ip:port" ("[v6]:port" for IPv6).
+  azure_storageblob_json:
+    detect_any: ["ObjectKey", "StatusText", "properties.objectKey"]
+    fields:
+      ts:            ['$.TimeGenerated', '$.time']
+      event_action:  ['$.OperationName', '$.operationName']
+      outcome:       ['$.StatusCode', '$.statusCode']
+      host:          ['$._ResourceId', '$.resourceId', '$.AccountName']
+      # user = the requester identity only (UPN, else Entra object id). AccountKey / SAS / Anonymous requests have
+      # none: user stays NULL (match by IP); the auth type is not an identity and goes to app.
+      user:          ['$.RequesterUpn', '$.identity.requester.upn', '$.RequesterObjectId',
+                      '$.identity.requester.objectId']
+      src_ip:        ['$.CallerIpAddress', '$.callerIpAddress']
+      file_path:     ['$.ObjectKey', '$.properties.objectKey', '$.Uri', '$.uri']
+      bytes:         ['$.ResponseBodySize', '$.properties.responseBodySize']
+      signature:     ['$.OperationName', '$.operationName']
+      app:           ['$.AuthenticationType', '$.identity.type']     # AccountKey / SAS / OAuth / Anonymous
+    outcome_map:     # HTTP status: 2xx / 304 = success, anything else = failure
+      values: {"200": success, "201": success, "202": success, "203": success, "204": success, "206": success,
+               "304": success}
+      present: failure
+    value_regex:     # "1.2.3.4:5678" -> 1.2.3.4, "[2001:db8::1]:443" -> 2001:db8::1 (ingest_maps.py)
+      src_ip: ['^(\d{1,3}(?:\.\d{1,3}){3}):\d+$', '^\[([0-9A-Fa-f:.]+)\](?::\d+)?$']
+    ip_fields: [src_ip]
+
+  # ---- Azure track (gaps P0-9 / P0-13 / P1-12): Key Vault, Microsoft Graph activity, Entra ID Protection ----------
+  # All three are listed before azure_activity_json: their diagnostic-export rows also carry callerIpAddress.
+  # Azure Key Vault data plane (category AuditEvent), three shapes: diagnostic-settings export (identity.claim.*,
+  # properties.*), Log Analytics resource-specific AZKVAuditLogs (Identity, ClientInfo, HttpStatusCode, Id) and legacy
+  # AzureDiagnostics (identity_claim_*_s / *_g, id_s, clientInfo_s, httpStatusCode_d, CallerIPAddress).
+  # host = the vault resource id; user = caller UPN, else the token's appid (service principal / managed identity);
+  # file_path = the secret / key / certificate id (vault URI); signature = operationName (SecretGet, KeyPurge, ...).
+  azure_keyvault_json:
+    detect_any: ["properties.clientInfo", "properties.isAccessPolicyMatch", "ClientInfo", "IsAccessPolicyMatch",
+                 "IsRbacAuthorized", "clientInfo_s", "isAccessPolicyMatch_b", "identity_claim_appid_g"]
+    fields:
+      ts:            ['$.time', '$.TimeGenerated']
+      event_action:  ['$.operationName', '$.OperationName']
+      outcome:       ['$.resultSignature', '$.ResultSignature', '$.properties.httpStatusCode', '$.HttpStatusCode',
+                      '$.httpStatusCode_d', '$.resultType', '$.ResultType']
+      host:          ['$.resourceId', '$._ResourceId', '$.ResourceId']
+      user:          ['$.identity.claim."http://schemas.xmlsoap.org/ws/2005/05/identity/claims/upn"',
+                      '$.Identity.claim."http://schemas.xmlsoap.org/ws/2005/05/identity/claims/upn"',
+                      '$.identity_claim_http_schemas_xmlsoap_org_ws_2005_05_identity_claims_upn_s',
+                      '$.identity_claim_upn_s', '$.identity.claim.appid', '$.Identity.claim.appid',
+                      '$.identity_claim_appid_g',
+                      '$.identity.claim."http://schemas.microsoft.com/identity/claims/objectidentifier"',
+                      '$.Identity.claim."http://schemas.microsoft.com/identity/claims/objectidentifier"',
+                      '$.identity_claim_oid_g']
+      src_ip:        ['$.callerIpAddress', '$.CallerIpAddress', '$.CallerIPAddress']
+      file_path:     ['$.properties.id', '$.Id', '$.id_s', '$.properties.requestUri', '$.RequestUri', '$.requestUri_s']
+      signature:     ['$.operationName', '$.OperationName']
+      app:           ['$.ResourceProvider', '$.category', '$.Category']
+    outcome_map:     # resultSignature is the HTTP status text (OK / NoContent / Forbidden ...); else the status code
+      values: {ok: success, accepted: success, created: success, nocontent: success, success: success,
+               "200": success, "201": success, "202": success, "204": success, "200.0": success, "201.0": success,
+               "202.0": success, "204.0": success}
+      present: failure
+    ip_fields: [src_ip]
+
+  # Microsoft Graph activity logs (MicrosoftGraphActivityLogs in Log Analytics, or the diagnostic export with
+  # properties.*). user = the signed-in user's object id, else the calling service principal; file_path = RequestUri;
+  # signature = the HTTP method (the path is classified by cloud.yaml gr_* columns, never one "API" per URI);
+  # app = the client AppId. SignInActivityId joins the sign-in UniqueTokenIdentifier (cloud.yaml si_tokid / gr_tokid).
+  azure_graph_json:
+    detect_any: ["SignInActivityId", "properties.signInActivityId", "TokenIssuedAt", "properties.tokenIssuedAt"]
+    fields:
+      ts:            ['$.TimeGenerated', '$.time', '$.properties.timeGenerated']
+      event_action:  ['$.RequestMethod', '$.properties.requestMethod']
+      outcome:       ['$.ResponseStatusCode', '$.properties.responseStatusCode', '$.resultSignature']
+      host:          ['$._ResourceId', '$.resourceId', '$.ResourceId', '$.AadTenantId', '$.properties.tenantId']
+      user:          ['$.UserId', '$.properties.userId', '$.ServicePrincipalId', '$.properties.servicePrincipalId',
+                      '$.AppId', '$.properties.appId']
+      src_ip:        ['$.IPAddress', '$.IpAddress', '$.properties.ipAddress', '$.callerIpAddress']
+      file_path:     ['$.RequestUri', '$.properties.requestUri']
+      bytes:         ['$.ResponseSizeBytes', '$.properties.responseSizeBytes']
+      signature:     ['$.RequestMethod', '$.properties.requestMethod']
+      app:           ['$.AppId', '$.properties.appId']
+    outcome_map:     # HTTP status: 2xx / 304 = success, anything else = failure
+      values: {"200": success, "201": success, "202": success, "204": success, "206": success, "304": success}
+      present: failure
+    ip_fields: [src_ip]
+
+  # Entra ID Protection: risk detections (AADUserRiskEvents / AADServicePrincipalRiskEvents, Graph riskDetection,
+  # diagnostic export properties.*) and risky users / service principals (AADRiskyUsers, riskyUser). Vendor risk
+  # verdicts are raw fields of this log (like SigninLogs RiskLevelDuringSignIn), never generator labels.
+  # ts = the risky ACTIVITY time (an offline detection arrives hours later); signature = riskEventType (risk events)
+  # or OperationName ("Risky user"); user = the at-risk account; vendor_severity = riskLevel; app = detection source.
+  azure_risk_json:
+    detect_any: ["RiskEventType", "riskEventType", "properties.riskEventType", "RiskLastUpdatedDateTime",
+                 "riskLastUpdatedDateTime", "properties.riskLastUpdatedDateTime"]
+    fields:
+      ts:            ['$.ActivityDateTime', '$.activityDateTime', '$.properties.activityDateTime', '$.TimeGenerated',
+                      '$.time', '$.DetectedDateTime', '$.detectedDateTime', '$.RiskLastUpdatedDateTime',
+                      '$.riskLastUpdatedDateTime', '$.properties.riskLastUpdatedDateTime']
+      event_action:  ['$.RiskEventType', '$.riskEventType', '$.properties.riskEventType', '$.OperationName',
+                      '$.operationName']
+      host:          ['$._ResourceId', '$.ResourceId', '$.resourceId']
+      user:          ['$.UserPrincipalName', '$.userPrincipalName', '$.properties.userPrincipalName',
+                      '$.ServicePrincipalDisplayName', '$.servicePrincipalDisplayName',
+                      '$.properties.servicePrincipalDisplayName', '$.UserId', '$.userId', '$.properties.userId',
+                      '$.ServicePrincipalId', '$.servicePrincipalId']
+      src_ip:        ['$.IpAddress', '$.ipAddress', '$.properties.ipAddress', '$.IPAddress']
+      signature:     ['$.RiskEventType', '$.riskEventType', '$.properties.riskEventType', '$.OperationName',
+                      '$.operationName']
+      app:           ['$.Source', '$.source', '$.properties.source']
+      vendor_severity: ['$.RiskLevel', '$.riskLevel', '$.properties.riskLevel']
+    ip_fields: [src_ip]
+
+  # Azure Activity Log (AzureActivity) and Entra ID audit (AuditLogs): Log Analytics columns or the export format;
+  # also the Activity Log REST / Event Grid shape (operationName.value, status.value, httpRequest.clientIpAddress).
+  azure_activity_json:
+    detect_any: ["OperationNameValue", "ActivityStatusValue", "CallerIpAddress", "InitiatedBy", "LoggedByService",
+                 "callerIpAddress", "eventDataId",
+                 # P0-3: an AuditLogs-only diagnostic export carries no callerIpAddress; its keys sit under properties.*
+                 "properties.initiatedBy", "properties.loggedByService", "properties.activityDisplayName"]
+    fields:
+      ts:            ['$.TimeGenerated', '$.ActivityDateTime', '$.time', '$.eventTimestamp']
+      # P0-3: the AuditLogs diagnostic export nests everything under properties.* (activityDisplayName, result,
+      # initiatedBy, targetResources); the Activity Log export has no caller: the UPN claim (BEFORE claims.name, the
+      # display name), else the appid claim of a service principal.
+      event_action:  ['$.OperationNameValue', '$.OperationName', '$.operationName.value', '$.operationName',
+                      '$.properties.activityDisplayName']
+      outcome:       ['$.ActivityStatusValue', '$.Result', '$.resultType', '$.ActivityStatus', '$.status.value',
+                      '$.properties.result']
+      host:          ['$._ResourceId', '$.ResourceId', '$.resourceId']
+      user:          ['$.Caller', '$.InitiatedBy.user.userPrincipalName', '$.InitiatedBy.app.displayName',
+                      '$.caller', '$.properties.initiatedBy.user.userPrincipalName',
+                      '$.properties.initiatedBy.app.displayName',
+                      '$.identity.claims."http://schemas.xmlsoap.org/ws/2005/05/identity/claims/upn"',
+                      '$.identity.claims.appid', '$.identity.claims.name']
+      target_name:   ['$.TargetResources[0].userPrincipalName', '$.properties.targetResources[0].userPrincipalName']
+      src_ip:        ['$.CallerIpAddress', '$.InitiatedBy.user.ipAddress', '$.callerIpAddress',
+                      '$.httpRequest.clientIpAddress', '$.properties.initiatedBy.user.ipAddress']
+      signature:     ['$.OperationNameValue', '$.OperationName', '$.operationName.value', '$.operationName']
+      app:           ['$.ResourceProviderValue', '$.LoggedByService', '$.resourceProviderName.value']
+    outcome_map:     # Start / Accept / In Progress / Active / Resolved are states, not outcomes (-> NULL)
+      values: {success: success, succeeded: success, failure: failure, failed: failure, timeout: failure,
+               timedout: failure, start: null, started: null, accept: null, accepted: null, "in progress": null,
+               inprogress: null, active: null, resolved: null}
+    action_map:
+      "add user": user_created
+      "add member to group": group_member_added
+    ip_fields: [src_ip]
+
+  # GCP Cloud Audit Logs (Cloud Logging LogEntry with protoPayload AuditLog).
+  gcp_audit_json:
+    detect_any: ["protoPayload.methodName", "protoPayload.serviceName"]
+    fields:
+      ts:            ['$.timestamp', '$.receiveTimestamp']
+      event_action:  ['$.protoPayload.methodName']
+      outcome:       ['$.protoPayload.status.code']
+      host:          ['$.resource.labels.project_id', '$.resource.labels.projectId',
+                      '$.resource.labels.organization_id', '$.resource.labels.folder_id',
+                      '$.logName']   # Workspace audit (audited_resource, no project label): organizations/<id>/logs/...
+      user:          ['$.protoPayload.authenticationInfo.principalEmail',
+                      '$.protoPayload.authenticationInfo.principalSubject']
+      src_ip:        ['$.protoPayload.requestMetadata.callerIp']
+      signature:     ['$.protoPayload.methodName']
+      app:           ['$.protoPayload.serviceName']
+    outcome_map:     # google.rpc.Code: 0 or no status = OK, anything else failed
+      values: {"0": success}
+      present: failure
+      absent: success
+    value_regex:     # logName fallback only (a project / org label never has this form): -> the org / folder id
+      host: ['^(?:organizations|folders|projects|billingAccounts)/([^/]+)/logs/']
+    ip_fields: [src_ip]
+    # P0-4: the LogEntry's top-level `labels` (GKE: authorization.k8s.io/decision) is stripped with the generator label
+    # keys (label_keys below). keep_labels re-adds ONLY these vendor keys as raw_line.log_labels, ONLY on rows with a
+    # protoPayload / jsonPayload object, so no generator label key can come back. Read by ingest_sql.json_raw_line once
+    # reports/cloud/patches/k8s_and_gcp-ingest_sql.diff is applied (ignored before: labels stay stripped).
+    keep_labels:
+      as: log_labels
+      require_any: ['$.protoPayload', '$.jsonPayload']
+      keys: ["authorization.k8s.io/decision", "authorization.k8s.io/reason", "compute.googleapis.com/root_trigger_id",
+             "pod-security.kubernetes.io/enforce-policy"]
+
+  # ---- Kubernetes + GCP network / findings (reports/cloud/log_coverage.md P0-8, P0-14, P1-5, P1-3) ------------------
+  # Kubernetes API server audit (audit.k8s.io/v1 Event), one per line: the generic kube-apiserver --audit-log-path file
+  # (also EKS / self-managed once shipped by Fluent Bit / Vector) or the AKS Log Analytics AKSAudit table (PascalCase;
+  # dynamic columns exported as objects). GKE audit is a Cloud Logging LogEntry (protoPayload, methodName io.k8s.*)
+  # and stays gcp_audit_json. JSON held in a STRING (EKS CloudWatch `message`, AKS diagnostic `properties.log` /
+  # `log_s`) needs the Stage 0 unwrap (P0-1); those envelopes have none of the keys below, so they never route here.
+  # host = the cluster: a shipper field (cluster_name / cluster / kubernetes.cluster_name), the AKS _ResourceId
+  # (.../managedClusters/<name>) or the EKS log group (/aws/eks/<name>/cluster). user = user.username (an EKS access-
+  # entry session ARN -> the session name, as for cloudtrail_json), target = the impersonated user, signature = verb,
+  # app = objectRef.resource, file_path = requestURI. Every stage is ingested (nothing dropped); the cloud rules read
+  # only ResponseComplete / Panic rows (config/cloud.yaml k8s_final).
+  k8s_audit_json:
+    detect_any: ["auditID", "AuditId", "requestReceivedTimestamp", "RequestReceivedTime"]
+    fields:
+      ts:            ['$.requestReceivedTimestamp', '$.RequestReceivedTime', '$.stageTimestamp', '$.TimeGenerated']
+      event_action:  ['$.verb', '$.Verb']
+      outcome:       ['$.responseStatus.code', '$.ResponseStatus.code']
+      host:          ['$.cluster_name', '$.cluster', '$.kubernetes.cluster_name', '$.clusterName', '$._ResourceId',
+                      '$.ResourceId', '$.resourceId', '$.logGroup']
+      user:          ['$.user.username', '$.User.username']
+      target_name:   ['$.impersonatedUser.username', '$.ImpersonatedUser.username']
+      src_ip:        ['$.sourceIPs[0]', '$.SourceIps[0]']
+      file_path:     ['$.requestURI', '$.RequestUri']
+      signature:     ['$.verb', '$.Verb']
+      app:           ['$.objectRef.resource', '$.ObjectRef.resource']
+    outcome_map:     # HTTP status of the response; earlier stages have none (-> NULL)
+      values: {"101": success, "200": success, "201": success, "202": success, "204": success}
+      present: failure
+    value_regex:
+      host: ['(?i)/managedclusters/([^/]+)$', '^/aws/eks/([^/]+)/cluster$']
+      user: ['^arn:aws[a-z-]*:sts::[0-9]*:assumed-role/[^/]+/([^/]+)$',
+             '^arn:aws[a-z-]*:iam::[0-9]*:(?:user|role)/(?:.*/)?([^/]+)$']
+    ip_fields: [src_ip]
+
+  # GCP Firewall Rules Logging (compute.googleapis.com/firewall): jsonPayload.connection + disposition + rule_details.
+  # INGRESS: the remote side is connection.src_ip (the attacker); host = the VM the rule applied to. Log Analytics /
+  # BigQuery-style json_payload is aliased too. disposition ALLOWED / DENIED -> conn_allowed / conn_denied.
+  gcp_firewall_json:
+    detect_any: ["jsonPayload.rule_details", "json_payload.rule_details"]
+    fields:
+      ts:            ['$.timestamp', '$.receiveTimestamp']
+      event_action:  ['$.jsonPayload.disposition', '$.json_payload.disposition']
+      host:          ['$.jsonPayload.instance.vm_name', '$.json_payload.instance.vm_name', '$.resource.labels.project_id']
+      src_ip:        ['$.jsonPayload.connection.src_ip', '$.json_payload.connection.src_ip']
+      src_port:      ['$.jsonPayload.connection.src_port', '$.json_payload.connection.src_port']
+      dst_ip:        ['$.jsonPayload.connection.dest_ip', '$.json_payload.connection.dest_ip']
+      dst_port:      ['$.jsonPayload.connection.dest_port', '$.json_payload.connection.dest_port']
+      direction:     ['$.jsonPayload.rule_details.direction', '$.json_payload.rule_details.direction']
+      signature:     ['$.jsonPayload.rule_details.reference', '$.json_payload.rule_details.reference']
+      app:           ['$.jsonPayload.instance.project_id', '$.json_payload.instance.project_id']
+    ip_fields: [src_ip]
+
+  # GCP VPC Flow Logs (compute.googleapis.com/vpc_flows): each sampled flow is reported by its SRC and / or DEST VM
+  # (reporter); both rows are kept (counted, never dropped). host = the reporting side's VM (src_instance first: egress
+  # and VM -> VM; dest_instance for ingress from outside), else the subnetwork / project.
+  gcp_vpcflow_json:
+    detect_any: ["jsonPayload.reporter", "jsonPayload.bytes_sent", "json_payload.reporter"]
+    fields:
+      ts:            ['$.jsonPayload.start_time', '$.json_payload.start_time', '$.timestamp']
+      event_action:  ['$.jsonPayload.reporter', '$.json_payload.reporter']
+      host:          ['$.jsonPayload.src_instance.vm_name', '$.jsonPayload.dest_instance.vm_name',
+                      '$.json_payload.src_instance.vm_name', '$.json_payload.dest_instance.vm_name',
+                      '$.resource.labels.subnetwork_name', '$.resource.labels.project_id']
+      src_ip:        ['$.jsonPayload.connection.src_ip', '$.json_payload.connection.src_ip']
+      src_port:      ['$.jsonPayload.connection.src_port', '$.json_payload.connection.src_port']
+      dst_ip:        ['$.jsonPayload.connection.dest_ip', '$.json_payload.connection.dest_ip']
+      dst_port:      ['$.jsonPayload.connection.dest_port', '$.json_payload.connection.dest_port']
+      bytes:         ['$.jsonPayload.bytes_sent', '$.json_payload.bytes_sent']
+      signature:     ['$.jsonPayload.connection.protocol', '$.json_payload.connection.protocol']
+      app:           ['$.jsonPayload.src_instance.project_id', '$.jsonPayload.dest_instance.project_id',
+                      '$.resource.labels.project_id']
+    action_map: {src: conn_allowed, dest: conn_allowed}   # a logged flow was allowed and seen by that side
+    ip_fields: [src_ip]
+
+  # Cloud DNS query logs (dns.googleapis.com/dns_queries): camelCase (documented) or snake_case (some exports).
+  # host = the querying VM (last name segment of vmInstanceName), src_ip = sourceIP, dst_domain = queryName.
+  gcp_dns_json:
+    detect_any: ["jsonPayload.queryName", "jsonPayload.query_name", "json_payload.queryName"]
+    fields:
+      ts:            ['$.timestamp', '$.receiveTimestamp']
+      event_action:  ['$.jsonPayload.queryType', '$.jsonPayload.query_type', '$.json_payload.queryType']
+      outcome:       ['$.jsonPayload.responseCode', '$.jsonPayload.response_code', '$.json_payload.responseCode']
+      host:          ['$.jsonPayload.vmInstanceName', '$.jsonPayload.vm_instance_name', '$.json_payload.vmInstanceName',
+                      '$.jsonPayload.vmProjectId', '$.resource.labels.project_id']
+      src_ip:        ['$.jsonPayload.sourceIP', '$.jsonPayload.source_ip', '$.json_payload.sourceIP']
+      dst_domain:    ['$.jsonPayload.queryName', '$.jsonPayload.query_name', '$.json_payload.queryName']
+      signature:     ['$.jsonPayload.queryType', '$.jsonPayload.query_type', '$.json_payload.queryType']
+      app:           ['$.jsonPayload.vmProjectId', '$.jsonPayload.vm_project_id', '$.resource.labels.project_id']
+    outcome_map:
+      values: {noerror: success, nxdomain: failure, servfail: failure, refused: failure, formerr: failure}
+      present: failure
+    action_map: {a: dns_query, aaaa: dns_query, cname: dns_query, txt: dns_query, mx: dns_query, ns: dns_query,
+                 ptr: dns_query, srv: dns_query, soa: dns_query, "null": dns_query, any: dns_query, caa: dns_query,
+                 https: dns_query, svcb: dns_query}
+    value_regex:
+      host: ['([a-z][-a-z0-9]*)$']
+    ip_fields: [src_ip]
+
+  # Security Command Center findings (Pub/Sub notification {notificationConfigName, finding, resource}, ListFindings
+  # results {finding, resource}, or the Cloud Logging copy jsonPayload.finding). Context rows ONLY: no detection rule
+  # reads this source (vendor verdicts are not raw evidence). The vendor's MITRE mapping enters ONLY in alert-input
+  # mode: python -m attacklens.scc_findings (config/scc_map.yaml) -> the SIEM alert spool.
+  gcp_scc_json:
+    detect_any: ["finding.category", "finding.findingClass", "jsonPayload.finding.category", "notificationConfigName"]
+    fields:
+      ts:            ['$.finding.eventTime', '$.jsonPayload.finding.eventTime', '$.finding.createTime', '$.timestamp']
+      event_action:  ['$.finding.state', '$.jsonPayload.finding.state']
+      host:          ['$.resource.projectDisplayName', '$.resource.project_display_name',
+                      '$.jsonPayload.resource.projectDisplayName', '$.finding.resourceName',
+                      '$.jsonPayload.finding.resourceName']
+      user:          ['$.finding.access.principalEmail', '$.jsonPayload.finding.access.principalEmail']
+      src_ip:        ['$.finding.access.callerIp', '$.jsonPayload.finding.access.callerIp']
+      signature:     ['$.finding.category', '$.jsonPayload.finding.category']
+      app:           ['$.finding.findingClass', '$.jsonPayload.finding.findingClass']
+    ip_fields: [src_ip]
+
+  # ---- Identity SaaS (reports/cloud/log_coverage.md P0-7, P0-11, P0-12, P1-16) -----------------------------------
+  # Same entity conventions as the cloud logs above: user = the person (@domain stripped, so alice@corp.example in
+  # Okta, Workspace, M365, Auth0 and Duo is the same user:alice as in Entra / AWS SSO sessions), host = the tenant
+  # (or the protected application for Duo), signature = the vendor event name, app = the product / client.
+  # Okta System Log (/api/v1/logs LogEvent), bare or in an EventBridge envelope (detail.*). No org field exists in a
+  # LogEvent: host = the EventBridge partner source org, else the actor's e-mail domain (tenant proxy).
+  okta_json:
+    detect_any: ["legacyEventType", "authenticationContext", "detail.legacyEventType", "detail.authenticationContext"]
+    fields:
+      ts:            ['$.published', '$.detail.published']
+      event_action:  ['$.eventType', '$.detail.eventType']
+      outcome:       ['$.outcome.result', '$.detail.outcome.result']
+      host:          ['$.source', '$.actor.alternateId', '$.detail.actor.alternateId']
+      user:          ['$.actor.alternateId', '$.detail.actor.alternateId']
+      src_ip:        ['$.client.ipAddress', '$.request.ipChain[0].ip', '$.detail.client.ipAddress',
+                      '$.detail.request.ipChain[0].ip']
+      signature:     ['$.eventType', '$.detail.eventType']
+      app:           ['$.client.userAgent.rawUserAgent', '$.detail.client.userAgent.rawUserAgent']
+    outcome_map:     # SUCCESS / ALLOW -> success, FAILURE / DENY -> failure, CHALLENGE / SKIPPED / UNKNOWN -> NULL
+      values: {success: success, allow: success, failure: failure, deny: failure, challenge: null, skipped: null,
+               unknown: null}
+    action_map:
+      user.session.start: {success: login_success, failure: login_failed, default: other}
+    value_regex:     # EventBridge "aws.partner/okta.com/<org>/..." -> <org>; e-mail -> its domain
+      host: ['^aws\.partner/okta\.com/([^/]+)', '^[^@\s]+@([^@\s]+)$']
+    ip_fields: [src_ip]
+
+  # Google Workspace Admin SDK Reports API activities (login / admin / token / drive ...). One activity per line; the
+  # canonical columns come from events[0] (a multi-event activity keeps its other events in raw_line for the cloud
+  # rules; one row per event needs the Stage 0 explode of P0-1). The Cloud Logging copy of the same audit
+  # (protoPayload.serviceName login / admin / oauth2.googleapis.com) routes as gcp_audit_json (cloud.yaml is_gws).
+  gws_reports_json:
+    detect_any: ["id.applicationName", "id.uniqueQualifier"]
+    fields:
+      ts:            ['$.id.time']
+      event_action:  ['$.events[0].name']
+      outcome:       ['$.events[0].name']
+      host:          ['$.id.customerId']
+      user:          ['$.actor.email', '$.actor.profileId']
+      src_ip:        ['$.ipAddress']
+      signature:     ['$.events[0].name']
+      app:           ['$.id.applicationName']
+    outcome_map:     # only login events carry an outcome
+      values: {login_success: success, login_failure: failure, login_verification: null, login_challenge: null}
+    action_map:
+      login_success: login_success
+      login_failure: login_failed
+    ip_fields: [src_ip]
+
+  # Microsoft 365 Unified Audit Log: Management Activity API JSON (CreationTime, no Z = UTC), Sentinel / Log Analytics
+  # OfficeActivity (TimeGenerated, OfficeWorkload, OfficeObjectId, Parameters as a JSON string) and Defender XDR
+  # CloudAppEvents (Timestamp, ActionType, IPAddress, the UAL record in RawEventData). Purview CSV exports: see
+  # csv_sources.m365_purview_csv. host = the tenant (OrganizationId = Entra tenant id).
+  m365_ual_json:
+    detect_any: ["Workload", "OfficeWorkload", "RecordType", "RawEventData.Workload", "RawEventData.RecordType"]
+    fields:
+      ts:            ['$.CreationTime', '$.TimeGenerated', '$.Timestamp', '$.RawEventData.CreationTime']
+      event_action:  ['$.Operation', '$.RawEventData.Operation', '$.ActionType']
+      outcome:       ['$.ResultStatus', '$.RawEventData.ResultStatus']
+      host:          ['$.OrganizationId', '$.RawEventData.OrganizationId', '$.TenantId']
+      user:          ['$.UserId', '$.RawEventData.UserId', '$.AccountUpn', '$.AccountDisplayName']
+      src_ip:        ['$.ClientIP', '$.ClientIPAddress', '$.ActorIpAddress', '$.IPAddress', '$.RawEventData.ClientIP',
+                      '$.RawEventData.ClientIPAddress', '$.RawEventData.ActorIpAddress']
+      file_path:     ['$.ObjectId', '$.OfficeObjectId', '$.RawEventData.ObjectId', '$.ObjectName']
+      signature:     ['$.Operation', '$.RawEventData.Operation', '$.ActionType']
+      app:           ['$.Workload', '$.OfficeWorkload', '$.RawEventData.Workload', '$.Application']
+    outcome_map:     # Exchange cmdlets: True / False; SharePoint / Entra: Succeeded / Success / Failed
+      values: {succeeded: success, success: success, "true": success, partiallysucceeded: success, failed: failure,
+               failure: failure, "false": failure}
+    action_map:
+      userloggedin: {success: login_success, failure: login_failed, default: login_success}
+      userloginfailed: login_failed
+    value_regex:     # "1.2.3.4:5678" -> 1.2.3.4, "[2001:db8::1]:443" -> 2001:db8::1, "::ffff:1.2.3.4" -> 1.2.3.4
+      src_ip: ['^(\d{1,3}(?:\.\d{1,3}){3}):\d+$', '^\[([0-9A-Fa-f:.]+)\](?::\d+)?$', '^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$']
+    ip_fields: [src_ip]
+
+  # Auth0 tenant logs (Management API /api/v2/logs, or a log stream {log_id, data}). `type` is the event code
+  # (s / f / fp / fu / limit_wc / gd_auth_rejected ...): it is the signature, its outcome comes from the map below.
+  auth0_json:
+    detect_any: ["strategy_type", "connection_id", "client_name", "data.strategy_type", "data.connection_id",
+                 "data.client_name"]
+    fields:
+      ts:            ['$.date', '$.data.date']
+      event_action:  ['$.type', '$.data.type']
+      outcome:       ['$.type', '$.data.type']
+      host:          ['$.hostname', '$.tenant_name', '$.data.hostname', '$.data.tenant_name']
+      user:          ['$.user_name', '$.data.user_name', '$.details.username', '$.user_id', '$.data.user_id']
+      src_ip:        ['$.ip', '$.data.ip']
+      signature:     ['$.type', '$.data.type']
+      app:           ['$.client_name', '$.data.client_name']
+    outcome_map:     # Auth0 log event type codes (success / failure families); anything else has no outcome
+      values: {s: success, scoa: success, seacft: success, sertft: success, sapi: success, ss: success,
+               gd_auth_succeed: success, f: failure, fp: failure, fu: failure, fcoa: failure, feacft: failure,
+               fertft: failure, fapi: failure, gd_auth_failed: failure, gd_auth_rejected: failure, limit_wc: failure,
+               limit_mu: failure, pwd_leak: failure}
+    action_map:
+      s: login_success
+      scoa: login_success
+      f: login_failed
+      fp: login_failed
+      fu: login_failed
+      fcoa: login_failed
+    ip_fields: [src_ip]
+
+  # Cisco Duo Admin API authentication log v2 (/admin/v2/logs/authentication items). src_ip = access_device.ip (where
+  # the login started), host = the protected application; auth_device.ip (the phone) is a cloud.yaml column.
+  duo_auth_json:
+    detect_any: ["access_device", "auth_device", "ood_software", "trusted_endpoint_status"]
+    fields:
+      ts:            ['$.isotimestamp', '$.timestamp']
+      event_action:  ['$.event_type']
+      outcome:       ['$.result']
+      host:          ['$.application.name', '$.integration']
+      user:          ['$.user.name', '$.email', '$.username']
+      src_ip:        ['$.access_device.ip', '$.ip']
+      signature:     ['$.reason']
+      app:           ['$.factor']
+    outcome_map:     # result: success | denied | failure | error | fraud
+      values: {success: success, denied: failure, failure: failure, error: failure, fraud: failure}
+    action_map:
+      authentication: {success: login_success, failure: login_failed, default: other}
+    ip_fields: [src_ip]
 
 csv_sources:
   # Firewall exports (any extension). Detected when >= min_matches header names below are present.
@@ -112,6 +775,61 @@ csv_sources:
       event_action:  [action, disposition]
       user:          [user, username]
       dst_domain:    [domain, hostname_dst]
+
+  # AWS VPC Flow Logs in their native text form (track AWS, P0-5). Comma / tab exports (Athena CSV) are detected now
+  # by header names; the S3 delivery (space-separated, header line first) and CloudWatch messages (no header, default
+  # v2 order unless the flow log's LogFormat says otherwise) need `delimiter` / `headerless`, which profile.py and
+  # ingest read only after reports/cloud/patches/aws-profile.diff + aws-ingest.diff land. A header line always wins
+  # over the default order. '-' -> NULL; NODATA / SKIPDATA lines are kept (ts = start).
+  aws_vpcflow_txt:
+    detect_any: ["srcaddr", "dstaddr", "interface-id", "interface_id", "log-status", "log_status", "pkt-srcaddr",
+                 "pkt_srcaddr", "account-id", "account_id"]
+    min_matches: 3
+    delimiter: " "
+    headerless:
+      line_regex: '^\d+ (\d{12}|unknown) eni-[0-9a-f]+ \S+ \S+ \S+ \S+ \S+ \S+ \S+ \d{9,10} \d{9,10} (ACCEPT|REJECT|-) (OK|NODATA|SKIPDATA)( |$)'
+      columns: [version, account-id, interface-id, srcaddr, dstaddr, srcport, dstport, protocol, packets, bytes, start,
+                end, action, log-status]
+    fields:
+      ts:            [start]
+      event_action:  [action]
+      host:          [instance-id, instance_id, interface-id, interface_id]
+      src_ip:        [pkt-srcaddr, pkt_srcaddr, srcaddr]
+      src_port:      [srcport]
+      dst_ip:        [pkt-dstaddr, pkt_dstaddr, dstaddr]
+      dst_port:      [dstport]
+      bytes:         [bytes]
+      signature:     [log-status, log_status]
+      app:           [protocol]
+
+  # Microsoft Purview audit search export (RecordId, CreationDate, RecordType, Operation, UserId, AuditData, ...; the
+  # classic export: CreationDate, UserIds, Operations, AuditData). AuditData is the UAL record as a JSON string: CSV
+  # ingest maps header columns only, so src_ip / host / file_path stay NULL here; the cloud rules read AuditData
+  # from raw_line (cloud.yaml m3_csv). Full mapping needs a CSV json-column decoder (reports/cloud/patches).
+  m365_purview_csv:
+    detect_any: ["AuditData", "CreationDate", "RecordType", "Operations", "UserIds", "RecordId"]
+    min_matches: 3
+    quote: '"'       # explicit: the sniffed '"' escape is not applied with strict_mode=false (AuditData is JSON with
+    escape: '"'      # doubled quotes); read by csv_select once reports/cloud/patches/identity-saas-ingest_sql.diff lands
+    fields:
+      ts:            [CreationDate, CreationTime]
+      user:          [UserId, UserIds]
+      event_action:  [Operation, Operations]
+      signature:     [Operation, Operations]
+      app:           [Workload, RecordType]
+
+  # Google Workspace Admin console audit export (Reporting > Audit > Download: Date, Event, Description, Actor,
+  # IP address). Display names ("Assign role"), not API event names: ingested and searchable, the gws_* rules read
+  # the Reports API / Cloud Logging shapes.
+  gws_admin_csv:
+    detect_any: ["Event", "Description", "Actor", "IP address"]
+    min_matches: 4
+    fields:
+      ts:            [Date]
+      event_action:  [Event]
+      signature:     [Event]
+      user:          [Actor]
+      src_ip:        ["IP address"]
 
 cef:
   # CEF extension keys. Header name / signature id are NOT read (generator puts rule labels there).
@@ -222,6 +940,16 @@ kv_sources:
       src_zone:      [srcintfrole]
       dst_zone:      [dstintfrole]
       outcome:       [status]
+    # Post-ingest orientation (attacklens/ingest_post.py): interface roles say the session went internal -> wan,
+    # but src_ip is public and dst_ip private, i.e. the two IPs are swapped. srcport / dstport and sentbyte /
+    # rcvdbyte already follow the interface direction (n10: 600 such rows, src_port median 54 847, dst_port 443,
+    # sentbyte 12.3 MB vs rcvdbyte 0.3 MB), so only src_ip / dst_ip are swapped. Counted per source in
+    # ingest_accounting.json notes (direction_swapped). enabled: false = literal mapping.
+    direction_fix:
+      enabled: true
+      src_zone_in: [lan, dmz]
+      dst_zone_in: [wan]
+      internal_ip_regex: '^(10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.|127\.|169\.254\.|::1$|f[cd]|fe80:)'
     # UTM verdict -> outcome (blocked / allowed) when type/subtype match; status (logins) still wins.
     outcome_from_action:
       when: {type: [utm], subtype: [ips, virus, webfilter, app-ctrl]}
@@ -262,6 +990,26 @@ kv_sources:
       - {when: {logdesc: [attribute configured, object attribute configured]}, action: config_change}
       - {when: {type: [event], action: [edit, add, delete]}, action: config_change}
 
+# Post-COPY checks over the canonical Parquet (attacklens/ingest_post.py), every source.
+ingest_checks:
+  # A pile-up needs ALL of: one UTC second with >= max_share_of_rows of a source's rows AND >= min_rows rows, the
+  # source spanning >= min_span_s, and (require_edge_or_clamped) the second is the source's last second or
+  # >= clamped_min_share of its rows end in .999 (clamped). n10 / n30: the file's last second held 68.96 % /
+  # 70.23 % of all rows, ~100 % at .999999000. Those rows are re-marked ts_ok=false (ts_ms kept), so windows,
+  # baselines and links ignore them; counted as timestamp_pileup in ingest_accounting.json and run_metrics.
+  # Small files and attack bursts (test fixtures: 20 010 rows in a few seconds) never meet all of these.
+  ts_pileup:
+    enabled: true
+    max_share_of_rows: 0.05
+    min_rows: 100000
+    min_span_s: 3600
+    require_edge_or_clamped: true
+    clamped_min_share: 0.9
+  # Count byte-identical duplicate lines per source (rows - distinct hash(file, line)); reported in
+  # ingest_accounting.json notes, never dropped (n30: 4 505 437, all inside the pile-up block).
+  duplicates:
+    enabled: true
+
 # Action normalisation (§3.3, §15.5). Precedence: event_id -> event_action -> "other".
 action_map:
   event_ids:
@@ -286,6 +1034,10 @@ action_map:
     4697: service_installed
     1102: log_cleared
     104: log_cleared
+    # PowerShell/Operational script block (4104) / module pipeline (4103): script text, not a process start (no image /
+    # parent fields), so never proc_start; content rules opt in with action IN ('proc_start','script_exec')
+    4104: script_exec
+    4103: script_exec
   # event.action (lower-case) -> action, or {success, failure, default} split on the normalised outcome.
   event_actions:
     user_logon: {success: login_success, failure: login_failed, default: other}

@@ -47,6 +47,19 @@ def write_json(path: Path, obj: Any) -> None:
         f.write(json.dumps(obj, ensure_ascii=False, indent=1))
 
 
+def push_to_sinks(ctx: RunContext, incidents: list[Incident], rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """Outbound SIEM / SOAR sinks (config/integrations.yaml). Only when enabled; a failure never fails the run."""
+    try:
+        from attacklens import sinks
+
+        if not sinks.enabled_sinks(ctx.cfg):
+            return {}
+        return sinks.publish_all([(dump(i), r) for i, r in zip(incidents, rows)], ctx.cfg)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("publish: sinks failed: %s", exc)
+        return {"error": f"{type(exc).__name__}: {exc}"}
+
+
 def run(ctx: RunContext) -> dict[str, Any]:
     t0 = time.perf_counter()
     src = ctx.work_dir / "incidents.json"
@@ -62,8 +75,12 @@ def run(ctx: RunContext) -> dict[str, Any]:
         sources[inc.narrative.source] = sources.get(inc.narrative.source, 0) + 1
         write_json(inc_dir / f"{inc.id}.json", dump(Incident.model_validate(dump(inc))))
     incidents.sort(key=lambda x: (-x.risk, x.first_ts, x.id))
-    write_json(ctx.out_dir / "incidents_index.json", [dump(summary(i)) for i in incidents])
+    rows = [dump(summary(i)) for i in incidents]
+    write_json(ctx.out_dir / "incidents_index.json", rows)
     stats = {"published": len(incidents), "narrative_sources": dict(sorted(sources.items())),
              "seconds": round(time.perf_counter() - t0, 3)}
+    sink_stats = push_to_sinks(ctx, incidents, rows)
+    if sink_stats:
+        stats["sinks"] = sink_stats
     log.info("publish: %s", stats)
     return stats

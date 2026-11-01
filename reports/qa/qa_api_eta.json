@@ -1,0 +1,1429 @@
+{
+ "stage_percent_in_api": {
+  "profile": 2,
+  "ingest": 5,
+  "lookups": 45,
+  "detect": 50,
+  "episodes": 65,
+  "link": 72,
+  "incidents": 80,
+  "publish": 90,
+  "eval": 96
+ },
+ "runs": [
+  {
+   "set": "demo",
+   "rows_in": 255244,
+   "bytes_in": 210033604,
+   "total_wall_s": 63.1,
+   "stage_wall_s": {
+    "profile": 24.043,
+    "ingest": 10.419,
+    "lookups": 2.854,
+    "detect": 19.481,
+    "episodes": 2.649,
+    "link": 0.25,
+    "incidents": 2.891,
+    "publish": 0.262,
+    "eval": 0.236
+   },
+   "stage_share_pct": {
+    "profile": 38.1,
+    "ingest": 16.5,
+    "lookups": 4.5,
+    "detect": 30.9,
+    "episodes": 4.2,
+    "link": 0.4,
+    "incidents": 4.6,
+    "publish": 0.4,
+    "eval": 0.4
+   },
+   "by_stage_start": [
+    {
+     "stage": "profile",
+     "start_s": 0.0,
+     "api_percent": 2,
+     "actual_percent": 0.0,
+     "naive_eta_remaining_s": 0.0,
+     "true_remaining_s": 63.1,
+     "eta_error_s": -63.1,
+     "eta_error_pct_of_total": -100.0
+    },
+    {
+     "stage": "ingest",
+     "start_s": 24.0,
+     "api_percent": 5,
+     "actual_percent": 38.1,
+     "naive_eta_remaining_s": 456.8,
+     "true_remaining_s": 39.0,
+     "eta_error_s": 417.8,
+     "eta_error_pct_of_total": 662.2
+    },
+    {
+     "stage": "lookups",
+     "start_s": 34.5,
+     "api_percent": 45,
+     "actual_percent": 54.6,
+     "naive_eta_remaining_s": 42.1,
+     "true_remaining_s": 28.6,
+     "eta_error_s": 13.5,
+     "eta_error_pct_of_total": 21.4
+    },
+    {
+     "stage": "detect",
+     "start_s": 37.3,
+     "api_percent": 50,
+     "actual_percent": 59.2,
+     "naive_eta_remaining_s": 37.3,
+     "true_remaining_s": 25.8,
+     "eta_error_s": 11.5,
+     "eta_error_pct_of_total": 18.3
+    },
+    {
+     "stage": "episodes",
+     "start_s": 56.8,
+     "api_percent": 65,
+     "actual_percent": 90.0,
+     "naive_eta_remaining_s": 30.6,
+     "true_remaining_s": 6.3,
+     "eta_error_s": 24.3,
+     "eta_error_pct_of_total": 38.5
+    },
+    {
+     "stage": "link",
+     "start_s": 59.4,
+     "api_percent": 72,
+     "actual_percent": 94.2,
+     "naive_eta_remaining_s": 23.1,
+     "true_remaining_s": 3.6,
+     "eta_error_s": 19.5,
+     "eta_error_pct_of_total": 30.9
+    },
+    {
+     "stage": "incidents",
+     "start_s": 59.7,
+     "api_percent": 80,
+     "actual_percent": 94.6,
+     "naive_eta_remaining_s": 14.9,
+     "true_remaining_s": 3.4,
+     "eta_error_s": 11.5,
+     "eta_error_pct_of_total": 18.3
+    },
+    {
+     "stage": "publish",
+     "start_s": 62.6,
+     "api_percent": 90,
+     "actual_percent": 99.2,
+     "naive_eta_remaining_s": 7.0,
+     "true_remaining_s": 0.5,
+     "eta_error_s": 6.5,
+     "eta_error_pct_of_total": 10.2
+    },
+    {
+     "stage": "eval",
+     "start_s": 62.8,
+     "api_percent": 96,
+     "actual_percent": 99.6,
+     "naive_eta_remaining_s": 2.6,
+     "true_remaining_s": 0.2,
+     "eta_error_s": 2.4,
+     "eta_error_pct_of_total": 3.8
+    }
+   ],
+   "max_abs_percent_gap": 33.1,
+   "max_abs_eta_error_pct_of_total": 662.2
+  },
+  {
+   "set": "f1",
+   "rows_in": 2036104,
+   "bytes_in": 1073818839,
+   "total_wall_s": 59.5,
+   "stage_wall_s": {
+    "profile": 4.594,
+    "ingest": 33.66,
+    "lookups": 1.911,
+    "detect": 16.642,
+    "episodes": 1.502,
+    "link": 0.229,
+    "incidents": 0.601,
+    "publish": 0.129,
+    "eval": 0.223
+   },
+   "stage_share_pct": {
+    "profile": 7.7,
+    "ingest": 56.6,
+    "lookups": 3.2,
+    "detect": 28.0,
+    "episodes": 2.5,
+    "link": 0.4,
+    "incidents": 1.0,
+    "publish": 0.2,
+    "eval": 0.4
+   },
+   "by_stage_start": [
+    {
+     "stage": "profile",
+     "start_s": 0.0,
+     "api_percent": 2,
+     "actual_percent": 0.0,
+     "naive_eta_remaining_s": 0.0,
+     "true_remaining_s": 59.5,
+     "eta_error_s": -59.5,
+     "eta_error_pct_of_total": -100.0
+    },
+    {
+     "stage": "ingest",
+     "start_s": 4.6,
+     "api_percent": 5,
+     "actual_percent": 7.7,
+     "naive_eta_remaining_s": 87.3,
+     "true_remaining_s": 54.9,
+     "eta_error_s": 32.4,
+     "eta_error_pct_of_total": 54.4
+    },
+    {
+     "stage": "lookups",
+     "start_s": 38.3,
+     "api_percent": 45,
+     "actual_percent": 64.3,
+     "naive_eta_remaining_s": 46.8,
+     "true_remaining_s": 21.2,
+     "eta_error_s": 25.5,
+     "eta_error_pct_of_total": 42.9
+    },
+    {
+     "stage": "detect",
+     "start_s": 40.2,
+     "api_percent": 50,
+     "actual_percent": 67.5,
+     "naive_eta_remaining_s": 40.2,
+     "true_remaining_s": 19.3,
+     "eta_error_s": 20.8,
+     "eta_error_pct_of_total": 35.0
+    },
+    {
+     "stage": "episodes",
+     "start_s": 56.8,
+     "api_percent": 65,
+     "actual_percent": 95.5,
+     "naive_eta_remaining_s": 30.6,
+     "true_remaining_s": 2.7,
+     "eta_error_s": 27.9,
+     "eta_error_pct_of_total": 46.9
+    },
+    {
+     "stage": "link",
+     "start_s": 58.3,
+     "api_percent": 72,
+     "actual_percent": 98.0,
+     "naive_eta_remaining_s": 22.7,
+     "true_remaining_s": 1.2,
+     "eta_error_s": 21.5,
+     "eta_error_pct_of_total": 36.1
+    },
+    {
+     "stage": "incidents",
+     "start_s": 58.5,
+     "api_percent": 80,
+     "actual_percent": 98.4,
+     "naive_eta_remaining_s": 14.6,
+     "true_remaining_s": 1.0,
+     "eta_error_s": 13.7,
+     "eta_error_pct_of_total": 23.0
+    },
+    {
+     "stage": "publish",
+     "start_s": 59.1,
+     "api_percent": 90,
+     "actual_percent": 99.4,
+     "naive_eta_remaining_s": 6.6,
+     "true_remaining_s": 0.4,
+     "eta_error_s": 6.2,
+     "eta_error_pct_of_total": 10.5
+    },
+    {
+     "stage": "eval",
+     "start_s": 59.3,
+     "api_percent": 96,
+     "actual_percent": 99.6,
+     "naive_eta_remaining_s": 2.5,
+     "true_remaining_s": 0.2,
+     "eta_error_s": 2.2,
+     "eta_error_pct_of_total": 3.8
+    }
+   ],
+   "max_abs_percent_gap": 30.5,
+   "max_abs_eta_error_pct_of_total": 54.4
+  },
+  {
+   "set": "g1",
+   "rows_in": 1305403,
+   "bytes_in": 1074055241,
+   "total_wall_s": 37.8,
+   "stage_wall_s": {
+    "profile": 7.357,
+    "ingest": 20.554,
+    "lookups": 0.82,
+    "detect": 7.997,
+    "episodes": 0.204,
+    "link": 0.181,
+    "incidents": 0.3,
+    "publish": 0.218,
+    "eval": 0.186
+   },
+   "stage_share_pct": {
+    "profile": 19.5,
+    "ingest": 54.4,
+    "lookups": 2.2,
+    "detect": 21.1,
+    "episodes": 0.5,
+    "link": 0.5,
+    "incidents": 0.8,
+    "publish": 0.6,
+    "eval": 0.5
+   },
+   "by_stage_start": [
+    {
+     "stage": "profile",
+     "start_s": 0.0,
+     "api_percent": 2,
+     "actual_percent": 0.0,
+     "naive_eta_remaining_s": 0.0,
+     "true_remaining_s": 37.8,
+     "eta_error_s": -37.8,
+     "eta_error_pct_of_total": -100.0
+    },
+    {
+     "stage": "ingest",
+     "start_s": 7.4,
+     "api_percent": 5,
+     "actual_percent": 19.5,
+     "naive_eta_remaining_s": 139.8,
+     "true_remaining_s": 30.5,
+     "eta_error_s": 109.3,
+     "eta_error_pct_of_total": 289.1
+    },
+    {
+     "stage": "lookups",
+     "start_s": 27.9,
+     "api_percent": 45,
+     "actual_percent": 73.8,
+     "naive_eta_remaining_s": 34.1,
+     "true_remaining_s": 9.9,
+     "eta_error_s": 24.2,
+     "eta_error_pct_of_total": 64.0
+    },
+    {
+     "stage": "detect",
+     "start_s": 28.7,
+     "api_percent": 50,
+     "actual_percent": 76.0,
+     "naive_eta_remaining_s": 28.7,
+     "true_remaining_s": 9.1,
+     "eta_error_s": 19.6,
+     "eta_error_pct_of_total": 51.9
+    },
+    {
+     "stage": "episodes",
+     "start_s": 36.7,
+     "api_percent": 65,
+     "actual_percent": 97.1,
+     "naive_eta_remaining_s": 19.8,
+     "true_remaining_s": 1.1,
+     "eta_error_s": 18.7,
+     "eta_error_pct_of_total": 49.4
+    },
+    {
+     "stage": "link",
+     "start_s": 36.9,
+     "api_percent": 72,
+     "actual_percent": 97.7,
+     "naive_eta_remaining_s": 14.4,
+     "true_remaining_s": 0.9,
+     "eta_error_s": 13.5,
+     "eta_error_pct_of_total": 35.6
+    },
+    {
+     "stage": "incidents",
+     "start_s": 37.1,
+     "api_percent": 80,
+     "actual_percent": 98.1,
+     "naive_eta_remaining_s": 9.3,
+     "true_remaining_s": 0.7,
+     "eta_error_s": 8.6,
+     "eta_error_pct_of_total": 22.7
+    },
+    {
+     "stage": "publish",
+     "start_s": 37.4,
+     "api_percent": 90,
+     "actual_percent": 98.9,
+     "naive_eta_remaining_s": 4.2,
+     "true_remaining_s": 0.4,
+     "eta_error_s": 3.8,
+     "eta_error_pct_of_total": 9.9
+    },
+    {
+     "stage": "eval",
+     "start_s": 37.6,
+     "api_percent": 96,
+     "actual_percent": 99.5,
+     "naive_eta_remaining_s": 1.6,
+     "true_remaining_s": 0.2,
+     "eta_error_s": 1.4,
+     "eta_error_pct_of_total": 3.7
+    }
+   ],
+   "max_abs_percent_gap": 32.1,
+   "max_abs_eta_error_pct_of_total": 289.1
+  },
+  {
+   "set": "g10",
+   "rows_in": 13048132,
+   "bytes_in": 10737733035,
+   "total_wall_s": 257.6,
+   "stage_wall_s": {
+    "profile": 14.736,
+    "ingest": 173.0,
+    "lookups": 11.119,
+    "detect": 53.65,
+    "episodes": 0.588,
+    "link": 0.724,
+    "incidents": 3.407,
+    "publish": 0.109,
+    "eval": 0.312
+   },
+   "stage_share_pct": {
+    "profile": 5.7,
+    "ingest": 67.1,
+    "lookups": 4.3,
+    "detect": 20.8,
+    "episodes": 0.2,
+    "link": 0.3,
+    "incidents": 1.3,
+    "publish": 0.0,
+    "eval": 0.1
+   },
+   "by_stage_start": [
+    {
+     "stage": "profile",
+     "start_s": 0.0,
+     "api_percent": 2,
+     "actual_percent": 0.0,
+     "naive_eta_remaining_s": 0.0,
+     "true_remaining_s": 257.6,
+     "eta_error_s": -257.6,
+     "eta_error_pct_of_total": -100.0
+    },
+    {
+     "stage": "ingest",
+     "start_s": 14.7,
+     "api_percent": 5,
+     "actual_percent": 5.7,
+     "naive_eta_remaining_s": 280.0,
+     "true_remaining_s": 242.9,
+     "eta_error_s": 37.1,
+     "eta_error_pct_of_total": 14.4
+    },
+    {
+     "stage": "lookups",
+     "start_s": 187.7,
+     "api_percent": 45,
+     "actual_percent": 72.9,
+     "naive_eta_remaining_s": 229.5,
+     "true_remaining_s": 69.9,
+     "eta_error_s": 159.5,
+     "eta_error_pct_of_total": 61.9
+    },
+    {
+     "stage": "detect",
+     "start_s": 198.9,
+     "api_percent": 50,
+     "actual_percent": 77.2,
+     "naive_eta_remaining_s": 198.9,
+     "true_remaining_s": 58.8,
+     "eta_error_s": 140.1,
+     "eta_error_pct_of_total": 54.4
+    },
+    {
+     "stage": "episodes",
+     "start_s": 252.5,
+     "api_percent": 65,
+     "actual_percent": 98.0,
+     "naive_eta_remaining_s": 136.0,
+     "true_remaining_s": 5.1,
+     "eta_error_s": 130.8,
+     "eta_error_pct_of_total": 50.8
+    },
+    {
+     "stage": "link",
+     "start_s": 253.1,
+     "api_percent": 72,
+     "actual_percent": 98.2,
+     "naive_eta_remaining_s": 98.4,
+     "true_remaining_s": 4.6,
+     "eta_error_s": 93.9,
+     "eta_error_pct_of_total": 36.4
+    },
+    {
+     "stage": "incidents",
+     "start_s": 253.8,
+     "api_percent": 80,
+     "actual_percent": 98.5,
+     "naive_eta_remaining_s": 63.5,
+     "true_remaining_s": 3.8,
+     "eta_error_s": 59.6,
+     "eta_error_pct_of_total": 23.1
+    },
+    {
+     "stage": "publish",
+     "start_s": 257.2,
+     "api_percent": 90,
+     "actual_percent": 99.8,
+     "naive_eta_remaining_s": 28.6,
+     "true_remaining_s": 0.4,
+     "eta_error_s": 28.2,
+     "eta_error_pct_of_total": 10.9
+    },
+    {
+     "stage": "eval",
+     "start_s": 257.3,
+     "api_percent": 96,
+     "actual_percent": 99.9,
+     "naive_eta_remaining_s": 10.7,
+     "true_remaining_s": 0.3,
+     "eta_error_s": 10.4,
+     "eta_error_pct_of_total": 4.0
+    }
+   ],
+   "max_abs_percent_gap": 33.0,
+   "max_abs_eta_error_pct_of_total": 61.9
+  },
+  {
+   "set": "g30",
+   "rows_in": 39142706,
+   "bytes_in": 32212574455,
+   "total_wall_s": 594.4,
+   "stage_wall_s": {
+    "profile": 12.948,
+    "ingest": 403.995,
+    "lookups": 42.636,
+    "detect": 123.705,
+    "episodes": 0.926,
+    "link": 0.718,
+    "incidents": 8.724,
+    "publish": 0.145,
+    "eval": 0.641
+   },
+   "stage_share_pct": {
+    "profile": 2.2,
+    "ingest": 68.0,
+    "lookups": 7.2,
+    "detect": 20.8,
+    "episodes": 0.2,
+    "link": 0.1,
+    "incidents": 1.5,
+    "publish": 0.0,
+    "eval": 0.1
+   },
+   "by_stage_start": [
+    {
+     "stage": "profile",
+     "start_s": 0.0,
+     "api_percent": 2,
+     "actual_percent": 0.0,
+     "naive_eta_remaining_s": 0.0,
+     "true_remaining_s": 594.4,
+     "eta_error_s": -594.4,
+     "eta_error_pct_of_total": -100.0
+    },
+    {
+     "stage": "ingest",
+     "start_s": 12.9,
+     "api_percent": 5,
+     "actual_percent": 2.2,
+     "naive_eta_remaining_s": 246.0,
+     "true_remaining_s": 581.5,
+     "eta_error_s": -335.5,
+     "eta_error_pct_of_total": -56.4
+    },
+    {
+     "stage": "lookups",
+     "start_s": 416.9,
+     "api_percent": 45,
+     "actual_percent": 70.1,
+     "naive_eta_remaining_s": 509.6,
+     "true_remaining_s": 177.5,
+     "eta_error_s": 332.1,
+     "eta_error_pct_of_total": 55.9
+    },
+    {
+     "stage": "detect",
+     "start_s": 459.6,
+     "api_percent": 50,
+     "actual_percent": 77.3,
+     "naive_eta_remaining_s": 459.6,
+     "true_remaining_s": 134.9,
+     "eta_error_s": 324.7,
+     "eta_error_pct_of_total": 54.6
+    },
+    {
+     "stage": "episodes",
+     "start_s": 583.3,
+     "api_percent": 65,
+     "actual_percent": 98.1,
+     "naive_eta_remaining_s": 314.1,
+     "true_remaining_s": 11.2,
+     "eta_error_s": 302.9,
+     "eta_error_pct_of_total": 51.0
+    },
+    {
+     "stage": "link",
+     "start_s": 584.2,
+     "api_percent": 72,
+     "actual_percent": 98.3,
+     "naive_eta_remaining_s": 227.2,
+     "true_remaining_s": 10.2,
+     "eta_error_s": 217.0,
+     "eta_error_pct_of_total": 36.5
+    },
+    {
+     "stage": "incidents",
+     "start_s": 584.9,
+     "api_percent": 80,
+     "actual_percent": 98.4,
+     "naive_eta_remaining_s": 146.2,
+     "true_remaining_s": 9.5,
+     "eta_error_s": 136.7,
+     "eta_error_pct_of_total": 23.0
+    },
+    {
+     "stage": "publish",
+     "start_s": 593.7,
+     "api_percent": 90,
+     "actual_percent": 99.9,
+     "naive_eta_remaining_s": 66.0,
+     "true_remaining_s": 0.8,
+     "eta_error_s": 65.2,
+     "eta_error_pct_of_total": 11.0
+    },
+    {
+     "stage": "eval",
+     "start_s": 593.8,
+     "api_percent": 96,
+     "actual_percent": 99.9,
+     "naive_eta_remaining_s": 24.7,
+     "true_remaining_s": 0.6,
+     "eta_error_s": 24.1,
+     "eta_error_pct_of_total": 4.1
+    }
+   ],
+   "max_abs_percent_gap": 33.1,
+   "max_abs_eta_error_pct_of_total": 56.4
+  },
+  {
+   "set": "n10",
+   "rows_in": 12398551,
+   "bytes_in": 6543120032,
+   "total_wall_s": 535.3,
+   "stage_wall_s": {
+    "profile": 3.073,
+    "ingest": 206.048,
+    "lookups": 11.397,
+    "detect": 293.582,
+    "episodes": 12.648,
+    "link": 3.159,
+    "incidents": 5.095,
+    "publish": 0.26
+   },
+   "stage_share_pct": {
+    "profile": 0.6,
+    "ingest": 38.5,
+    "lookups": 2.1,
+    "detect": 54.8,
+    "episodes": 2.4,
+    "link": 0.6,
+    "incidents": 1.0,
+    "publish": 0.0
+   },
+   "by_stage_start": [
+    {
+     "stage": "profile",
+     "start_s": 0.0,
+     "api_percent": 2,
+     "actual_percent": 0.0,
+     "naive_eta_remaining_s": 0.0,
+     "true_remaining_s": 535.3,
+     "eta_error_s": -535.3,
+     "eta_error_pct_of_total": -100.0
+    },
+    {
+     "stage": "ingest",
+     "start_s": 3.1,
+     "api_percent": 5,
+     "actual_percent": 0.6,
+     "naive_eta_remaining_s": 58.4,
+     "true_remaining_s": 532.2,
+     "eta_error_s": -473.8,
+     "eta_error_pct_of_total": -88.5
+    },
+    {
+     "stage": "lookups",
+     "start_s": 209.1,
+     "api_percent": 45,
+     "actual_percent": 39.1,
+     "naive_eta_remaining_s": 255.6,
+     "true_remaining_s": 326.1,
+     "eta_error_s": -70.5,
+     "eta_error_pct_of_total": -13.2
+    },
+    {
+     "stage": "detect",
+     "start_s": 220.5,
+     "api_percent": 50,
+     "actual_percent": 41.2,
+     "naive_eta_remaining_s": 220.5,
+     "true_remaining_s": 314.7,
+     "eta_error_s": -94.2,
+     "eta_error_pct_of_total": -17.6
+    },
+    {
+     "stage": "episodes",
+     "start_s": 514.1,
+     "api_percent": 65,
+     "actual_percent": 96.0,
+     "naive_eta_remaining_s": 276.8,
+     "true_remaining_s": 21.2,
+     "eta_error_s": 255.7,
+     "eta_error_pct_of_total": 47.8
+    },
+    {
+     "stage": "link",
+     "start_s": 526.7,
+     "api_percent": 72,
+     "actual_percent": 98.4,
+     "naive_eta_remaining_s": 204.8,
+     "true_remaining_s": 8.5,
+     "eta_error_s": 196.3,
+     "eta_error_pct_of_total": 36.7
+    },
+    {
+     "stage": "incidents",
+     "start_s": 529.9,
+     "api_percent": 80,
+     "actual_percent": 99.0,
+     "naive_eta_remaining_s": 132.5,
+     "true_remaining_s": 5.4,
+     "eta_error_s": 127.1,
+     "eta_error_pct_of_total": 23.7
+    },
+    {
+     "stage": "publish",
+     "start_s": 535.0,
+     "api_percent": 90,
+     "actual_percent": 100.0,
+     "naive_eta_remaining_s": 59.4,
+     "true_remaining_s": 0.3,
+     "eta_error_s": 59.2,
+     "eta_error_pct_of_total": 11.1
+    }
+   ],
+   "max_abs_percent_gap": 31.0,
+   "max_abs_eta_error_pct_of_total": 88.5
+  },
+  {
+   "set": "t10",
+   "rows_in": 22453023,
+   "bytes_in": 6543120032,
+   "total_wall_s": 422.8,
+   "stage_wall_s": {
+    "profile": 2.162,
+    "ingest": 179.013,
+    "lookups": 7.686,
+    "detect": 215.623,
+    "episodes": 13.239,
+    "link": 1.896,
+    "incidents": 2.794,
+    "publish": 0.429
+   },
+   "stage_share_pct": {
+    "profile": 0.5,
+    "ingest": 42.3,
+    "lookups": 1.8,
+    "detect": 51.0,
+    "episodes": 3.1,
+    "link": 0.4,
+    "incidents": 0.7,
+    "publish": 0.1
+   },
+   "by_stage_start": [
+    {
+     "stage": "profile",
+     "start_s": 0.0,
+     "api_percent": 2,
+     "actual_percent": 0.0,
+     "naive_eta_remaining_s": 0.0,
+     "true_remaining_s": 422.8,
+     "eta_error_s": -422.8,
+     "eta_error_pct_of_total": -100.0
+    },
+    {
+     "stage": "ingest",
+     "start_s": 2.2,
+     "api_percent": 5,
+     "actual_percent": 0.5,
+     "naive_eta_remaining_s": 41.1,
+     "true_remaining_s": 420.7,
+     "eta_error_s": -379.6,
+     "eta_error_pct_of_total": -89.8
+    },
+    {
+     "stage": "lookups",
+     "start_s": 181.2,
+     "api_percent": 45,
+     "actual_percent": 42.8,
+     "naive_eta_remaining_s": 221.4,
+     "true_remaining_s": 241.7,
+     "eta_error_s": -20.2,
+     "eta_error_pct_of_total": -4.8
+    },
+    {
+     "stage": "detect",
+     "start_s": 188.9,
+     "api_percent": 50,
+     "actual_percent": 44.7,
+     "naive_eta_remaining_s": 188.9,
+     "true_remaining_s": 234.0,
+     "eta_error_s": -45.1,
+     "eta_error_pct_of_total": -10.7
+    },
+    {
+     "stage": "episodes",
+     "start_s": 404.5,
+     "api_percent": 65,
+     "actual_percent": 95.7,
+     "naive_eta_remaining_s": 217.8,
+     "true_remaining_s": 18.4,
+     "eta_error_s": 199.4,
+     "eta_error_pct_of_total": 47.2
+    },
+    {
+     "stage": "link",
+     "start_s": 417.7,
+     "api_percent": 72,
+     "actual_percent": 98.8,
+     "naive_eta_remaining_s": 162.4,
+     "true_remaining_s": 5.1,
+     "eta_error_s": 157.3,
+     "eta_error_pct_of_total": 37.2
+    },
+    {
+     "stage": "incidents",
+     "start_s": 419.6,
+     "api_percent": 80,
+     "actual_percent": 99.2,
+     "naive_eta_remaining_s": 104.9,
+     "true_remaining_s": 3.2,
+     "eta_error_s": 101.7,
+     "eta_error_pct_of_total": 24.0
+    },
+    {
+     "stage": "publish",
+     "start_s": 422.4,
+     "api_percent": 90,
+     "actual_percent": 99.9,
+     "naive_eta_remaining_s": 46.9,
+     "true_remaining_s": 0.4,
+     "eta_error_s": 46.5,
+     "eta_error_pct_of_total": 11.0
+    }
+   ],
+   "max_abs_percent_gap": 30.7,
+   "max_abs_eta_error_pct_of_total": 89.8
+  },
+  {
+   "set": "t30",
+   "rows_in": 8138881,
+   "bytes_in": 19621285387,
+   "total_wall_s": 312.6,
+   "stage_wall_s": {
+    "profile": 2.851,
+    "ingest": 215.071,
+    "lookups": 4.704,
+    "detect": 87.479,
+    "episodes": 0.916,
+    "link": 0.69,
+    "incidents": 0.87,
+    "publish": 0.012
+   },
+   "stage_share_pct": {
+    "profile": 0.9,
+    "ingest": 68.8,
+    "lookups": 1.5,
+    "detect": 28.0,
+    "episodes": 0.3,
+    "link": 0.2,
+    "incidents": 0.3,
+    "publish": 0.0
+   },
+   "by_stage_start": [
+    {
+     "stage": "profile",
+     "start_s": 0.0,
+     "api_percent": 2,
+     "actual_percent": 0.0,
+     "naive_eta_remaining_s": 0.0,
+     "true_remaining_s": 312.6,
+     "eta_error_s": -312.6,
+     "eta_error_pct_of_total": -100.0
+    },
+    {
+     "stage": "ingest",
+     "start_s": 2.9,
+     "api_percent": 5,
+     "actual_percent": 0.9,
+     "naive_eta_remaining_s": 54.2,
+     "true_remaining_s": 309.7,
+     "eta_error_s": -255.6,
+     "eta_error_pct_of_total": -81.8
+    },
+    {
+     "stage": "lookups",
+     "start_s": 217.9,
+     "api_percent": 45,
+     "actual_percent": 69.7,
+     "naive_eta_remaining_s": 266.3,
+     "true_remaining_s": 94.7,
+     "eta_error_s": 171.7,
+     "eta_error_pct_of_total": 54.9
+    },
+    {
+     "stage": "detect",
+     "start_s": 222.6,
+     "api_percent": 50,
+     "actual_percent": 71.2,
+     "naive_eta_remaining_s": 222.6,
+     "true_remaining_s": 90.0,
+     "eta_error_s": 132.7,
+     "eta_error_pct_of_total": 42.4
+    },
+    {
+     "stage": "episodes",
+     "start_s": 310.1,
+     "api_percent": 65,
+     "actual_percent": 99.2,
+     "naive_eta_remaining_s": 167.0,
+     "true_remaining_s": 2.5,
+     "eta_error_s": 164.5,
+     "eta_error_pct_of_total": 52.6
+    },
+    {
+     "stage": "link",
+     "start_s": 311.0,
+     "api_percent": 72,
+     "actual_percent": 99.5,
+     "naive_eta_remaining_s": 121.0,
+     "true_remaining_s": 1.6,
+     "eta_error_s": 119.4,
+     "eta_error_pct_of_total": 38.2
+    },
+    {
+     "stage": "incidents",
+     "start_s": 311.7,
+     "api_percent": 80,
+     "actual_percent": 99.7,
+     "naive_eta_remaining_s": 77.9,
+     "true_remaining_s": 0.9,
+     "eta_error_s": 77.0,
+     "eta_error_pct_of_total": 24.6
+    },
+    {
+     "stage": "publish",
+     "start_s": 312.6,
+     "api_percent": 90,
+     "actual_percent": 100.0,
+     "naive_eta_remaining_s": 34.7,
+     "true_remaining_s": 0.0,
+     "eta_error_s": 34.7,
+     "eta_error_pct_of_total": 11.1
+    }
+   ],
+   "max_abs_percent_gap": 34.2,
+   "max_abs_eta_error_pct_of_total": 81.8
+  },
+  {
+   "set": "rt10",
+   "rows_in": 22453023,
+   "bytes_in": 6543120032,
+   "total_wall_s": 336.0,
+   "stage_wall_s": {
+    "profile": 2.501,
+    "ingest": 172.75,
+    "lookups": 7.661,
+    "detect": 140.674,
+    "episodes": 10.193,
+    "link": 0.973,
+    "incidents": 1.163,
+    "publish": 0.104
+   },
+   "stage_share_pct": {
+    "profile": 0.7,
+    "ingest": 51.4,
+    "lookups": 2.3,
+    "detect": 41.9,
+    "episodes": 3.0,
+    "link": 0.3,
+    "incidents": 0.3,
+    "publish": 0.0
+   },
+   "by_stage_start": [
+    {
+     "stage": "profile",
+     "start_s": 0.0,
+     "api_percent": 2,
+     "actual_percent": 0.0,
+     "naive_eta_remaining_s": 0.0,
+     "true_remaining_s": 336.0,
+     "eta_error_s": -336.0,
+     "eta_error_pct_of_total": -100.0
+    },
+    {
+     "stage": "ingest",
+     "start_s": 2.5,
+     "api_percent": 5,
+     "actual_percent": 0.7,
+     "naive_eta_remaining_s": 47.5,
+     "true_remaining_s": 333.5,
+     "eta_error_s": -286.0,
+     "eta_error_pct_of_total": -85.1
+    },
+    {
+     "stage": "lookups",
+     "start_s": 175.3,
+     "api_percent": 45,
+     "actual_percent": 52.2,
+     "naive_eta_remaining_s": 214.2,
+     "true_remaining_s": 160.8,
+     "eta_error_s": 53.4,
+     "eta_error_pct_of_total": 15.9
+    },
+    {
+     "stage": "detect",
+     "start_s": 182.9,
+     "api_percent": 50,
+     "actual_percent": 54.4,
+     "naive_eta_remaining_s": 182.9,
+     "true_remaining_s": 153.1,
+     "eta_error_s": 29.8,
+     "eta_error_pct_of_total": 8.9
+    },
+    {
+     "stage": "episodes",
+     "start_s": 323.6,
+     "api_percent": 65,
+     "actual_percent": 96.3,
+     "naive_eta_remaining_s": 174.2,
+     "true_remaining_s": 12.4,
+     "eta_error_s": 161.8,
+     "eta_error_pct_of_total": 48.2
+    },
+    {
+     "stage": "link",
+     "start_s": 333.8,
+     "api_percent": 72,
+     "actual_percent": 99.3,
+     "naive_eta_remaining_s": 129.8,
+     "true_remaining_s": 2.2,
+     "eta_error_s": 127.6,
+     "eta_error_pct_of_total": 38.0
+    },
+    {
+     "stage": "incidents",
+     "start_s": 334.8,
+     "api_percent": 80,
+     "actual_percent": 99.6,
+     "naive_eta_remaining_s": 83.7,
+     "true_remaining_s": 1.3,
+     "eta_error_s": 82.4,
+     "eta_error_pct_of_total": 24.5
+    },
+    {
+     "stage": "publish",
+     "start_s": 335.9,
+     "api_percent": 90,
+     "actual_percent": 100.0,
+     "naive_eta_remaining_s": 37.3,
+     "true_remaining_s": 0.1,
+     "eta_error_s": 37.2,
+     "eta_error_pct_of_total": 11.1
+    }
+   ],
+   "max_abs_percent_gap": 31.3,
+   "max_abs_eta_error_pct_of_total": 85.1
+  },
+  {
+   "set": "rt30",
+   "rows_in": 8138881,
+   "bytes_in": 19621285387,
+   "total_wall_s": 221.9,
+   "stage_wall_s": {
+    "profile": 2.062,
+    "ingest": 117.445,
+    "lookups": 5.218,
+    "detect": 93.879,
+    "episodes": 1.226,
+    "link": 0.982,
+    "incidents": 1.068,
+    "publish": 0.021
+   },
+   "stage_share_pct": {
+    "profile": 0.9,
+    "ingest": 52.9,
+    "lookups": 2.4,
+    "detect": 42.3,
+    "episodes": 0.6,
+    "link": 0.4,
+    "incidents": 0.5,
+    "publish": 0.0
+   },
+   "by_stage_start": [
+    {
+     "stage": "profile",
+     "start_s": 0.0,
+     "api_percent": 2,
+     "actual_percent": 0.0,
+     "naive_eta_remaining_s": 0.0,
+     "true_remaining_s": 221.9,
+     "eta_error_s": -221.9,
+     "eta_error_pct_of_total": -100.0
+    },
+    {
+     "stage": "ingest",
+     "start_s": 2.1,
+     "api_percent": 5,
+     "actual_percent": 0.9,
+     "naive_eta_remaining_s": 39.2,
+     "true_remaining_s": 219.8,
+     "eta_error_s": -180.7,
+     "eta_error_pct_of_total": -81.4
+    },
+    {
+     "stage": "lookups",
+     "start_s": 119.5,
+     "api_percent": 45,
+     "actual_percent": 53.9,
+     "naive_eta_remaining_s": 146.1,
+     "true_remaining_s": 102.4,
+     "eta_error_s": 43.7,
+     "eta_error_pct_of_total": 19.7
+    },
+    {
+     "stage": "detect",
+     "start_s": 124.7,
+     "api_percent": 50,
+     "actual_percent": 56.2,
+     "naive_eta_remaining_s": 124.7,
+     "true_remaining_s": 97.2,
+     "eta_error_s": 27.5,
+     "eta_error_pct_of_total": 12.4
+    },
+    {
+     "stage": "episodes",
+     "start_s": 218.6,
+     "api_percent": 65,
+     "actual_percent": 98.5,
+     "naive_eta_remaining_s": 117.7,
+     "true_remaining_s": 3.3,
+     "eta_error_s": 114.4,
+     "eta_error_pct_of_total": 51.6
+    },
+    {
+     "stage": "link",
+     "start_s": 219.8,
+     "api_percent": 72,
+     "actual_percent": 99.1,
+     "naive_eta_remaining_s": 85.5,
+     "true_remaining_s": 2.1,
+     "eta_error_s": 83.4,
+     "eta_error_pct_of_total": 37.6
+    },
+    {
+     "stage": "incidents",
+     "start_s": 220.8,
+     "api_percent": 80,
+     "actual_percent": 99.5,
+     "naive_eta_remaining_s": 55.2,
+     "true_remaining_s": 1.1,
+     "eta_error_s": 54.1,
+     "eta_error_pct_of_total": 24.4
+    },
+    {
+     "stage": "publish",
+     "start_s": 221.9,
+     "api_percent": 90,
+     "actual_percent": 100.0,
+     "naive_eta_remaining_s": 24.7,
+     "true_remaining_s": 0.0,
+     "eta_error_s": 24.6,
+     "eta_error_pct_of_total": 11.1
+    }
+   ],
+   "max_abs_percent_gap": 33.5,
+   "max_abs_eta_error_pct_of_total": 81.4
+  },
+  {
+   "set": "t50s",
+   "rows_in": 85937,
+   "bytes_in": 45474446,
+   "total_wall_s": 10.5,
+   "stage_wall_s": {
+    "profile": 0.72,
+    "ingest": 6.597,
+    "lookups": 0.146,
+    "detect": 2.583,
+    "episodes": 0.174,
+    "link": 0.108,
+    "incidents": 0.146,
+    "publish": 0.019
+   },
+   "stage_share_pct": {
+    "profile": 6.9,
+    "ingest": 62.9,
+    "lookups": 1.4,
+    "detect": 24.6,
+    "episodes": 1.7,
+    "link": 1.0,
+    "incidents": 1.4,
+    "publish": 0.2
+   },
+   "by_stage_start": [
+    {
+     "stage": "profile",
+     "start_s": 0.0,
+     "api_percent": 2,
+     "actual_percent": 0.0,
+     "naive_eta_remaining_s": 0.0,
+     "true_remaining_s": 10.5,
+     "eta_error_s": -10.5,
+     "eta_error_pct_of_total": -100.0
+    },
+    {
+     "stage": "ingest",
+     "start_s": 0.7,
+     "api_percent": 5,
+     "actual_percent": 6.9,
+     "naive_eta_remaining_s": 13.7,
+     "true_remaining_s": 9.8,
+     "eta_error_s": 3.9,
+     "eta_error_pct_of_total": 37.2
+    },
+    {
+     "stage": "lookups",
+     "start_s": 7.3,
+     "api_percent": 45,
+     "actual_percent": 69.7,
+     "naive_eta_remaining_s": 8.9,
+     "true_remaining_s": 3.2,
+     "eta_error_s": 5.8,
+     "eta_error_pct_of_total": 55.0
+    },
+    {
+     "stage": "detect",
+     "start_s": 7.5,
+     "api_percent": 50,
+     "actual_percent": 71.1,
+     "naive_eta_remaining_s": 7.5,
+     "true_remaining_s": 3.0,
+     "eta_error_s": 4.4,
+     "eta_error_pct_of_total": 42.2
+    },
+    {
+     "stage": "episodes",
+     "start_s": 10.0,
+     "api_percent": 65,
+     "actual_percent": 95.7,
+     "naive_eta_remaining_s": 5.4,
+     "true_remaining_s": 0.4,
+     "eta_error_s": 5.0,
+     "eta_error_pct_of_total": 47.3
+    },
+    {
+     "stage": "link",
+     "start_s": 10.2,
+     "api_percent": 72,
+     "actual_percent": 97.4,
+     "naive_eta_remaining_s": 4.0,
+     "true_remaining_s": 0.3,
+     "eta_error_s": 3.7,
+     "eta_error_pct_of_total": 35.3
+    },
+    {
+     "stage": "incidents",
+     "start_s": 10.3,
+     "api_percent": 80,
+     "actual_percent": 98.4,
+     "naive_eta_remaining_s": 2.6,
+     "true_remaining_s": 0.2,
+     "eta_error_s": 2.4,
+     "eta_error_pct_of_total": 23.0
+    },
+    {
+     "stage": "publish",
+     "start_s": 10.5,
+     "api_percent": 90,
+     "actual_percent": 99.8,
+     "naive_eta_remaining_s": 1.2,
+     "true_remaining_s": 0.0,
+     "eta_error_s": 1.1,
+     "eta_error_pct_of_total": 10.9
+    }
+   ],
+   "max_abs_percent_gap": 30.7,
+   "max_abs_eta_error_pct_of_total": 55.0
+  },
+  {
+   "set": "g50m_sigma",
+   "rows_in": 64176,
+   "bytes_in": 52739548,
+   "total_wall_s": 29.6,
+   "stage_wall_s": {
+    "profile": 3.462,
+    "ingest": 2.37,
+    "lookups": 0.325,
+    "detect": 22.058,
+    "episodes": 0.206,
+    "link": 0.341,
+    "incidents": 0.36,
+    "publish": 0.213,
+    "eval": 0.239
+   },
+   "stage_share_pct": {
+    "profile": 11.7,
+    "ingest": 8.0,
+    "lookups": 1.1,
+    "detect": 74.6,
+    "episodes": 0.7,
+    "link": 1.2,
+    "incidents": 1.2,
+    "publish": 0.7,
+    "eval": 0.8
+   },
+   "by_stage_start": [
+    {
+     "stage": "profile",
+     "start_s": 0.0,
+     "api_percent": 2,
+     "actual_percent": 0.0,
+     "naive_eta_remaining_s": 0.0,
+     "true_remaining_s": 29.6,
+     "eta_error_s": -29.6,
+     "eta_error_pct_of_total": -100.0
+    },
+    {
+     "stage": "ingest",
+     "start_s": 3.5,
+     "api_percent": 5,
+     "actual_percent": 11.7,
+     "naive_eta_remaining_s": 65.8,
+     "true_remaining_s": 26.1,
+     "eta_error_s": 39.7,
+     "eta_error_pct_of_total": 134.1
+    },
+    {
+     "stage": "lookups",
+     "start_s": 5.8,
+     "api_percent": 45,
+     "actual_percent": 19.7,
+     "naive_eta_remaining_s": 7.1,
+     "true_remaining_s": 23.7,
+     "eta_error_s": -16.6,
+     "eta_error_pct_of_total": -56.2
+    },
+    {
+     "stage": "detect",
+     "start_s": 6.2,
+     "api_percent": 50,
+     "actual_percent": 20.8,
+     "naive_eta_remaining_s": 6.2,
+     "true_remaining_s": 23.4,
+     "eta_error_s": -17.3,
+     "eta_error_pct_of_total": -58.4
+    },
+    {
+     "stage": "episodes",
+     "start_s": 28.2,
+     "api_percent": 65,
+     "actual_percent": 95.4,
+     "naive_eta_remaining_s": 15.2,
+     "true_remaining_s": 1.4,
+     "eta_error_s": 13.8,
+     "eta_error_pct_of_total": 46.8
+    },
+    {
+     "stage": "link",
+     "start_s": 28.4,
+     "api_percent": 72,
+     "actual_percent": 96.1,
+     "naive_eta_remaining_s": 11.1,
+     "true_remaining_s": 1.2,
+     "eta_error_s": 9.9,
+     "eta_error_pct_of_total": 33.5
+    },
+    {
+     "stage": "incidents",
+     "start_s": 28.8,
+     "api_percent": 80,
+     "actual_percent": 97.3,
+     "naive_eta_remaining_s": 7.2,
+     "true_remaining_s": 0.8,
+     "eta_error_s": 6.4,
+     "eta_error_pct_of_total": 21.6
+    },
+    {
+     "stage": "publish",
+     "start_s": 29.1,
+     "api_percent": 90,
+     "actual_percent": 98.5,
+     "naive_eta_remaining_s": 3.2,
+     "true_remaining_s": 0.5,
+     "eta_error_s": 2.8,
+     "eta_error_pct_of_total": 9.4
+    },
+    {
+     "stage": "eval",
+     "start_s": 29.3,
+     "api_percent": 96,
+     "actual_percent": 99.2,
+     "naive_eta_remaining_s": 1.2,
+     "true_remaining_s": 0.2,
+     "eta_error_s": 1.0,
+     "eta_error_pct_of_total": 3.3
+    }
+   ],
+   "max_abs_percent_gap": 30.4,
+   "max_abs_eta_error_pct_of_total": 134.1
+  }
+ ],
+ "median_stage_share_pct_rows_ge_1M": {
+  "profile": 0.9,
+  "ingest": 54.4,
+  "lookups": 2.3,
+  "detect": 28.0,
+  "episodes": 0.6,
+  "link": 0.4,
+  "incidents": 0.8,
+  "publish": 0.0,
+  "eval": 0.0
+ },
+ "median_s_per_million_rows": {
+  "profile": 0.33,
+  "ingest": 14.43,
+  "lookups": 0.64,
+  "detect": 8.17,
+  "episodes": 0.16,
+  "link": 0.08,
+  "incidents": 0.22,
+  "publish": 0.01,
+  "eval": 0.07
+ }
+}

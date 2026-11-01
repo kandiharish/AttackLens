@@ -86,11 +86,34 @@ export function fmtRss(mb: number | null): string {
   return mb >= 1024 ? `${(mb / 1024).toFixed(2)} GB` : `${Math.round(mb)} MB`
 }
 
-export function fmtSeconds(s: number | null): string {
-  if (s === null) return '—'
+export function fmtSeconds(s: number | null | undefined): string {
+  if (s === null || s === undefined || !Number.isFinite(s) || s < 0) return '—'
   if (s < 60) return `${s.toFixed(1)} s`
-  const m = Math.floor(s / 60)
-  return `${m}m ${Math.round(s % 60)}s`
+  const t = Math.round(s)
+  if (t < 3600) return `${Math.floor(t / 60)}m ${t % 60}s`
+  return `${Math.floor(t / 3600)}h ${String(Math.floor((t % 3600) / 60)).padStart(2, '0')}m`
+}
+
+export interface RunTiming {
+  /** Rows read (run_metrics.rows_in, else stage_stats.ingest.rows_in, else the ingest_accounting sum). */
+  rows: number | null
+  /** Wall time of the ingest stage (stages[name=ingest].wall_s, else stage_stats.ingest.wall_s). */
+  ingestS: number | null
+  /** Whole-run wall time (run_metrics.total_wall_s). */
+  totalS: number | null
+}
+
+/** Timing of the served run for the footer: every value from run_metrics.json, null when absent. */
+export function readRunTiming(m: Metrics | null): RunTiming {
+  const r = m?.run_metrics
+  const ss = r?.stage_stats
+  const ingStats = ss && typeof ss === 'object' ? ((ss as Record<string, unknown>).ingest as Obj) : null
+  const ingStage = readRunSummary(m).stages.find((s) => s.name === 'ingest')
+  return {
+    rows: num(r, 'rows_in') ?? num(ingStats, 'rows_in') ?? readIngest(m)?.rowsIn ?? null,
+    ingestS: ingStage?.wall_s ?? num(ingStats, 'wall_s'),
+    totalS: num(r, 'total_wall_s'),
+  }
 }
 
 export function fmtCount(n: number): string {
@@ -98,4 +121,60 @@ export function fmtCount(n: number): string {
   if (n >= 1e6) return `${(n / 1e6).toFixed(1)} M`
   if (n >= 1e4) return `${(n / 1e3).toFixed(1)} k`
   return n.toLocaleString('en-US')
+}
+
+function obj(v: unknown): Record<string, unknown> | null {
+  return v !== null && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : null
+}
+
+/** Measured counts for runs without ground truth. Every field is null when its key is absent from run_metrics.json. */
+export interface RunCounts {
+  /** run_metrics.incidents (else stage_stats.incidents.incidents). */
+  incidents: number | null
+  /** stage_stats.detect.raw_alerts */
+  rawAlerts: number | null
+  /** stage_stats.episodes.episodes (kept for linking; run_metrics.episodes as fallback). */
+  episodes: number | null
+  /** stage_stats.episodes.episodes_total (kept + spilled). */
+  episodesTotal: number | null
+  /** Custom rules with alerts > 0 (stage_stats.detect.alerts_per_rule, keys not starting with "sigma_"). */
+  customRulesFired: number | null
+  /** stage_stats.detect.sigma_rules_fired (or detect.sigma.sigma_rules_fired). */
+  sigmaRulesFired: number | null
+  /** stage_stats.detect.sigma_rules_applicable */
+  sigmaApplicable: number | null
+  /** stage_stats.detect.sigma_rules_running */
+  sigmaRunning: number | null
+}
+
+export function readRunCounts(m: Metrics | null): RunCounts {
+  const r = m?.run_metrics
+  const ss = obj(r?.stage_stats)
+  const det = obj(ss?.detect)
+  const sig = obj(det?.sigma)
+  const eps = obj(ss?.episodes)
+  const inc = obj(ss?.incidents)
+  const perRule = obj(det?.alerts_per_rule)
+  const custom = perRule
+    ? Object.entries(perRule).filter(([k, v]) => !k.startsWith('sigma_') && typeof v === 'number' && v > 0).length
+    : null
+  const sigmaKey = (k: string) => num(det, k) ?? num(sig, k)
+  return {
+    incidents: num(r, 'incidents') ?? num(inc, 'incidents'),
+    rawAlerts: num(det, 'raw_alerts'),
+    episodes: num(eps, 'episodes') ?? num(r, 'episodes'),
+    episodesTotal: num(eps, 'episodes_total'),
+    customRulesFired: custom,
+    sigmaRulesFired: sigmaKey('sigma_rules_fired'),
+    sigmaApplicable: sigmaKey('sigma_rules_applicable'),
+    sigmaRunning: sigmaKey('sigma_rules_running'),
+  }
+}
+
+/** Distinct ATT&CK tactics across the loaded incident list (null when the list is not loaded). */
+export function tacticsCovered(incidents: Array<{ tactics?: string[] | null }> | null | undefined): string[] | null {
+  if (!incidents) return null
+  const seen = new Map<string, string>()
+  for (const i of incidents) for (const t of i?.tactics ?? []) if (typeof t === 'string' && t.trim()) seen.set(t.trim().toLowerCase(), t.trim())
+  return [...seen.values()]
 }

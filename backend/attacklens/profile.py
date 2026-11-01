@@ -1,7 +1,8 @@
 """Stage 0: sniff every raw file by content and profile it -> out_dir/source_profile.json.
 
 Routing is by the first non-empty line only (never by extension):
-  '{'                         -> JSON lines (ecs_json / win_json decided from sampled field paths)
+  '{'                         -> JSON lines (source decided from sampled field paths: detect_signatures, then
+                                 detect_any; see config/sources.yaml json_sources)
   'CEF:' (maybe after syslog) -> cef
   syslog header               -> syslog
   delimited header            -> csv source whose aliases match (e.g. firewall_csv), else unrecognized
@@ -17,8 +18,11 @@ from typing import Any
 
 import duckdb
 
+from attacklens import cloud_unpack
 from attacklens.context import RunContext
-from attacklens.db import line_reader, sql_str
+from attacklens.db import line_reader, sql_list, sql_str
+from attacklens.ingest_maps import ts_candidates_sql, ts_policy_of
+from attacklens.ingest_sql import ts_expr
 
 log = logging.getLogger(__name__)
 
@@ -33,6 +37,8 @@ CSV_DELIMS = (",", "\t", ";", "|")
 
 def _skip(path: Path, root: Path, pcfg: dict[str, Any]) -> str | None:
     rel = path.relative_to(root)
+    if any(part.startswith(".") for part in rel.parts[:-1]):  # .incoming (partial uploads), .meta, .git ...
+        return "hidden_dir"
     if any(part in pcfg.get("skip_dir_components", ["ground_truth"]) for part in rel.parts[:-1]):
         return "ground_truth"
     if path.name in pcfg.get("skip_names", ["manifest.json"]):
@@ -126,9 +132,75 @@ def _flatten(struct: Any, prefix: str = "") -> list[str]:
     return out
 
 
+def pick_json_source(fields: dict[str, int], n_rows: int,
+                     json_sources: dict[str, Any]) -> tuple[str | None, str | None]:
+    """(source_type, reason). Pass 1: detect_signatures (all keys of one signature, each in >= detect_min_share of
+    the sampled rows), sources in config order. Pass 2: detect_any (any key present), sources in config order."""
+    for name, scfg in json_sources.items():
+        need = float(scfg.get("detect_min_share", 0.5)) * n_rows
+        for sig in scfg.get("detect_signatures") or []:
+            keys = [str(k) for k in sig]
+            if keys and n_rows and all(fields.get(k, 0) >= max(need, 1) for k in keys):
+                return name, "signature:" + "+".join(keys)
+    for name, scfg in json_sources.items():
+        hit = next((str(d) for d in scfg.get("detect_any") or [] if d in fields), None)
+        if hit is not None:
+            return name, "any:" + hit
+    return None, None
+
+
+def profile_ts(con: duckdb.DuckDBPyConnection, src: str, sample: int, paths: list[str], pol: dict[str, Any],
+               formats: list[str], name: str) -> dict[str, Any]:
+    """Over the sampled rows: which ts alias sets ts (ts_policy order), naive values ignored per alias, rows left
+    without a timestamp, and the median skew (s) of every other alias against the first `utc` alias."""
+    if not paths:
+        return {}
+    xs = [f"nullif(nullif(trim(v[{i + 1}]), ''), '-')" for i in range(len(paths))]
+    qs = ts_candidates_sql(xs, paths, pol)
+    used = "CASE " + " ".join(f"WHEN {q} IS NOT NULL THEN {sql_str(p)}" for q, p in zip(qs, paths)) + " END"
+    ref = next((i for i, p in enumerate(paths) if pol["zones"].get(p) == "utc"), None)
+    aggs = [f"count(*) FILTER (WHERE {x} IS NOT NULL AND {q} IS NULL)" for x, q in zip(xs, qs)]
+    if ref is not None:
+        r = ts_expr(qs[ref], formats)
+        for i, (x, q) in enumerate(zip(xs, qs)):
+            if i == ref:
+                continue
+            # qualified value vs UtcTime, and a naive (ignored) value read as if UTC vs UtcTime
+            for e in (ts_expr(q, formats), f"CASE WHEN {q} IS NULL THEN {ts_expr(x, formats)} END"):
+                aggs += [f"median(({e} - {r}) / 1000.0)", f"count(*) FILTER (WHERE {e} IS NOT NULL AND {r} IS NOT NULL)"]
+    base = (f"(SELECT try(json_extract_string(line, {sql_list(paths)})) v FROM {src} WHERE line IS NOT NULL "
+            f"AND json_valid(line) LIMIT {int(sample)})")
+    used_rows = con.execute(f"SELECT {used} u, count(*) FROM {base} GROUP BY 1 ORDER BY 2 DESC").fetchall()
+    vals = con.execute(f"SELECT {', '.join(aggs)} FROM {base}").fetchone() or ()
+    out: dict[str, Any] = {
+        "used": {str(u): int(n) for u, n in used_rows if u is not None},
+        "unresolved": sum(int(n) for u, n in used_rows if u is None),
+        "naive_ignored": {p: int(n) for p, n in zip(paths, vals[:len(paths)]) if n},
+        "naive_tz": pol["naive_tz"], "skew_vs_utc_s": {}}
+    k = len(paths)
+    if ref is not None:
+        for i, p in enumerate(paths):
+            if i == ref:
+                continue
+            for kind in ("qualified", "naive_as_utc"):
+                med, n = vals[k], vals[k + 1]
+                k += 2
+                if n:
+                    out["skew_vs_utc_s"].setdefault(p, {})[kind] = {"median_s": round(float(med), 3), "rows": int(n)}
+                    if kind == "qualified" and abs(float(med)) > pol["skew_warn_s"]:
+                        log.warning("%s: ts alias %s is %.0f s off %s (median over %d rows); %s wins when present",
+                                    name, p, float(med), paths[ref], int(n), paths[min(i, ref)])
+        out["skew_reference"] = paths[ref]
+    if out["unresolved"]:
+        log.warning("%s: %d of the sampled rows have no qualifying timestamp (naive values ignored: %s; "
+                    "ts_policy.naive_tz=%s) -> ts_ok=false", name, out["unresolved"], out["naive_ignored"],
+                    pol["naive_tz"])
+    return out
+
+
 def profile_json(con: duckdb.DuckDBPyConnection, path: Path, sample: int,
-                 sources_cfg: dict[str, Any]) -> dict[str, Any]:
-    """Sample up to `sample` lines with DuckDB; field path counts, source type, actions / event ids."""
+                 sources_cfg: dict[str, Any], formats: list[str] | None = None) -> dict[str, Any]:
+    """Sample up to `sample` lines with DuckDB; field path counts, source type, actions / event ids, ts provenance."""
     src = line_reader([path.as_posix()], filename=False)
     rows = con.execute(
         f"SELECT json_structure(line) s, count(*) FROM (SELECT line FROM {src} "
@@ -140,15 +212,17 @@ def profile_json(con: duckdb.DuckDBPyConnection, path: Path, sample: int,
                 fields[p] = fields.get(p, 0) + int(n)
         except (TypeError, ValueError):
             continue
-    stype = None
-    for name, scfg in (sources_cfg.get("json_sources") or {}).items():
-        if any(d in fields for d in scfg.get("detect_any", [])):
-            stype = name
-            break
-    out: dict[str, Any] = {"source_type": stype, "sampled_rows": sum(int(n) for _, n in rows),
+    n_rows = sum(int(n) for _, n in rows)
+    stype, why = pick_json_source(fields, n_rows, sources_cfg.get("json_sources") or {})
+    out: dict[str, Any] = {"source_type": stype, "detected_by": why, "sampled_rows": n_rows,
                            "fields": dict(sorted(fields.items()))}
     if stype:
-        f = sources_cfg["json_sources"][stype]["fields"]
+        scfg = sources_cfg["json_sources"][stype]
+        pol = ts_policy_of(scfg)
+        if pol:
+            out["ts"] = profile_ts(con, src, sample, [str(p) for p in (scfg.get("fields") or {}).get("ts") or []],
+                                   pol, formats or [], path.name)
+        f = scfg["fields"]
         for key, alias in (("actions", "event_action"), ("event_ids", "event_id")):
             paths = f.get(alias) or []
             if not paths:
@@ -196,20 +270,35 @@ def profile_kv(con: duckdb.DuckDBPyConnection, path: Path, sample: int,
     return out
 
 
+def _check_naive_tz(con: duckdb.DuckDBPyConnection, sources_cfg: dict[str, Any]) -> None:
+    """A configured ts_policy.naive_tz must be a zone DuckDB knows (fail before ingest, with the source name)."""
+    for name, scfg in (sources_cfg.get("json_sources") or {}).items():
+        pol = ts_policy_of(scfg)
+        if pol and pol["naive_tz"] and not con.execute(
+                "SELECT count(*) FROM pg_timezone_names() WHERE name = ?", [pol["naive_tz"]]).fetchone()[0]:
+            raise ValueError(f"sources.yaml json_sources.{name}.ts_policy.naive_tz: unknown time zone "
+                             f"{pol['naive_tz']!r}")
+
+
 def run(ctx: RunContext) -> dict[str, Any]:
     root = Path(ctx.raw_dir)
     pcfg = (ctx.cfg.get("pipeline") or {}).get("profile") or {}
     sources_cfg = ctx.cfg.get("sources") or {}
     sample = int(pcfg.get("sample_lines", 20000))
+    formats = list(((ctx.cfg.get("pipeline") or {}).get("ingest") or {}).get("ts_formats") or [])
+    _check_naive_tz(ctx.con, sources_cfg)
     files: list[dict[str, Any]] = []
     skipped: list[dict[str, str]] = []
     empty: list[str] = []
     unrecognized: list[dict[str, str]] = []
     if not root.exists():
         raise FileNotFoundError(f"raw dir not found: {root}")
-    for path in sorted(p for p in root.rglob("*") if p.is_file()):
-        rel = path.relative_to(root).as_posix()
-        reason = _skip(path, root, pcfg)
+    # Stage 0 envelope unwrap (P0-1): an envelope file ({"Records": [...]}, .gz / .tar / .zip, JSON arrays,
+    # EventBridge, CloudWatch subscription, Pub/Sub ...) is profiled as its one-record-per-line parts
+    # (work/unwrapped/; counts in out/unwrap_accounting.json -> ingest_accounting.json `envelope_unwrap`)
+    for path, rel in cloud_unpack.raw_files(root, ctx.work_dir / "unwrapped", ctx.out_dir, ctx.cfg.get("unwrap"),
+                                            lambda p: _skip(p, root, pcfg)):
+        reason = _skip(path, root, pcfg) if path.is_relative_to(root) else None
         if reason:
             skipped.append({"path": rel, "reason": reason})
             continue
@@ -224,7 +313,7 @@ def run(ctx: RunContext) -> dict[str, Any]:
                 info.update(profile_kv(ctx.con, path, sample, list(pcfg.get("kv_count_keys") or []),
                                        (sources_cfg.get("kv_sources") or {}).get(info["source_type"])))
             elif info["format"] == "json":
-                info.update(profile_json(ctx.con, path, sample, sources_cfg))
+                info.update(profile_json(ctx.con, path, sample, sources_cfg, formats))
                 if not info.get("source_type"):
                     info = {"format": "unrecognized", "reason": "JSON with no known source fields",
                             "fields": info.get("fields", {})}

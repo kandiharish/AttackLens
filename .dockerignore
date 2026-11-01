@@ -1,15 +1,36 @@
-.git
-.claude
-.venv
-venv
-data
-docs
+# Build context = the product only (allowlist). Logs, data sets, archives, reports, scratch, venvs and
+# node_modules never reach the image: everything is excluded, then only the files the image needs are re-included.
+*
+
+!backend/pyproject.toml
+!backend/attacklens/
+!backend/eval/
+!config/
+!tools/gen_dataset.py
+!tools/scenarios.py
+!tools/cloud_attacks/
+!reports/edr_log_generator.py
+!frontend/package.json
+!frontend/package-lock.json
+!frontend/index.html
+!frontend/vite.config.ts
+!frontend/tsconfig*.json
+!frontend/src/
+!frontend/public/
+
+# junk that can sit inside the re-included folders
 **/__pycache__
 **/.pytest_cache
 **/*.pyc
 **/*.egg-info
-frontend/node_modules
-frontend/dist
-backend/tests
-*.parquet
-.env
+**/*.zip
+**/*.7z
+**/*.gz
+**/*.tar
+**/*.tgz
+**/*.parquet
+**/*.duckdb
+**/*.log
+**/*.tmp
+**/.env
+backend/eval/test_*.py

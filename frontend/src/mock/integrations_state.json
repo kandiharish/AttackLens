@@ -1,0 +1,163 @@
+{
+  "states": {
+    "elastic": {
+      "id": "elastic",
+      "configured": true,
+      "enabled": true,
+      "settings": {
+        "base_url": "http://127.0.0.1:9200",
+        "username": null,
+        "events_index": "logs-*",
+        "alerts_index": ".alerts-security.alerts-*",
+        "verify_tls": false
+      },
+      "secrets_set": {
+        "api_key": true,
+        "password": false
+      },
+      "running": true,
+      "status": {
+        "last_pull": "2026-10-24T03:06:12Z",
+        "pulled": 48521,
+        "written": 48491,
+        "failed": 10,
+        "last_error": null
+      }
+    },
+    "webhook": {
+      "id": "webhook",
+      "configured": true,
+      "enabled": true,
+      "settings": {
+        "url": "http://127.0.0.1:9000/attacklens",
+        "min_risk": 50
+      },
+      "secrets_set": {
+        "auth_header": false
+      },
+      "running": true,
+      "status": {
+        "last_pull": "2026-10-24T03:06:15Z",
+        "pulled": null,
+        "written": 3,
+        "failed": 1,
+        "last_error": "ConnectError: connection refused"
+      }
+    }
+  },
+  "tests": {
+    "elastic": {
+      "ok": true,
+      "latency_ms": 38,
+      "sample_count": 5,
+      "message": "Mock mode: sample response, no network call was made.",
+      "steps": [
+        {
+          "name": "Config",
+          "ok": true
+        },
+        {
+          "name": "DNS",
+          "ok": true,
+          "detail": "127.0.0.1"
+        },
+        {
+          "name": "TLS",
+          "ok": null,
+          "detail": "Not used (http URL)"
+        },
+        {
+          "name": "Auth",
+          "ok": true,
+          "detail": "API key accepted"
+        },
+        {
+          "name": "Permission",
+          "ok": true,
+          "detail": "read on logs-*"
+        },
+        {
+          "name": "Data",
+          "ok": true,
+          "detail": "5 sample events"
+        }
+      ]
+    },
+    "splunk": {
+      "ok": false,
+      "latency_ms": 12,
+      "sample_count": 0,
+      "message": "Mock mode: 401 Unauthorized (sample failure, no network call was made).",
+      "error_code": "auth",
+      "steps": [
+        {
+          "name": "Config",
+          "ok": true
+        },
+        {
+          "name": "DNS",
+          "ok": true
+        },
+        {
+          "name": "TLS",
+          "ok": true
+        },
+        {
+          "name": "Auth",
+          "ok": false,
+          "detail": "401 Unauthorized: the token was rejected. Check that it is a valid Splunk auth token."
+        },
+        {
+          "name": "Permission",
+          "ok": null
+        },
+        {
+          "name": "Data",
+          "ok": null
+        }
+      ]
+    },
+    "webhook": {
+      "ok": false,
+      "latency_ms": null,
+      "sample_count": null,
+      "message": "Mock mode: connection refused (sample failure, no network call was made).",
+      "error_code": "connect",
+      "steps": [
+        {
+          "name": "Config",
+          "ok": true
+        },
+        {
+          "name": "DNS",
+          "ok": true,
+          "detail": "127.0.0.1"
+        },
+        {
+          "name": "TLS",
+          "ok": false,
+          "detail": "TCP connect to 127.0.0.1:9000 refused before TLS: is the receiver running?"
+        },
+        {
+          "name": "Auth",
+          "ok": null
+        },
+        {
+          "name": "Permission",
+          "ok": null
+        },
+        {
+          "name": "Data",
+          "ok": null
+        }
+      ]
+    },
+    "sentinel": {
+      "ok": false,
+      "latency_ms": null,
+      "sample_count": null,
+      "message": "Mock mode: sample failure without a step list (message fallback), no network call was made.",
+      "error_code": "timeout"
+    }
+  }
+}

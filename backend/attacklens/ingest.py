@@ -5,6 +5,7 @@ Writes <parquet_dir>/events/source_type=*/ts_ok=*/event_day=*/ and out_dir/inges
 Accounting (no line is ever lost uncounted):
 - malformed lines are kept in the ts_ok=false partition with action='malformed' and their original text;
 - rows without a parseable timestamp are kept with ts_ok=false;
+- rows in a timestamp pile-up second (ingest_post) are kept with ts_ok=false and their ts_ms (timestamp_pileup);
 - lines the reader cannot decode (invalid UTF-8) or CSV records with missing columns are recorded in DuckDB
   rejects tables (one per reader) and counted as dropped with a reason;
 - unrecognized files: their non-blank lines are counted as rows_in and dropped (reason unrecognized_format).
@@ -25,6 +26,7 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
+from attacklens import cloud_unpack, ingest_post
 from attacklens import ingest_sql as q
 from attacklens import profile as profile_stage
 from attacklens.context import RunContext
@@ -268,7 +270,8 @@ def _unrecognized(ctx: RunContext, prof: dict[str, Any]) -> dict[str, Any] | Non
 
 
 def _accounting(ctx: RunContext, events_dir: Path, groups: list[dict[str, Any]],
-                prof: dict[str, Any], line_counts: dict[str, Future[tuple[int, int]]] | None = None) -> list[dict[str, Any]]:
+                prof: dict[str, Any], line_counts: dict[str, Future[tuple[int, int]]] | None = None,
+                post: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     per: dict[str, dict[str, Any]] = {}
 
     def entry(st: str) -> dict[str, Any]:
@@ -277,10 +280,11 @@ def _accounting(ctx: RunContext, events_dir: Path, groups: list[dict[str, Any]],
 
     if any(events_dir.rglob("*.parquet")):
         glob = sql_path(events_dir / "**" / "*.parquet")
-        for st, written, ok, bad, nots in ctx.con.execute(
+        for st, written, ok, bad, nots, pile in ctx.con.execute(
                 f"SELECT source_type, count(*), count(*) FILTER (WHERE ts_ok), "
                 f"count(*) FILTER (WHERE action = 'malformed'), "
-                f"count(*) FILTER (WHERE NOT ts_ok AND action <> 'malformed') "
+                f"count(*) FILTER (WHERE NOT ts_ok AND action <> 'malformed' AND ts_ms IS NULL), "
+                f"count(*) FILTER (WHERE NOT ts_ok AND action <> 'malformed' AND ts_ms IS NOT NULL) "
                 f"FROM read_parquet({glob}, hive_partitioning=true, hive_types={HIVE_TYPES}) GROUP BY 1").fetchall():
             e = entry(st)
             e.update(rows_in=int(written), rows_ok=int(ok), quarantined=int(written - ok))
@@ -289,6 +293,9 @@ def _accounting(ctx: RunContext, events_dir: Path, groups: list[dict[str, Any]],
                 e["drop_reasons"][f"{what} (kept in ts_ok=false, action=malformed)"] = int(bad)
             if nots:
                 e["drop_reasons"]["missing_or_unparseable_timestamp (kept in ts_ok=false)"] = int(nots)
+            if pile:  # only ingest_post marks a row with a timestamp as ts_ok=false
+                e["drop_reasons"]["timestamp_pileup (kept in ts_ok=false with its ts_ms)"] = int(pile)
+                e["ts_pileup"] = ((post or {}).get("ts_pileup") or {}).get(st, {"rows": int(pile), "seconds": []})
     phys: dict[str, tuple[int, int]] = {}
     for g in groups:
         e = entry(g["source_type"])
@@ -308,6 +315,12 @@ def _accounting(ctx: RunContext, events_dir: Path, groups: list[dict[str, Any]],
                 e.setdefault("notes", {})["truncated_columns (extra fields dropped, row kept)"] = t
                 log.warning("ingest: %d %s rows had more fields than the header; extras dropped",
                             t, g["source_type"])
+    for st, dup in ((post or {}).get("duplicates") or {}).items():
+        notes = entry(st).setdefault("notes", {})
+        notes["duplicate_lines (byte-identical copies in one file, kept)"] = dup["lines"]
+        notes["duplicate_lines_in_ts_ok (copies detection rules still see)"] = dup["in_ts_ok"]
+    for st, n_sw in ((post or {}).get("direction_swapped") or {}).items():
+        entry(st).setdefault("notes", {})["direction_swapped (src_ip/dst_ip oriented by interface role, row kept)"] = n_sw
     for st, (n, lng) in phys.items():
         e = entry(st)
         if n > e["rows_in"]:  # lines the reader skipped never reached Parquet
@@ -326,6 +339,10 @@ def _accounting(ctx: RunContext, events_dir: Path, groups: list[dict[str, Any]],
     unrec = _unrecognized(ctx, prof)
     if unrec:
         out.append(unrec)
+    # Stage 0 envelope unwrap (cloud_unpack): records it could not unwrap / documents it skipped
+    env = cloud_unpack.accounting_entry(cloud_unpack.find_accounting(prof.get("raw_dir") or ctx.raw_dir, ctx.out_dir))
+    if env:
+        out.append(env)
     return out
 
 
@@ -347,7 +364,8 @@ def run(ctx: RunContext) -> dict[str, Any]:
             written = _run_copies(ctx, units, events_dir)
         else:
             log.warning("ingest: no recognized source files under %s", ctx.raw_dir)
-        acc = _accounting(ctx, events_dir, units, prof, counts)
+        post = ingest_post.run(ctx.con, ctx.cfg, events_dir)
+        acc = _accounting(ctx, events_dir, units, prof, counts, post)
     ctx.out_dir.mkdir(parents=True, exist_ok=True)
     (ctx.out_dir / "ingest_accounting.json").write_text(json.dumps(acc, indent=2), encoding="utf-8")
     rows_in = sum(a["rows_in"] for a in acc)
@@ -358,6 +376,9 @@ def run(ctx: RunContext) -> dict[str, Any]:
                         a["rows_in"], a["drop_reasons"])
     stats = {"rows_in": rows_in, "rows_ok": rows_ok, "rows_written": written, "dropped": rows_in - rows_ok,
              "bytes_in": sum(f.get("size", 0) for f in prof.get("files", []) if f.get("format") != "unrecognized"),
-             "sources": {a["source_type"]: a["rows_ok"] for a in acc}}
+             "sources": {a["source_type"]: a["rows_ok"] for a in acc},
+             "ts_pileup_rows": sum(int(v.get("rows", 0)) for v in post["ts_pileup"].values()),
+             "ts_pileup": post["ts_pileup"], "direction_swapped": post["direction_swapped"],
+             "duplicate_lines": post["duplicates"]}
     log.info("ingest: %s", stats)
     return stats

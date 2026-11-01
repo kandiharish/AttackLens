@@ -18,7 +18,7 @@ import pytest
 from attacklens import config, detect, detect_sql, episodes, lookups
 from attacklens import detect_templates as T
 
-from .conftest import make_events_parquet, query, run_ingest
+from .conftest import insert_rows, make_events_parquet, query, run_ingest
 
 T0 = 1792807200000  # 2026-10-24T02:00:00Z (outside business hours; bucket-aligned: T0 % 300000 == 0)
 S, MIN, H, DAY = 1000, 60_000, 3_600_000, 86_400_000
@@ -462,7 +462,8 @@ def test_every_match_rule_has_a_positive_case() -> None:
     rules, _ = detect.rules_and_thresholds(config.load_config())
     from .test_detect2 import MATCH_CASES2
     from .test_detect_fw import FW_MATCH_RULES
-    covered = set().union(*(c[2] for c in MATCH_CASES + MATCH_CASES2)) | FW_MATCH_RULES
+    from .test_detect_win_ext import WIN_EXT_MATCH_RULES
+    covered = set().union(*(c[2] for c in MATCH_CASES + MATCH_CASES2)) | FW_MATCH_RULES | WIN_EXT_MATCH_RULES
     missing = {r["id"] for r in rules if r["kind"] == "match"} - covered
     assert not missing, f"match rules without a positive fixture: {sorted(missing)}"
 
@@ -474,6 +475,8 @@ def test_every_template_rule_has_tests() -> None:
               "sudo_escalation", "kerberoasting", "pass_the_hash"}  # last three: test_detect2.py
     from .test_detect_fw import FW_TEMPLATES
     tested |= FW_TEMPLATES                                     # firewall pack: test_detect_fw.py
+    from .test_detect_win_ext import WIN_EXT_TEMPLATES
+    tested |= WIN_EXT_TEMPLATES                                # Windows ext pack: test_detect_win_ext.py
     assert {r["template"] for r in rules if r["kind"] == "template"} <= tested
 
 
@@ -485,6 +488,7 @@ def run_stage2(ctx) -> list[dict]:
                       "ORDER BY rule_id, ts_ms, technique_id")
 
 
+@pytest.mark.sigma   # needs the vendored Sigma pack on (conftest turns it off otherwise)
 def test_raw_alerts_schema_and_evidence_bounds(tmp_path: Path) -> None:
     pad = "x" * 1000
     rows = [{**fail(T0 + i * S), "raw_line": f'{{"i":{i},"pad":"{pad}"}}'} for i in range(60)]
@@ -496,10 +500,18 @@ def test_raw_alerts_schema_and_evidence_bounds(tmp_path: Path) -> None:
         desc = query(ctx, f"DESCRIBE SELECT * FROM read_parquet('"
                           f"{(ctx.work_dir / 'raw_alerts.parquet').as_posix()}')")
         assert [(d["column_name"], d["column_type"]) for d in desc] == RAW_ALERTS_SCHEMA
-        assert {a["rule_id"] for a in alerts} == {"brute_force_then_success", "office_spawns_script"}
+        ids = {a["rule_id"] for a in alerts}
+        builtin = {r for r in ids if not r.startswith("sigma_")}
+        assert builtin == {"brute_force_then_success", "office_spawns_script"}
+        # Sigma pack (config/sigma/) also fires on Office -> encoded PowerShell; every extra id is a Sigma rule
+        assert ids - builtin, "fixture should trigger at least one Sigma rule"
+        assert all(r.startswith("sigma_") for r in ids - builtin), sorted(ids)
+        mc = int(config.load_config()["rules"]["thresholds"]["evidence_max_chars"])
         for a in alerts:
             assert 1 <= len(a["evidence_lines"]) <= 3, a["rule_id"]
-            assert all(len(x) <= 300 for x in a["evidence_lines"]), a["rule_id"]
+            # raw_alerts keep evidence_max_chars + 1 so the incident clip can tell that a line was cut
+            assert all(len(x) <= mc + 1 for x in a["evidence_lines"]), a["rule_id"]
+            assert all(len(x) == mc + 1 for x in a["evidence_lines"]), a["rule_id"]  # every raw line is longer
             assert 1 <= len(a["source_keys"]) <= 50
             assert a["technique_name"], a["rule_id"]
         bf = next(a for a in alerts if a["rule_id"] == "brute_force_then_success")
@@ -541,6 +553,7 @@ def _cef(labelled: bool) -> bytes:
     return ("\n".join(lines) + "\n").encode()
 
 
+@pytest.mark.sigma   # needs the vendored Sigma pack on (conftest turns it off otherwise)
 def test_cef_label_fields_never_used(tmp_path: Path) -> None:
     out = {}
     for labelled in (True, False):
@@ -554,9 +567,14 @@ def test_cef_label_fields_never_used(tmp_path: Path) -> None:
             ctx.con.close()
         out[labelled] = [(a["rule_id"], a["technique_id"], a["sub_technique_id"], a["tactic"], a["ts_ms"],
                           a["host"], a["src_user"], a["target_user"]) for a in alerts]
-    assert out[True] == out[False]
-    assert out[False] == [("encoded_powershell", "T1059", "T1059.001", "Execution", 1792810200000, "ws-hr-012",
-                           "pmehta", None)]
+    assert out[True] == out[False]  # Sigma hits included: labels must not change any alert, built-in or Sigma
+    builtin = [a for a in out[False] if not a[0].startswith("sigma_")]
+    assert builtin == [("encoded_powershell", "T1059", "T1059.001", "Execution", 1792810200000, "ws-hr-012",
+                        "pmehta", None)]
+    # extra Sigma hits must be on the same malicious event only, never on the benign logon line
+    for a in out[False]:
+        if a[0].startswith("sigma_"):
+            assert a[3:] == ("Execution", 1792810200000, "ws-hr-012", "pmehta", None), a
 
 
 # ================================================================ episodes (Stage 2.5)
@@ -573,8 +591,7 @@ def _alert(ts: int, rule: str = "office_spawns_script", host: str = "ws-hr-012",
 def _write_alerts(ctx, alerts: list[dict]) -> None:
     con = ctx.con
     con.execute("CREATE OR REPLACE TEMP TABLE _ra (" + ", ".join(f"{c} {t}" for c, t in RAW_ALERTS_SCHEMA) + ")")
-    con.executemany(f"INSERT INTO _ra VALUES ({', '.join('?' for _ in RAW_ALERTS_SCHEMA)})",
-                    [[a[c] for c, _ in RAW_ALERTS_SCHEMA] for a in alerts])
+    insert_rows(con, "_ra", RAW_ALERTS_SCHEMA, [[a[c] for c, _ in RAW_ALERTS_SCHEMA] for a in alerts])
     con.execute(f"COPY _ra TO '{(ctx.work_dir / 'raw_alerts.parquet').as_posix()}' (FORMAT PARQUET)")
 
 

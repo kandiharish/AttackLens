@@ -16,10 +16,16 @@ dependencies = [
   "pydantic>=2",
   "psutil",
   "jinja2",
+  "python-multipart>=0.0.9",   # streaming multipart parser for POST /api/uploads (Apache-2.0)
+  "pysigma>=2.0.1,<3",   # SigmaHQ rule parsing (LGPL-2.1, used unmodified)
 ]
 
 [project.optional-dependencies]
 llm = ["anthropic"]
+cloud = [
+  "boto3>=1.28",          # AWS CloudTrail connector (Apache-2.0)
+  "cryptography>=42",     # RS256 signing of the GCP service-account JWT (Apache-2.0 / BSD)
+]
 dev = ["pytest", "httpx"]
 
 [tool.setuptools.packages.find]

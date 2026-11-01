@@ -81,3 +81,32 @@ def test_publish_empty_work_writes_empty_index(ctx) -> None:
     publish.run(ctx)
     assert _read(ctx, "incidents_index.json") == []
     assert list((ctx.out_dir / "incidents").glob("*.json")) == []
+
+
+# ================================================================ user-facing evidence bound, end to end
+def test_published_evidence_at_most_300_chars_with_ellipsis(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """500-char raw lines -> raw_alerts keep max+1 -> every published Step.evidence line <= 300, cut ones end in
+    an ellipsis (299 chars + '…'). Stages run for real: lookups, detect, episodes, link, incidents, publish."""
+    from attacklens import config, detect, episodes, incidents, link, lookups
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    T0 = 1792807200000
+    pad = lambda i: (f'{{"i":{i},"pad":"' + "z" * 500)[:500]  # noqa: E731  exactly 500 chars
+    rows = [{"ts_ms": T0 + i * 1000, "action": "login_failed", "outcome": "failure", "event_id": 4625,
+             "logon_type": 3, "host": "srv-dc-01", "target_user": "svc_backup", "src_ip": "203.0.113.57",
+             "raw_line": pad(i)} for i in range(60)]
+    rows.append({"ts_ms": T0 + 70_000, "action": "login_success", "outcome": "success", "event_id": 4624,
+                 "logon_type": 3, "host": "srv-dc-01", "target_user": "svc_backup", "src_ip": "203.0.113.57",
+                 "raw_line": pad(99)})
+    ctx = make_events_parquet(tmp_path / "e2e", rows)
+    try:
+        for stage in (lookups, detect, episodes, link, incidents, publish):
+            stage.run(ctx)
+        files = sorted((ctx.out_dir / "incidents").glob("*.json"))
+        incs = [Incident.model_validate_json(f.read_text(encoding="utf-8")) for f in files]
+    finally:
+        ctx.con.close()
+    n = int(config.load_config()["linking"]["path"]["max_evidence_chars"])
+    assert n == 300 and incs, "expected the brute force + success incident"
+    lines = [x for inc in incs for s in inc.backbone + [y for b in inc.branches for y in b] for x in s.evidence]
+    assert lines and all(len(x) <= n for x in lines)
+    assert all(len(x) == n and x.endswith("…") and x[:-1] == x[:n - 1] for x in lines)  # every source line was 500

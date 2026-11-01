@@ -187,11 +187,30 @@ def test_ips_other_action_silent(run) -> None:
     assert run([{**ips("Log4j.RCE"), "action": "av_alert"}], "ips_signatures") == []
 
 
+RULE_SEVERITY = "rule"  # sentinel: the ips_signatures rule's configured severity (read from rules.yaml at test time)
+
+
+def _ips_rule() -> dict:
+    rules, _ = detect.rules_and_thresholds(config.load_config())
+    return next(r for r in rules if r["id"] == "ips_signatures")
+
+
 @pytest.mark.parametrize("sev,outcome,expected", [
     ("critical", None, 90), ("high", "allowed", 80), ("medium", None, 60), ("low", None, 40),
-    ("weird", None, 40), ("critical", "allowed", 90), ("high", "pass_session", 80)])
-def test_ips_row_severity(run, sev: str, outcome: str | None, expected: int) -> None:
+    ("critical", "allowed", 90), ("high", "pass_session", 80),
+    ("weird", None, RULE_SEVERITY), (None, None, RULE_SEVERITY), ("", "allowed", RULE_SEVERITY)])
+def test_ips_row_severity(run, sev: str | None, outcome: str | None, expected) -> None:
     rows = run([ips("Log4j.RCE", sev, outcome)], "ips_signatures")
+    want = int(_ips_rule()["severity"]) if expected == RULE_SEVERITY else expected
+    assert [r["severity"] for r in rows] == [want]
+
+
+@pytest.mark.parametrize("vendor,expected", [("weird", 55), (None, 55), ("high", 80), ("low", 40)])
+def test_ips_per_signature_severity_override(run, vendor: str | None, expected: int) -> None:
+    # a signature entry's own `severity` replaces the rule's when the vendor severity is unknown/absent;
+    # a known vendor severity still wins
+    sigs = [dict(sg, severity=55) if "Log4j" in sg["pattern"] else sg for sg in _ips_rule()["signatures"]]
+    rows = run([ips("Log4j.RCE", vendor, None)], "ips_signatures", rule_over={"signatures": sigs})
     assert [r["severity"] for r in rows] == [expected]
 
 
@@ -469,9 +488,89 @@ def test_fallback_off_restores_literal_behaviour(run) -> None:
     assert [r["subject_host"] for r in rows] == [FW]
 
 
+# ================================================================ vpn_login_context (T1133)
+# Thresholds pinned here (config may drift): 24 h look-back, >= 5 VPN failures, VPN = logon_type 10, no first-seen.
+VPN_CTX = {"vpn_context_window_ms": 24 * H, "vpn_min_failures": 5, "vpn_logon_type": 10, "vpn_first_seen_pair": False}
+T1133 = ("T1133", None, "Initial Access")
+LOGIN_AT = T0 + 25 * H  # every context below is placed relative to this VPN login
+
+
+def vpn_ok(ts: int = LOGIN_AT, ip: str = EXT, user: str = "vpnuser", logon_type: int | None = 10) -> dict:
+    return ok(ts, user=user, ip=ip, logon_type=logon_type)
+
+
+def ips_hit(ts: int, src: str = EXT, outcome: str | None = None) -> dict:
+    return fw(ts, "ips_alert", signature="Sim.SSLVPN.Portal.Path.Traversal", vendor_severity="critical",
+              outcome=outcome, src_ip=src, dst_ip="10.0.1.1")
+
+
+def vpn_fails(n: int, end: int = LOGIN_AT - MIN, ip: str = EXT, logon_type: int | None = 10) -> list[dict]:
+    return [fail(end - i * 10 * S, user="vpnuser", ip=ip, logon_type=logon_type) for i in range(n)]
+
+
+def test_vpn_context_ips_exploit_then_login_fires(run) -> None:
+    rows = run([ips_hit(LOGIN_AT - H), vpn_ok()], "vpn_login_context", **VPN_CTX)
+    assert lab(rows) == [T1133]
+    r = rows[0]
+    assert (r["ts_ms"], r["last_ts_ms"], r["host"], r["target_user"], r["src_user"], r["src_ip"], r["dst_ip"]) == \
+        (LOGIN_AT, LOGIN_AT, FW, "vpnuser", None, EXT, None)
+    assert (r["severity"], r["raw_alert_count"], len(r["source_keys"]), len(r["evidence_lines"])) == (75, 1, 1, 1)
+
+
+def test_vpn_context_5_failures_then_login_fires(run) -> None:
+    rows = run(vpn_fails(5) + [vpn_ok()], "vpn_login_context", **VPN_CTX)
+    assert lab(rows) == [T1133] and rows[0]["ts_ms"] == LOGIN_AT and rows[0]["src_ip"] == EXT
+
+
+def test_vpn_context_window_boundary_inclusive(run) -> None:
+    assert lab(run([ips_hit(LOGIN_AT - 24 * H), vpn_ok()], "vpn_login_context", **VPN_CTX)) == [T1133]
+    assert run([ips_hit(LOGIN_AT - 24 * H - 1), vpn_ok()], "vpn_login_context", **VPN_CTX) == []
+
+
+def test_vpn_context_one_alert_per_login(run) -> None:
+    rows = run([ips_hit(LOGIN_AT - H), vpn_ok(), vpn_ok(LOGIN_AT + MIN)], "vpn_login_context", **VPN_CTX)
+    assert [r["ts_ms"] for r in rows] == [LOGIN_AT, LOGIN_AT + MIN]
+
+
+@pytest.mark.parametrize("case", [
+    "no_context",            # plain VPN login
+    "4_failures",            # one below vpn_min_failures
+    "failures_outside_win",  # 5 failures, all > 24 h before
+    "failures_not_vpn",      # 5 failures with no VPN logon type (admin GUI)
+    "failures_other_ip",     # 5 VPN failures from another IP
+    "ips_blocked",           # IPS hit was blocked -> not context
+    "ips_other_ip",          # IPS hit from another IP
+    "ips_after_login",       # IPS hit after the login
+    "internal_src",          # context + login from an internal IP
+    "login_not_vpn",         # context + login that is not a VPN logon
+])
+def test_vpn_context_near_misses(run, case: str) -> None:
+    rows = {
+        "no_context": [vpn_ok()],
+        "4_failures": vpn_fails(4) + [vpn_ok()],
+        "failures_outside_win": vpn_fails(5, end=LOGIN_AT - 24 * H - 1) + [vpn_ok()],
+        "failures_not_vpn": vpn_fails(5, logon_type=None) + [vpn_ok()],
+        "failures_other_ip": vpn_fails(5, ip=EXT2) + [vpn_ok()],
+        "ips_blocked": [ips_hit(LOGIN_AT - H, outcome="blocked"), vpn_ok()],
+        "ips_other_ip": [ips_hit(LOGIN_AT - H, src=EXT2), vpn_ok()],
+        "ips_after_login": [ips_hit(LOGIN_AT + 1), vpn_ok()],
+        "internal_src": [ips_hit(LOGIN_AT - H, src="10.0.9.9"), vpn_ok(ip="10.0.9.9")],
+        "login_not_vpn": [ips_hit(LOGIN_AT - H), vpn_ok(logon_type=None)],
+    }[case]
+    assert run(rows, "vpn_login_context", **VPN_CTX) == []
+
+
+def test_vpn_context_first_seen_pair_switch(run) -> None:
+    rows = [vpn_ok(LOGIN_AT), vpn_ok(LOGIN_AT + H), vpn_ok(LOGIN_AT + 2 * H, ip=EXT2)]
+    assert run(rows, "vpn_login_context", **VPN_CTX) == []                         # off: no context, no alert
+    on = run(rows, "vpn_login_context", **{**VPN_CTX, "vpn_first_seen_pair": True})
+    assert [(r["ts_ms"], r["src_ip"]) for r in on] == [(LOGIN_AT, EXT), (LOGIN_AT + 2 * H, EXT2)]  # repeat pair silent
+
+
 # ================================================================ coverage table for the guards in test_detect.py
 FW_MATCH_RULES = {"av_malware_download", "tor_or_proxy_app", "web_malicious_category"}
-FW_TEMPLATES = {"signature_map", "port_scan", "internal_lateral", "config_change_after_login", "blocked_daily"}
+FW_TEMPLATES = {"signature_map", "port_scan", "internal_lateral", "config_change_after_login", "blocked_daily",
+                "vpn_login_context"}
 
 
 def test_fw_rules_present_in_config() -> None:

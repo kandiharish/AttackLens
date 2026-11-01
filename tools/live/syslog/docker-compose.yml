@@ -1,0 +1,16 @@
+# rsyslog relay for the AttackLens syslog listener tests: the test writes lines into rsyslog (imtcp, loopback port),
+# rsyslog forwards them to the AttackLens listener on the host (host.docker.internal) over UDP, TCP with newline
+# framing and TCP with RFC 6587 octet counting, selected by program name. rsyslog.conf is generated per run under
+# data/live/syslog/ by tools/live/syslog_seed.py (it carries the listener port).
+services:
+  rsyslog:
+    image: ${RSYSLOG_IMAGE:-rsyslog/syslog_appliance_alpine:latest}
+    container_name: al-live-rsyslog
+    entrypoint: ["rsyslogd", "-n", "-f", "/config/rsyslog.conf", "-i", "/tmp/rsyslogd.pid"]
+    volumes:
+      - ${AL_RSYSLOG_CONF:-../../../data/live/syslog/rsyslog.conf}:/config/rsyslog.conf:ro
+    ports:
+      - "127.0.0.1:${AL_RSYSLOG_IN_PORT:-10514}:10514"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    mem_limit: 256m

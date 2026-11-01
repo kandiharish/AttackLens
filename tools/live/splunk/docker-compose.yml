@@ -1,0 +1,22 @@
+# Splunk Enterprise (trial licence) for the AttackLens live connector tests. Started / stopped by
+# backend/tests/live/test_live_splunk.py through tools/live/livectl.py; never run it by hand with a real password.
+# The user accepted the Splunk General Terms for local testing (SPLUNK_GENERAL_TERMS below).
+# Ports: loopback only. SPLUNK_PASSWORD: throwaway, generated per run, passed as an env var (never committed).
+# attacklens_tls: app (.tgz, generated under data/live/splunk/) with a throwaway CA-signed cert (SAN 127.0.0.1) for
+# splunkd 8089 and HEC 8088, installed by the image's own SPLUNK_APPS_URL mechanism (no bind mount into etc/apps).
+services:
+  splunk:
+    image: ${SPLUNK_IMAGE:-splunk/splunk:latest}
+    container_name: al-live-splunk
+    environment:
+      SPLUNK_GENERAL_TERMS: --accept-sgt-current-at-splunk-com
+      SPLUNK_START_ARGS: --accept-license
+      SPLUNK_PASSWORD: ${SPLUNK_PASSWORD:-}
+      SPLUNK_APPS_URL: /tmp/attacklens_tls.tgz
+    ports:
+      - "127.0.0.1:${AL_SPLUNK_MGMT_PORT:-18089}:8089"
+      - "127.0.0.1:${AL_SPLUNK_HEC_PORT:-18088}:8088"
+    volumes:
+      - ${AL_SPLUNK_TLS_APP:-../../../data/live/splunk/attacklens_tls.tgz}:/tmp/attacklens_tls.tgz:ro
+    mem_limit: 3g
+    memswap_limit: 3g

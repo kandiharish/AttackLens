@@ -2,7 +2,9 @@
 firewall detection pack is proven on INGESTED key=value data, not only on hand-written canonical Parquet.
 
 ~3 MB, one worker, seed 42 (~10 s). Step-level asserts check raw_alerts (Stage 2); scorecard asserts depend on
-Stage 3/4 linking and are xfail(strict=False) until BB-graph's fix lands — never loosened.
+Stage 3/4 linking: the PRD targets are xfail(strict=True) (they turn red the moment they pass, so the marker is
+removed), and RATCHET tests pin the level reached so far so a linking regression goes red. Raise the ratchet
+whenever the level improves (next: when F2 is rebuilt) — never lower it.
 """
 
 from __future__ import annotations
@@ -17,13 +19,14 @@ import pytest
 
 from eval.match import norm_host, technique_ok
 
+# L3 = the shipped configuration end to end, SigmaHQ pack included (conftest: module fixtures follow this)
+pytestmark = pytest.mark.sigma
 REPO = Path(__file__).resolve().parents[2]
-LINKING = "depends on Stage 3/4 linking of the F1-F3 steps into one incident each (BB-graph fix in progress)"
 # GT step -> rule expected to produce it (None = known detection gap)
 EXPECTED_RULE = {
     ("F1", 1): "fw_admin_bruteforce", ("F1", 2): "fw_admin_bruteforce", ("F1", 3): "fw_config_change_after_login",
     ("F1", 4): "inbound_remote_service", ("F1", 5): "internal_lateral", ("F1", 6): "exfil_volume",
-    ("F2", 1): "ips_signatures", ("F2", 2): None, ("F2", 3): "port_scan", ("F2", 4): "internal_lateral",
+    ("F2", 1): "ips_signatures", ("F2", 2): "vpn_login_context", ("F2", 3): "port_scan", ("F2", 4): "internal_lateral",
     ("F3", 1): "av_malware_download", ("F3", 2): "beaconing", ("F3", 3): "tor_or_proxy_app",
 }
 
@@ -99,13 +102,6 @@ def test_planted_step_detected_on_expected_host(run: dict, key: tuple[str, int])
     assert _hits(run, s, EXPECTED_RULE[key]), (key, s["technique_id"], s["host"])
 
 
-@pytest.mark.xfail(strict=True, reason="GAP (BB-detect): no rule covers F2 step 2, a single SSL-VPN login success "
-                   "(T1133) from the external IP that just triggered a let-through IPS hit")
-def test_f2_vpn_login_after_ips_hit_detected(run: dict) -> None:
-    s = next(st for sid, st in _steps(run) if (sid, st["step"]) == ("F2", 2))
-    assert any(a for a in run["alerts"] if abs(a["ts_ms"] - s["ts_ms"]) <= 600_000
-               and technique_ok(s["technique_id"], a["technique_id"], a["sub_technique_id"]))
-
 
 def test_ground_truth_covers_every_expected_step(run: dict) -> None:
     assert sorted((sid, s["step"]) for sid, s in _steps(run)) == sorted(EXPECTED_RULE)
@@ -124,15 +120,36 @@ def test_scorecard_keys(run: dict) -> None:
     assert run["card"]["counts"]["attacks"] == 3
 
 
-@pytest.mark.xfail(strict=False, reason=LINKING)
 def test_detection_at_least_90(run: dict) -> None:
     assert run["card"]["detection_pct"] >= 90.0, run["card"]["per_attack"]
 
 
-@pytest.mark.xfail(strict=False, reason=LINKING)
 def test_all_attacks_rebuilt(run: dict) -> None:
     assert run["card"]["rebuilt_pct"] == 100.0, [(a["id"], a["lcs_ratio"]) for a in run["card"]["per_attack"]]
 
 
 def test_strict_false_alarms_below_10(run: dict) -> None:
     assert run["card"]["false_alarms_strict_pct"] < 10.0
+
+
+# ---------------------------------------------------------------- ratchet: the level reached so far (raise, never lower)
+RATCHET = {"detection_pct": 100.0, "labels_pct": 100.0, "false_alarms_strict_pct": 0.0, "rebuilt": {"F1", "F2", "F3"}}
+
+
+def test_ratchet_detection(run: dict) -> None:
+    assert run["card"]["detection_pct"] >= RATCHET["detection_pct"], run["card"]["per_attack"]
+
+
+def test_ratchet_labels(run: dict) -> None:
+    assert run["card"]["labels_pct"] == RATCHET["labels_pct"]
+
+
+def test_ratchet_false_alarms_strict(run: dict) -> None:
+    assert run["card"]["false_alarms_strict_pct"] == RATCHET["false_alarms_strict_pct"], run["card"][
+        "unmatched_incidents"]
+
+
+def test_ratchet_rebuilt_attacks(run: dict) -> None:
+    rebuilt = {a["id"] for a in run["card"]["per_attack"] if a["rebuilt"]}
+    assert RATCHET["rebuilt"] <= rebuilt, [(a["id"], a["lcs_ratio"], a["steps_in_matched_incident"])
+                                            for a in run["card"]["per_attack"]]

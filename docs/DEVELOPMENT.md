@@ -197,6 +197,13 @@ Tail files in `data/raw/live/` by byte offset every 2 s; append rows; re-run Sta
 (watermark − longest rule window); dedupe alerts on (rule_id, key, window_start); recompute only changed components.
 Budget: `memory_limit='1.5GB'`. Target: UI path updates within 5 s of a line being written.
 
+Alert input (§8b): when `config/integrations.yaml` `alert_input.enabled: true`, detect also unions the SIEM alert spool
+(`data/spool/siem_alerts/`) into `raw_alerts` every cycle. A change in the spool alone (no new event bytes) triggers a
+stages-only cycle. Alerts older than the window start (`alert_input.lookback_ms`) or dated later than now +
+`max_future_skew_s` are skipped and counted. `live_status.json` records `input_mode` (`live` | `live+siem_alerts`)
+and `inputs`. SIEM events pulled in events mode sit under `<watch_dir>/siem/<source>/<bucket>/`, so live mode tails,
+windows, rolls back and accounts them like any other file.
+
 ## 5. Detection rules
 
 ### 5.1 Rule format (`config/rules.yaml`)
@@ -296,8 +303,12 @@ N = hosts seen; BaseFreq(r) from `rule_host_baseline`.
 ### 7.2 API (FastAPI, `api.py`) — all reads from memory, target < 10 ms
 `GET /api/health` · `GET /api/incidents` (index, risk desc) · `GET /api/incidents/{id}` · `GET /api/incidents/{id}/path`
 (backbone + branches + edges only) · `GET /api/metrics` (run_metrics + eval_scorecard + ingest_accounting) ·
-`POST /api/runs {raw_dir, ground_truth?}` (background job) · `GET /api/runs/{id}` (stage, % , elapsed, RSS) ·
-`GET /api/live/status`. Use one DuckDB cursor per request if any query is needed; never share a connection across threads.
+`POST /api/runs {raw_dir, out_dir?, ground_truth?}` (background job; 202, 409 if one is running) · `GET /api/runs` ·
+`GET /api/runs/{id}` (stage, % , elapsed, RSS, error) · `POST /api/uploads` · `POST /api/uploads/local {path}` ·
+`GET /api/uploads` (contract: §15.6a) ·
+`GET /api/live/status` · `GET /api/incidents/{id}/pivots` (per step SPL / KQL / Lucene + ES DSL, §8b) ·
+`GET /api/integrations/status` (connectors, sinks, pivot SIEMs; env var set true/false, never the value) ·
+`POST /api/reload`. Use one DuckDB cursor per request if any query is needed; never share a connection across threads.
 
 ## 8. UI (frontend-builder)
 One incident screen, top to bottom: header (risk, "312 alerts → 1 incident", time span) · entry point · kill-chain
@@ -306,6 +317,135 @@ truncated 300 chars) · why-linked on edge hover · Cytoscape graph (dagre, left
 · reach-next list with evidence · narrative with source badge. Global header: scorecard banner (from
 `/api/metrics`), peak RSS, total time. Incident list sorted by risk. Mock mode `VITE_USE_MOCK=true` reads
 `src/mock/incident.json`. Never render raw strings as HTML (XSS from log content).
+
+## 8b. Integration architecture (on top of a SIEM)
+
+Status: **implemented, verified against the local mock SIEM only.** No real Elastic, Splunk, Sentinel or syslog source
+has been tested. Uses stdlib `urllib` (`httpc.py`), so no new third-party library.
+
+AttackLens is a correlation and attack-path layer. It does not replace the SOC's SIEM.
+- The SIEM keeps collecting, storing and running its own detections.
+- AttackLens reads from it, builds one ATT&CK-labelled path, and writes the incident back.
+
+```
+ SIEM / SOAR (Elastic, Splunk, Sentinel, syslog/CEF, Gordon AI SOC (to confirm))
+    |  pull: raw events or the SIEM's own alerts
+    v
+ connectors/*  (python -m attacklens.connect)   elastic, splunk, sentinel, syslog; checkpoint per source+mode
+    |  events: JSONL / CEF / syslog files            alerts: raw_alerts rows (siem_alerts.map_alert)
+    v                                                v
+ <live watch_dir>/siem/<source>/<bucket>/       data/spool/siem_alerts/<source>/*.jsonl
+    |  live mode tails, windows, accounts           |  read only in alert-input mode
+    v                                                v
+ pipeline: detect (events) / union_into (alerts) -> episodes -> link -> incidents -> publish
+    |
+    v
+ sinks/*   splunk_hec · elastic_bulk · webhook · syslog_cef    (called from publish.py)
+    |  push incident
+    v
+ SIEM index / SOAR webhook / syslog CEF      analyst opens GET /api/incidents/{id}/pivots to see raw events
+```
+
+File ingest (Stages 0–1 on `data/raw/<set>/`) is unchanged. It is how the 15–50 GB tiers are scored.
+
+### Modules and files
+| Item | Name |
+|---|---|
+| Config | `config/integrations.yaml` (all connectors, sinks and `alert_input` disabled by default) |
+| Pull CLI | `python -m attacklens.connect --source elastic\|splunk\|sentinel\|syslog [--mode events\|alerts] [--since 24h] [--once] [--reset] [--config DIR]` |
+| Connectors | `attacklens/connectors/{base,elastic,splunk,sentinel,syslog}.py` |
+| Alert mapping | `attacklens/siem_alerts.py` (`map_alert`, `union_into`) |
+| Sinks | `attacklens/sinks/{splunk_hec,elastic_bulk,webhook,syslog_cef}.py` |
+| Pivot queries | `attacklens/pivots.py`, `GET /api/incidents/{id}/pivots` |
+| Status | `attacklens/integrations_status.py`, `GET /api/integrations/status` |
+| Mock SIEM | `tools/mock_siem.py` (+ `mock_siem_query.py`, `mock_siem_store.py`, `mock_siem_alerts.json`) |
+
+### Spool and state
+| Path | Content |
+|---|---|
+| `<live.yaml watch_dir>/siem/<source>/<bucket>/` | events mode output (`spool.events_dir: null` -> this default) |
+| `data/spool/siem_alerts/<source>/*.jsonl` | alerts mode output (`spool.alerts_dir`) |
+| `data/spool/state/<source>_<mode>.json` | checkpoint: last timestamp + ids seen at that timestamp |
+| `data/spool/state/sink_<name>.json` | per-incident content hash for `only_changed` |
+| `data/spool/connector_status.json` | per cycle: `pulled` = `written` + `skipped` + `failed`, each with reasons; also sink results |
+
+Label keys (`threat`, `rule`, `labels`, `labels_extra`, `signal`, `kibana`, `event.kind|severity|module|dataset|risk_score`)
+are stripped from the events spool (`spool.strip_keys`, `strip_nested_keys`).
+
+### Input modes
+| Mode | Reads | Detection | Labels come from |
+|---|---|---|---|
+| `events` | raw log events | AttackLens rules (`config/rules.yaml`) | AttackLens rules |
+| `alerts` | the SIEM's own alerts | none; alerts become `raw_alerts` rows, then episodes | the vendor's MITRE field, mapped to v20 |
+
+- Example (events): Elastic search on `logs-*` -> ECS JSON lines in the spool -> Stage 0–1 ingest -> our rules fire.
+- Example (alerts): Sentinel `SecurityAlert` with `Techniques=T1110` -> a `raw_alerts` row, `rule_id` `siem:sentinel:<AlertName>`.
+- Alert technique: vendor MITRE field (`connectors.<s>.alerts.fields.technique`), else `alert_input.rule_technique_map`
+  (lower-case substring of the rule name, first hit wins), else dropped as `no_technique` (counted).
+- Severity: vendor word via `alert_input.severity_map`, numbers 0..100 as-is (CEF 0..10 x10), else `default_severity`.
+- Batch: `python -m attacklens.run --raw <dir> --out <dir> --siem-alerts`. Live: `alert_input.enabled: true`.
+
+### Connectors
+| Source | Transport | Paging and checkpoint |
+|---|---|---|
+| `elastic` | `_search` on Elastic or OpenSearch (`flavor`) | `search_after`; PIT with `_shard_doc` tie-break when `use_pit`, else sort on `tiebreak_field`; checkpoint = (last ts, ids at that ts) |
+| `splunk` | `services/search/jobs/export`, `output_mode=json`, streamed | earliest/latest from the checkpoint |
+| `sentinel` | `POST /v1/workspaces/{id}/query` (KQL) | `TimeGenerated >= since`, `take page_size`; rows at `since` with a seen id are skipped |
+| `syslog` | UDP/TCP listener (default `127.0.0.1:5514`) | one spool file per flush (atomic rename); `--once` listens `once_seconds`; lines over `max_buffer_lines` are dropped and counted as `buffer_full` |
+
+### Sinks
+| Sink | Target | Notes |
+|---|---|---|
+| `splunk_hec` | `POST <base_url>/services/collector/event`, `Authorization: Splunk <token>` | sourcetype `attacklens:incident` |
+| `elastic_bulk` | `POST <base_url>/_bulk`, index `attacklens-incidents` | doc id = incident id, so a re-send overwrites |
+| `webhook` | generic JSON POST | `payload`: `incident` (full JSON) \| `summary` (index row) \| `slack` |
+| `syslog_cef` | UDP or TCP, vendor `Mitigata`, product `AttackLens` | one CEF line per incident and per step |
+
+All disabled by default. `only_changed: true` re-sends an incident only when its content hash changed. A sink failure is
+logged and recorded (`run_metrics.json` `stage_stats.publish.sinks`, `connector_status.json` `sinks`); it never fails the run.
+
+### Eval-honesty rule
+- Scored runs (anything that writes `eval_scorecard.json`) are **raw-events-only**. Same as today: detection from raw fields.
+- Vendor MITRE labels are used **only in alert mode**. They are never mixed into a scored run.
+- Enforced twice: `run.py` refuses `--siem-alerts` with `--ground-truth`, and `siem_alerts.union_into` raises
+  `EvalGuardError` if a ground truth is set.
+- Every run records its mode: `run_metrics.json` `input_mode` = `file` \| `file+siem_alerts`, plus `inputs`
+  (`raw_events`, `siem_alerts`, `siem_alert_rows`, `siem_alert_dir`, `ground_truth`). Live: `live_status.json`
+  `input_mode` = `live` \| `live+siem_alerts`.
+- Alert-mode runs show no accuracy banner. Never quote file-ingest accuracy for them.
+
+### Secrets rule
+- `config/integrations.yaml` holds env var **names** only, e.g. `token_env: SPLUNK_HEC_TOKEN`.
+- Values come from the environment. No token, password or key in the repo, logs, `run_metrics.json` or API output.
+- `GET /api/integrations/status` reports per connector and sink: enabled, `base_url` (user info and query string
+  removed), `auth_env_set` (true/false per env var name), last pull / publish time, last error, counts. Never a value.
+- If a `*_env` key is named but the variable is unset, the connector refuses to call the SIEM (counted error, names
+  logged). It does not crash other components. Set those keys to `null` for a SIEM without auth (the mock).
+
+### Pivot-back queries
+- Per step, one query per enabled SIEM (`pivots.siems.splunk|sentinel|elastic`): SPL, KQL, Lucene plus an ES query DSL
+  body. Scope: the step's host, user and IPs within `ts +- pivots.window_ms` (900000 in config).
+- Entity values come from logs, so they are escaped for each language (`pivots.escape`) and never pasted raw.
+- Generated text only, no network call, so on by default (`enabled: null` follows the connector flag). A URL is added only
+  when that SIEM's `base_url` is set.
+
+### Offline mock
+- `python tools/mock_siem.py --data data/raw/<set> --port 9200 [--alerts F] [--elastic-api-key K] [--splunk-token T]
+  [--hec-token T] [--sentinel-token T] [--webhook-token T] [--workspace-id W] [--syslog-udp] [-v]`.
+- One port serves Elastic (`_search`, `_pit`, `_bulk`), Splunk (`export`, HEC), Sentinel (workspace query) and
+  `/webhook`. Control: `GET /_mock/received`, `GET /_mock/stats`, `POST /_mock/reset`. Loopback by default.
+- Served events have the generator labels stripped. Alerts come from the hand-written `tools/mock_siem_alerts.json`.
+- The demo runs fully offline against it. Tests use the same mock (`backend/tests/test_mock_siem.py`,
+  `test_integrations.py`). Connector accuracy is not claimed against real vendors until tested on one.
+
+### Known limits
+- No overlap window: late-indexed data (timestamp older than the checkpoint) is not pulled.
+- Sentinel can get stuck on a page where all rows share one timestamp.
+- A Splunk first pull is all-or-nothing.
+- Elastic PIT is untested against a real Elastic cluster.
+- Many small spool files.
+- Gordon AI SOC and Sentinel push (Logic App via `webhook`) are to confirm; no real API was used.
+- Pull speed and alert-mode accuracy: not measured yet.
 
 ## 9. Multi-agent orchestration
 
@@ -428,9 +568,14 @@ README with run steps, measured tables and disclosures; `docker compose up` work
 
 ## 14. Disclosures (README)
 DuckDB (MIT), NetworkX (BSD-3), FastAPI (MIT), Uvicorn (BSD-3), Pydantic (MIT), PyYAML (MIT), psutil (BSD-3),
-Jinja2 (BSD-3), Anthropic SDK (MIT, optional), pySigma (LGPL-2.1, optional, unmodified), Sigma rules (DRL 1.1,
-attribution), MITRE ATT&CK v20 (MITRE ToU), mitreattack-python (Apache-2.0), React, Vite, Tailwind, Cytoscape.js,
-cytoscape-dagre (MIT), pytest (MIT); the provided `edr_log_generator.py` (organiser/team-provided test data tool).
+Jinja2 (BSD-3), python-multipart (Apache-2.0, upload parsing), Anthropic SDK (MIT, optional), pySigma (LGPL-2.1-only,
+required dependency, unmodified) and its dependencies (diskcache, diskcache-stubs, types-PyYAML, requests: Apache-2.0;
+google-re2: BSD; jq: BSD-2; packaging: Apache-2.0 OR BSD-2; pyparsing, urllib3, charset-normalizer: MIT; idna: BSD-3;
+certifi: MPL-2.0), SigmaHQ rules in `config/sigma/` (DRL 1.1, attribution; commit in `config/sigma/SOURCE.md`),
+MITRE ATT&CK v20 (MITRE ToU; `config/attack_v20.json`), React, Vite, Tailwind, Cytoscape.js, cytoscape-dagre (MIT),
+Geist and Geist Mono via @fontsource-variable (OFL-1.1), pytest (MIT); the provided `edr_log_generator.py`
+(organiser/team-provided test data tool). The full table with versions lives in `README.md` §12; keep both in step.
+(The earlier mention of mitreattack-python is dropped here: it is not in `backend/pyproject.toml`.)
 Ideas only (no code) from Zircolite, Chainsaw, Hayabusa, Elastic detection-rules, BloodHound, and the RapSheet,
 HOLMES, NoDoze, Hopper, SAGE papers.
 
@@ -470,7 +615,8 @@ in order, wraps each in telemetry, writes `out/run_metrics.json`, then if ground
 ### 15.4 Intermediate Parquet schemas (column names are binding)
 - `raw_alerts`: rule_id, technique_id, sub_technique_id, technique_name, tactic, tactic_idx INT, severity INT,
   ts_ms, last_ts_ms, source_seq UBIGINT (min of the alert's rows), host, subject_host, src_host, dst_host,
-  src_user, target_user, src_ip, dst_ip, raw_alert_count BIGINT, evidence_lines VARCHAR[] (≤ 3, ≤ 300 chars),
+  src_user, target_user, src_ip, dst_ip, raw_alert_count BIGINT, evidence_lines VARCHAR[] (≤ 3, ≤ evidence_max_chars + 1 = 301 chars: the extra char lets the incident clip
+  show the cut, see `detect_sql.evidence_chars`; incident step evidence is ≤ 300),
   source_keys UBIGINT[] (≤ 50).
 - `episodes`: episode_id VARCHAR (`'e' || substr(md5(key), 1, 10)`, key = rule_id|subject_host|src_user|target_user|
   dst_host|bucket|technique_id), every raw_alerts column above (ts_ms = first, last_ts_ms = last,
@@ -501,6 +647,109 @@ to the integers in §3.1. `bytes_out` = `network.bytes` when direction is outbou
   `per_attack`, `per_rule_alerts`, `unmatched_incidents`, `targets` (Good/Great pass flags).
 - `run_metrics.json` top level: `total_wall_s`, `peak_rss_mb`, `rows_per_s`, `stages` [{name, wall_s, peak_rss_mb}],
   `episodes`, `episodes_spilled`, `incidents`, `effective_config`.
+
+Added keys. Definitions are from `backend/eval/harness.py` (`card["rules"]` and the code above it). A metric whose
+denominator is 0 is `null` and passes no target.
+
+`eval_scorecard.json` top level:
+| Key | Definition | Example |
+|---|---|---|
+| `labels_technique_only_pct` | matched steps whose technique is right (parent or exact sub), tactic not checked / matched steps | right technique, wrong tactic still counts here, not in `labels_pct` |
+| `step_precision_pct` | steps matched one-to-one (same tolerance as step match) to **their own** incident's attack / all predicted steps in incidents that matched an attack | if 10 of 12 predicted steps in matched incidents belong to their own attack: 83.33 (arithmetic example, not a measurement) |
+| `step_precision_all_pct` | all matched steps / all predicted steps, over **every** incident (including unmatched ones) | noise-only incidents lower this, not `step_precision_pct` |
+| `predicted_steps` | number of predicted steps (episodes shown as steps) over all incidents | copy of `counts.predicted_steps` |
+| `gt_steps` | number of planted ground-truth steps | copy of `counts.gt_steps` |
+
+`eval_scorecard.json` → `counts`:
+| Key | Definition |
+|---|---|
+| `predicted_steps` | all predicted steps (denominator of `step_precision_all_pct`) |
+| `predicted_steps_in_matched_incidents` | predicted steps whose incident was matched to an attack (denominator of `step_precision_pct`) |
+| `steps_matched_to_own_attack` | matched steps where the step's incident is the incident matched to that step's own attack (numerator of `step_precision_pct`) |
+| `steps_matched` | all matched steps (numerator of `step_precision_all_pct` and of `detection_pct`) |
+
+Scorecards written before these keys existed do not have them. Checked: `data/out/g1x/eval_scorecard.json` has
+`step_precision*`; `data/out/g1/eval_scorecard.json`, `g50m_sigma` and `g50m_nosigma` do not.
+Say "not measured yet" rather than computing them by hand.
+
+`run_metrics.json` → `stage_stats.detect` (flat Sigma keys, written by `sigma_detect.run`; absent when
+`sigma.enabled: false`):
+| Key | Definition |
+|---|---|
+| `sigma_rules_total` | Sigma rule files parsed (`coverage.parsed`) |
+| `sigma_rules_compiled` | rules turned into SQL that DuckDB accepted (`coverage.compiled`) |
+| `sigma_rules_running` | compiled rules left after the `min_level` and `status` filters (live mode: also `live_min_level`) |
+| `sigma_rules_applicable` | running rules whose log-source gate matched at least one candidate row in the data (`group_tuples[*].tuples > 0`) |
+| `sigma_rules_fired` | rules with at least one alert after cap and dedupe |
+| `sigma_rules_skipped_by_reason` | dict reason → rule count. Reasons seen: `unmapped_logsource`, `unmapped_field`, `no_attack_technique_tag`, `keyword_search_unmapped`, `unsatisfiable_without_unmapped`, `value_type`, plus `below_min_level`, `status_filtered`, `disabled` |
+| `sigma_alerts` | Sigma alerts left in `raw_alerts` after cap and dedupe |
+| `sigma_alerts_capped_by_rule` | dict rule id → alerts dropped over `sigma.max_alerts_per_rule` |
+| `sigma_alerts_deduped` | Sigma alerts dropped because a native (`rules.yaml`) alert covers the same event and host with the same technique or tactic |
+| `sigma_wall_s` | wall time of the Sigma step |
+| `sigma_defense_evasion_mapped` | dict of old ATT&CK Defense Evasion tags mapped to Stealth / Defense Impairment |
+
+Other keys in the same block: `rows_matched`, `load_s`, `scan_s`, `group_s`, `group_tuples`, `batches`, `top_rules`,
+`coverage`. `data/out/<set>/work/sigma_coverage.json` holds the same plus `alerts_per_rule` and `titles`.
+Older runs (for example `data/out/g50m_sigma/run_metrics.json`) hold the data nested under
+`stage_stats.detect.sigma` (`rules_running`, `rules_fired`, `alerts`, `coverage.*`) and have no `sigma_rules_applicable`
+or `sigma_alerts_deduped`.
+
+#### 15.6a Upload API contract (`api_upload.py`, `api.py`)
+| Call | Request | Response |
+|---|---|---|
+| `POST /api/uploads` | `multipart/form-data`, field `files` repeated. Other field names are ignored | 201 `{upload_id, raw_dir, files:[{name, bytes}], total_bytes, mode:"upload", created_at}` |
+| `POST /api/uploads/local` | JSON `{path}`, absolute path of a regular file on this machine | 201, same shape, `mode` is `link` (hard link) or `copy` (fallback when the link fails) |
+| `GET /api/uploads` | none | 200 list of the same objects, newest first (`created_at`, then id) |
+| `POST /api/runs` | JSON `{raw_dir, out_dir?, ground_truth?}` | 202 `{run_id}` |
+
+Errors (body `{"detail": "..."}`):
+| Status | When |
+|---|---|
+| 400 | not multipart or no boundary; empty name; name has `..`; absolute name; no `files` part; client disconnected (partial dir removed); `/local` path not absolute or not a regular file; `/runs` path outside `data/raw` or `data/out`, not a directory, or `out_dir` not exactly `data/out/<name>`, or the live output folder |
+| 403 | `/local` path outside `upload.local_roots` |
+| 404 | `/local` path not found; `GET /api/runs/{id}` unknown id |
+| 409 | `POST /api/runs` while another run is running (one at a time) |
+| 413 | total bytes over `upload.max_bytes` (also checked up front from `Content-Length`) |
+| 415 | extension not in `upload.allowed_extensions` |
+| 507 | free disk under `upload.min_free_bytes` after the incoming bytes (checked before and every `disk_check_every_bytes`) |
+
+Behaviour that tests should keep:
+- Upload goes to `<root>/.incoming/<id>/`, then `os.replace` to `<root>/<id>/`. Metadata: `<root>/.meta/<id>.json`.
+  `GET /api/uploads` lists only dirs named `up-YYYYMMDD-HHMMSS-xxxxxx`.
+- File names are sanitized to `[A-Za-z0-9._-]`; a duplicate name gets `-1`, `-2`. The raw filename is read from the
+  header, because the multipart parser silently strips `C:\` style paths.
+- Multipart is parsed incrementally, nothing is spooled to a temp file and no file is held in memory.
+- Security: `/local` lets the caller read any file the API process can read, and `/runs` starts jobs. There is no auth.
+  Keep the API on 127.0.0.1 (`docker-compose.yml` publishes `127.0.0.1:${ATTACKLENS_PORT:-8000}`). Narrow it with
+  `upload.local_roots`.
+- After a run started through the API succeeds, the store pins that run's `out_dir` (also over `ATTACKLENS_OUT`).
+  `GET /api/health` shows `served_out_dir` and `out_dir_source` (`api_run`, `env`, `newest`).
+
+#### 15.6b `config/pipeline.yaml` blocks
+```yaml
+sigma:
+  enabled: true
+  dir: "config/sigma"                  # vendored SigmaHQ rules, DRL 1.1 (config/sigma/SOURCE.md)
+  cache_dir: "data/cache/sigma"        # compiled once per content hash of rules + sigma_map.yaml + attack data
+  min_level: "low"                     # informational < low < medium < high < critical
+  status: [stable, test, experimental] # deprecated / unsupported are never run
+  batch_size: 250                      # rule predicates per events scan
+  check_batch: 400                     # rules per EXPLAIN compile check (bisected on error)
+  max_alerts_per_rule: 1000            # per run; overflow counted in sigma_alerts_capped_by_rule
+  live: true                           # run Sigma in live cycles ...
+  live_min_level: high                 # ... but only high/critical rules
+upload:
+  root: "data/raw/uploads"             # must stay under data/raw so POST /api/runs accepts the folder
+  allowed_extensions: [".log", ".txt", ".csv", ".json", ".jsonl", ".ndjson", ".cef", ".syslog"]
+  max_bytes: 68719476736               # 64 GiB, all files of one upload together
+  min_free_bytes: 2147483648           # 2 GiB reserve
+  chunk_bytes: 1048576                 # 1 MiB
+  disk_check_every_bytes: 268435456    # 256 MiB
+  local_roots: null                    # null = any path for /api/uploads/local; else a list of allowed folders
+```
+Mapping of Sigma log sources and fields to canonical columns: `config/sigma_map.yaml` (`logsources:`, `fields:`,
+`unmapped_field_policy: skip`, `disable:`). A rule that needs an unmapped log source or field is skipped and counted,
+never run on a guess.
 
 ### 15.7 Accepted deviations from §4–§6 (orchestrator sign-off, 31 Oct; each switchable in config)
 | Spec | Deviation | Why | Literal behaviour |

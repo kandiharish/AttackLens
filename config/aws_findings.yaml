@@ -1,0 +1,85 @@
+# AWS vendor findings -> alert-input rows (attacklens/findings_aws.py; reports/cloud/log_coverage.md P0-6, P1-3).
+#
+# Vendor verdicts (GuardDuty finding types, Security Hub ASFF Types / Severity, OCSF 2004 attacks) are read ONLY here,
+# in alert-input mode: python -m attacklens.findings_aws --in <dir> writes raw_alerts rows into the alert spool, and a
+# run reads them only with --siem-alerts, which run.py refuses together with --ground-truth. Scored detection never
+# sees them (the same findings ingested as aws_guardduty_json / aws_securityhub_json rows are context only).
+#
+# Severity: GuardDuty severity (1.0-8.9, 9-10 = critical attack sequences) x 10; ASFF Severity.Label through
+# integrations.yaml alert_input.severity_map (else Severity.Normalized 0-100); OCSF severity_id below.
+# Technique ids must exist in config/attack_v20.json (a sub-technique missing there falls back to its parent).
+
+guardduty:
+  # finding type (ThreatPurpose:ResourceType/ThreatFamily.Mechanism!Artifact) -> technique; Python regex searched in
+  # the type, first match wins. Security Hub copies of GuardDuty findings carry the type in Types with '-' for '/'.
+  types:
+    - {pattern: 'InstanceCredentialExfiltration', technique: T1552.005}
+    - {pattern: 'MetadataDNSRebind', technique: T1552.005}
+    - {pattern: 'CloudTrailLoggingDisabled|ServerAccessLoggingDisabled|LoggingDisabled', technique: T1685.002}
+    - {pattern: 'DNSDataExfiltration', technique: T1071.004}
+    - {pattern: 'DGADomainRequest', technique: T1568.002}
+    - {pattern: 'C&CActivity|CommandAndControl|DriveBySourceTraffic|DropPoint|BlackholeTraffic', technique: T1071}
+    - {pattern: 'ContainerMountsHostDirectory|ContainerEscape', technique: T1611}
+    - {pattern: 'CryptoCurrency|BitcoinTool|CryptoMining|CoinMining', technique: T1496.001}
+    - {pattern: 'TorClient|TorRelay|TorIPCaller|TorAccess', technique: T1090.003}
+    - {pattern: 'SSHBruteForce|RDPBruteForce|WinRMBruteForce|BruteForce', technique: T1110}
+    - {pattern: 'Recon:EC2[/-]Portscan|Impact:EC2[/-]PortSweep', technique: T1046}
+    - {pattern: 'Recon:EC2[/-]PortProbe', technique: T1595.001}
+    - {pattern: 'DenialOfService', technique: T1498}
+    - {pattern: 'ReverseShell', technique: T1059.004}
+    - {pattern: 'ConsoleLoginSuccess|RootCredentialUsage|MaliciousIPCaller|KaliLinux|ParrotLinux|PentooLinux', technique: T1078.004}
+    - {pattern: 'Exfiltration:S3[/-]', technique: T1530}
+    - {pattern: 'Impact:S3[/-].*Delete', technique: T1485}
+    - {pattern: 'Discovery:S3[/-]', technique: T1619}
+    - {pattern: 'Exfiltration:IAMUser[/-]', technique: T1537}
+  # ThreatPurpose -> technique when no type pattern matched (AnomalousBehavior and the like)
+  purposes:
+    Backdoor: T1071
+    Behavior: T1071
+    CredentialAccess: T1552
+    CryptoCurrency: T1496.001
+    DefenseEvasion: T1685.002
+    Stealth: T1685.002
+    Discovery: T1580
+    Execution: T1059
+    Exfiltration: T1537
+    Impact: T1485
+    InitialAccess: T1078.004
+    PenTest: T1078.004
+    Persistence: T1098
+    PrivilegeEscalation: T1098
+    Recon: T1580
+    Trojan: T1071
+    UnauthorizedAccess: T1078.004
+  # AttackSequence:<Resource>/...: the technique comes from service.detection.sequence.sequenceIndicators
+  # (key ATTACK_TECHNIQUE: ids or names); without one, this default per resource.
+  attack_sequence_default: {IAM: T1078.004, S3: T1530, EKS: T1610, ECS: T1610, EC2: T1496.001}
+
+securityhub:
+  # only these Types are attack alerts; posture / compliance / vulnerability findings are dropped (counted)
+  attack_type_prefixes: ["TTPs/", "Effects/", "Unusual Behaviors/"]
+  skip_record_states: [ARCHIVED]
+  skip_workflow_status: [SUPPRESSED, RESOLVED]
+  # TTPs/<tactic> -> technique when no technique id or GuardDuty type is found
+  tactic_default:
+    "Initial Access": T1078.004
+    "Execution": T1059
+    "Persistence": T1098
+    "Privilege Escalation": T1098
+    "Defense Evasion": T1685.002
+    "Credential Access": T1552
+    "Discovery": T1580
+    "Lateral Movement": T1021
+    "Collection": T1530
+    "Command and Control": T1071
+    "Exfiltration": T1537
+    "Impact": T1485
+  effects:
+    "Data Exfiltration": T1530
+    "Data Destruction": T1485
+    "Resource Consumption": T1496.001
+    "Denial of Service": T1498
+  unusual_behavior_default: T1078.004
+
+ocsf:
+  severity_id: {1: 20, 2: 40, 3: 60, 4: 80, 5: 95, 6: 95}

@@ -378,3 +378,50 @@ def test_quote_in_out_dir_path(tmp_path: Path) -> None:
     card = evaluate(out, gt)
     assert card["rebuilt_pct"] == 100.0
     assert card["per_rule_alerts"] == [{"rule_id": "r1", "alerts": 1, "raw_alert_count": 1}]
+
+
+# ================================================================ step precision (stricter, step-level)
+def test_step_precision_perfect(tmp_path: Path) -> None:
+    card = evaluate(*write(tmp_path, [incident("inc-perfect1", perfect_steps())]))
+    assert (card["step_precision_pct"], card["step_precision_all_pct"]) == (100.0, 100.0)
+    assert (card["predicted_steps"], card["gt_steps"]) == (7, 7)
+
+
+def test_step_precision_one_extra_noise_step(tmp_path: Path) -> None:
+    noise = step_from({**S1[4], "technique_id": "T1082", "host": "ws-it-003", "user": "kiyer"}, 7, "x7")
+    card = evaluate(*write(tmp_path, [incident("inc-noisy001", perfect_steps() + [noise])]))
+    assert card["step_precision_pct"] == round(100 * 7 / 8, 2) == 87.5
+    assert card["predicted_steps"] == 8 and card["counts"]["predicted_steps_in_matched_incidents"] == 8
+    assert card["detection_pct"] == 100.0 and card["false_alarms_strict_pct"] == 0.0  # the old keys can't see it
+
+
+def test_step_precision_step_outside_tolerance_not_matched(tmp_path: Path) -> None:
+    steps = perfect_steps()
+    steps[6] = step_from(S1[6], 6, "e6", ts=iso(S1[6]["ts_ms"] + 11 * MIN))
+    card = evaluate(*write(tmp_path, [incident("inc-late0001", steps)]))
+    assert card["step_precision_pct"] == round(100 * 6 / 7, 2)
+    assert card["counts"]["steps_matched_to_own_attack"] == 6
+
+
+def test_step_precision_counts_only_own_attack_matches(tmp_path: Path) -> None:
+    # incident matched to A also holds a step of attack B: it is not one of A's steps
+    other = [{**S1[0], "host": "ws-hr-012", "user": "pmehta", "src_ip": None, "ts_ms": T0 + 600 * MIN}]
+    stray = step_from(other[0], 7, "b0")
+    card = evaluate(*write(tmp_path, [incident("inc-mixd0001", perfect_steps() + [stray])],
+                           [{"id": "A", "steps": S1}, {"id": "B", "steps": other}]))
+    assert card["step_precision_pct"] == 87.5            # 7 own steps of 8 shown
+    assert card["step_precision_all_pct"] == 100.0       # every shown step matches some attack
+
+
+def test_step_precision_all_includes_unmatched_incidents(tmp_path: Path) -> None:
+    extra = incident("inc-extra001", [step_from({**S1[0], "host": "ws-hr-012", "user": "pmehta", "src_ip": None},
+                                                0, "x0")])
+    card = evaluate(*write(tmp_path, [incident("inc-perfect1", perfect_steps()), extra]))
+    assert card["step_precision_pct"] == 100.0           # matched incidents only
+    assert card["step_precision_all_pct"] == 87.5        # 7 of 8 shown steps across all incidents
+
+
+def test_step_precision_null_when_nothing_predicted(tmp_path: Path) -> None:
+    card = evaluate(*write(tmp_path, []))
+    assert card["step_precision_pct"] is None and card["step_precision_all_pct"] is None
+    assert (card["predicted_steps"], card["gt_steps"]) == (0, 7)

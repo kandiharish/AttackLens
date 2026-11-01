@@ -246,4 +246,7 @@ def test_old_parquet_without_new_columns_runs_every_rule(tmp_path: Path) -> None
         alerts = run_stage2(ctx)  # detect.run: every rule, including the three templates reading new columns
     finally:
         ctx.con.close()
-    assert {a["rule_id"] for a in alerts} == {"lsass_dump", "sudo_escalation"}
+    ids = {a["rule_id"] for a in alerts}
+    assert {r for r in ids if not r.startswith("sigma_")} == {"lsass_dump", "sudo_escalation"}
+    # Sigma pack (config/sigma/) may also fire on mimikatz; any extra id must be a Sigma rule
+    assert all(r.startswith("sigma_") for r in ids if r not in {"lsass_dump", "sudo_escalation"}), sorted(ids)

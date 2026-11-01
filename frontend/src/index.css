@@ -1,9 +1,71 @@
 @import "tailwindcss";
 
-/* Offline demo: system font stacks only, no web fonts or CDNs. */
+/* Short laptop/projector screens (e.g. 1366×768): tighter vertical rhythm. */
+@custom-variant short (@media (max-height: 860px));
+
+/*
+ * AttackLens premium theme, in the visual language of mitigata.com (palette, type, spacing, elevation), not its
+ * identity. Fonts: Geist + Geist Mono (OFL-1.1), bundled locally from npm (@fontsource-variable/*), no CDN.
+ */
 @theme {
-  --font-sans: ui-sans-serif, system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  --font-mono: ui-monospace, "Cascadia Mono", "Consolas", "SFMono-Regular", Menlo, monospace;
+  --font-sans: "Geist Variable", "Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif;
+  --font-mono: "Geist Mono Variable", "Cascadia Mono", Consolas, ui-monospace, monospace;
+
+  /* surfaces (mitigata: paper #FAFCFA, bone #F5F4EE, line #EAE9E3) */
+  --color-app: #f5f4ee;
+  --color-panel: #ffffff;
+  --color-subtle: #fafcfa;
+  --color-line: #eae9e3;
+  --color-line-strong: #d6d4cc;
+  --color-unobs: #f1f0ea;
+
+  /* text (mitigata: ink #0A0A0A, muted #6B6E68) */
+  --color-ink: #0a0a0a;
+  --color-ink-2: #3d3f3b;
+  --color-muted: #6b6e68;
+
+  /* brand (mitigata mint scale) */
+  --color-brand: #04db7f;
+  --color-brand-600: #03b86b;
+  --color-brand-900: #06351f;
+  --color-forest: #0e2a20;
+
+  /* accent = brand for text/selection (darkened to #027A47 for AA on white), tint = brand-50 */
+  --color-accent: #027a47;
+  --color-accent-hover: #06351f;
+  --color-accent-tint: #eafbf3;
+  --color-focus: #04db7f;
+
+  /* risk: base (bars, borders) + background + AA ink for small text on that background */
+  --color-crit: #dc4a3a;
+  --color-crit-bg: #fdf0ee;
+  --color-crit-ink: #a93d2f;
+  --color-high: #e89b5c;
+  --color-high-bg: #fdf3ea;
+  --color-high-ink: #a65a1b;
+  --color-med: #e8c55b;
+  --color-med-bg: #fbf6e3;
+  --color-med-ink: #6e5400;
+  --color-low: #04db7f;
+  --color-low-bg: #eafbf3;
+  --color-low-ink: #027a47;
+
+  /* SIEM-origin tag (vendor alert, alert-input mode) */
+  --color-siem: #6e5dc6;
+  --color-siem-bg: #f3f0ff;
+  --color-siem-ink: #5e4db2;
+
+  /* radius scale */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-2xl: 20px;
+
+  /* elevation (mitigata: soft, low-alpha, green-black) */
+  --shadow-card: 0 1px 2px rgba(8, 12, 10, 0.04), 0 2px 6px rgba(8, 12, 10, 0.05);
+  --shadow-lift: 0 6px 22px rgba(8, 12, 10, 0.07);
+  --shadow-pop: 0 18px 40px rgba(8, 12, 10, 0.12);
 }
 
 html,
@@ -13,20 +75,103 @@ body,
 }
 
 body {
-  @apply bg-slate-950 text-slate-200 antialiased;
-  color-scheme: dark;
+  margin: 0;
+  background: var(--color-app);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.55;
+  font-feature-settings: "ss01", "cv11";
+  font-variant-numeric: tabular-nums;
+  color-scheme: light;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 
-/* Thin dark scrollbars for the projector. */
+::selection {
+  background: #c7f5dd;
+  color: #0a0a0a;
+}
+
+/* Mono uppercase eyebrow (mitigata section labels: mono, uppercase, wide tracking) */
+@utility section-label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+  line-height: 1.4;
+}
+
+@utility focus-ring {
+  &:focus-visible {
+    outline: none;
+    box-shadow:
+      0 0 0 2px #ffffff,
+      0 0 0 4px rgba(4, 219, 127, 0.55);
+  }
+}
+
+/* Premium card surface */
+@utility card {
+  background: var(--color-panel);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-card);
+}
+
+@utility headline {
+  letter-spacing: -0.02em;
+  font-weight: 600;
+  color: var(--color-ink);
+}
+
+/* Interactive elements: quick, subtle transitions (≤ 150 ms) */
+button,
+a,
+input,
+select,
+[role="tab"] {
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease,
+    box-shadow 120ms ease;
+}
+
 * {
   scrollbar-width: thin;
-  scrollbar-color: #334155 transparent;
+  scrollbar-color: #d6d4cc transparent;
+}
+
+/* Graph canvas: light dotted grid */
+.dot-grid {
+  background-color: #ffffff;
+  background-image: radial-gradient(#e2e0d8 1px, transparent 1px);
+  background-size: 18px 18px;
 }
 
 @keyframes step-flash {
-  0% { box-shadow: 0 0 0 2px rgb(56 189 248 / 0.9); }
-  100% { box-shadow: 0 0 0 2px rgb(56 189 248 / 0); }
+  0% {
+    box-shadow: 0 0 0 3px rgba(4, 219, 127, 0.55);
+  }
+  100% {
+    box-shadow: 0 0 0 3px rgba(4, 219, 127, 0);
+  }
 }
 .step-flash {
-  animation: step-flash 1.6s ease-out;
+  animation: step-flash 1.2s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

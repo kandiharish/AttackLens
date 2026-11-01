@@ -1,0 +1,3515 @@
+# Native cloud rules (reports/cloud/rule_catalog.md §4 native, §5 behavioural). Run by attacklens/detect_cloud.py over
+# the cloud_ev table (columns and derived macros: config/cloud.yaml). Output: work/raw_alerts_cloud.parquet.
+#
+# Rule:   id, clouds [aws|azure|gcp], technique / sub_technique / tactic (ATT&CK v20, tactic must belong to the
+#         technique), severity, optional secondary label, allow {lists, severity} (downgrade, never drop),
+#         promote {first_seen: <sev>} (second signal: (acct, actor_key, api) unseen in the baseline),
+#         context: true (baselining signal: emitted at <= cloud.yaml context_severity so it never seeds or adds a
+#         tactic alone; sequences still read its full severity), automation: true | {severity} (CI/CD / IaC identity
+#         without a risk signal -> cloud.yaml automation.severity, never dropped), branches.
+# Branch: match: <SQL>  or  template: distinct_burst | rate_spike | sequence | first_seen | geo_velocity |
+#         multi_network_session | new_source_burst with filter + params. severity (int), severity_sql (row / aggregate / pair SQL,
+#         NULL -> severity), target (target_user SQL), label: secondary, label_sql, outcome: success (default:
+#         ok_row) | failure | any. {cfg.x} = cloud.yaml params value, {cfg.x:list} = list literal.
+# Severity tiers: <= 35 context, 45-60 signal, 65-80 strong, 85-95 critical. Rule order matters: sequence branches
+# with a_rules / b_rules read alerts of rules (and branches) that ran before them.
+
+rules:
+  # =============================================================================================== Initial Access
+  - id: aws_console_login_no_mfa
+    clouds: [aws]
+    technique: T1078
+    sub_technique: T1078.004
+    tactic: Initial Access
+    severity: 55
+    allow: {lists: [no_mfa_allow_users], severity: 35}
+    branches:
+      - match: >-
+          is_ct AND api = 'ConsoleLogin' AND action = 'login_success'
+          AND json_extract_string(ct_add, '$.MFAUsed') = 'No' AND ct_type IN ('IAMUser', 'Root')
+
+  - id: aws_root_usage
+    clouds: [aws]
+    technique: T1078
+    sub_technique: T1078.004
+    tactic: Initial Access
+    severity: 70
+    branches:
+      - match: "is_ct AND api = 'ConsoleLogin' AND action = 'login_success' AND ct_type = 'Root'"
+        severity_sql: "CASE WHEN src_ip IN {cfg.root_allow_ips} THEN 35 END"
+      - match: >-
+          is_ct AND ct_type = 'Root' AND coalesce(ct_etype, '') <> 'AwsServiceEvent' AND ct_invoked IS NULL
+          AND api <> 'ConsoleLogin'
+        severity: 60
+        severity_sql: >-
+          CASE WHEN src_ip IN {cfg.root_allow_ips} THEN 35
+               WHEN api IN ('CreateAccessKey', 'CreateLoginProfile', 'UpdateLoginProfile', 'DeactivateMFADevice',
+                            'DeleteVirtualMFADevice') THEN 80 END
+
+  - id: aws_console_pw_ok_mfa_fail
+    clouds: [aws]
+    technique: T1078
+    sub_technique: T1078.004
+    tactic: Initial Access
+    severity: 65
+    branches:
+      - match: >-
+          is_ct AND api = 'ConsoleLogin' AND action = 'login_failed'
+          AND json_extract_string(ct_add, '$.MFAUsed') = 'Yes'
+        outcome: any
+        severity: 45
+      - template: distinct_burst
+        filter: >-
+          is_ct AND api = 'ConsoleLogin' AND action = 'login_failed'
+          AND json_extract_string(ct_add, '$.MFAUsed') = 'Yes'
+        outcome: any
+        params: {key: [actor_key], distinct: source_seq, window_ms: "{cfg.mfa_fail_window_ms}",
+                 min_distinct: "{cfg.mfa_fail_min}"}
+        severity: 75
+
+  - id: cl_signin_bruteforce
+    clouds: [aws, azure]
+    technique: T1110
+    sub_technique: T1110.001
+    tactic: Credential Access
+    severity: 75
+    secondary: {technique: T1078, sub_technique: T1078.004, tactic: Initial Access, severity: 85}
+    branches:
+      - template: distinct_burst
+        filter: >-
+          ((is_ct AND api = 'ConsoleLogin' AND action = 'login_failed')
+           OR (is_azs AND action = 'login_failed' AND si_code IN {cfg.azure_pw_fail_codes}
+               AND NOT coalesce(lower(si_client) IN {cfg.legacy_auth_clients}, false)))
+        outcome: any
+        params: {key: [actor_key], distinct: source_seq, window_ms: "{cfg.bf_window_ms}",
+                 min_distinct: "{cfg.bf_min_failures}"}
+      - template: sequence
+        label: secondary
+        params:
+          a_rules: [cl_signin_bruteforce]
+          a_filter: "technique_id = 'T1110'"
+          b_filter: >-
+            (is_ct AND api = 'ConsoleLogin' AND action = 'login_success')
+            OR (is_azs AND si_code IN {cfg.azure_pw_ok_codes})
+          join: [[actor, actor]]
+          window_ms: "{cfg.bf_window_ms}"
+
+  - id: cl_password_spray
+    clouds: [aws, azure]
+    technique: T1110
+    sub_technique: T1110.003
+    tactic: Credential Access
+    severity: 75
+    branches:
+      - template: distinct_burst
+        filter: >-
+          ((is_ct AND api = 'ConsoleLogin' AND action = 'login_failed')
+           OR (is_azs AND action = 'login_failed' AND si_code IN ('50126', '50053', '50055')))
+          AND NOT corp_ip
+        outcome: any
+        params: {key: [src_ip], distinct: actor_key, window_ms: "{cfg.spray_window_ms}",
+                 min_distinct: "{cfg.spray_min_users}"}
+      - template: sequence
+        severity: 85
+        params:
+          a_rules: [cl_password_spray]
+          b_filter: >-
+            (is_ct AND api = 'ConsoleLogin' AND action = 'login_success')
+            OR (is_azs AND si_code IN {cfg.azure_pw_ok_codes})
+          join: [[src_ip, src_ip]]
+          window_ms: "{cfg.bf_success_window_ms}"
+
+  - id: az_valid_password_new_country
+    clouds: [azure]
+    technique: T1078
+    sub_technique: T1078.004
+    tactic: Initial Access
+    severity: 70
+    branches:
+      - template: first_seen
+        filter: >-
+          is_azs AND cc IS NOT NULL
+          AND (si_code IN ('50074', '50076', '500121', '50158') OR coalesce(si_authdet, '') ILIKE '%Correct Password%')
+        outcome: any
+        params: {key: [actor_key, cc], baseline_days: "{cfg.geo_baseline_days}",
+                 min_history_days: "{cfg.b2_min_history_days}"}
+
+  - id: az_risky_auth_protocol
+    clouds: [azure]
+    technique: T1078
+    sub_technique: T1078.004
+    tactic: Initial Access
+    severity: 60
+    branches:
+      - template: first_seen
+        filter: >-
+          is_azs AND lower(si_proto) = 'devicecode' AND si_code = '0'
+          AND NOT coalesce(si_appid IN {cfg.device_code_allow_apps}, false)
+        outcome: any
+        params: {key: [actor_key, "lower(si_proto)"], baseline_days: "{cfg.device_code_baseline_days}"}
+        severity: 75
+      - match: >-
+          is_azs AND si_code = '0'
+          AND (lower(si_proto) = 'ropc' OR coalesce(si_ua, '') ILIKE '%BAV2ROPC%'
+               OR lower(si_client) IN {cfg.legacy_auth_clients})
+          AND NOT coalesce(actor IN {cfg.legacy_auth_allow_users}, false)
+        outcome: any
+
+  - id: az_risky_signin_success
+    clouds: [azure]
+    technique: T1078
+    sub_technique: T1078.004
+    tactic: Initial Access
+    severity: 70
+    branches:
+      - match: >-
+          is_azs AND si_code = '0'
+          AND (lower(si_risk) IN ('high', 'medium') OR lower(si_rstate) IN ('atrisk', 'confirmedcompromised'))
+        outcome: any
+        severity_sql: >-
+          CASE WHEN lower(si_risk) = 'high' OR lower(si_rstate) = 'confirmedcompromised' THEN 80
+               WHEN lower(si_req) = 'multifactorauthentication' THEN 45 END
+
+  - id: cl_instance_creds_offhost
+    clouds: [aws, gcp]
+    technique: T1552
+    sub_technique: T1552.005
+    tactic: Credential Access
+    severity: 85
+    branches:
+      - match: >-
+          {cfg.geo_ranges_aws} AND is_ct AND ct_instance_role AND src_ip IS NOT NULL AND ct_vpce IS NULL
+          AND NOT al_is_internal_ip(src_ip) AND provider IS NULL AND NOT corp_ip
+        outcome: any
+      - template: multi_network_session
+        filter: "NOT {cfg.geo_ranges_aws} AND is_ct AND ct_instance_role AND ct_vpce IS NULL AND NOT al_is_internal_ip(src_ip)"
+        outcome: any
+        params: {session: ct_akid, network: net, window_ms: "{cfg.instance_offhost_window_ms}", min_networks: 2}
+      - match: >-
+          {cfg.geo_ranges_gcp} AND is_gcp AND lower(coalesce(g_principal, '')) LIKE '%-compute@developer.gserviceaccount.com'
+          AND src_ip IS NOT NULL AND NOT al_is_internal_ip(src_ip) AND provider IS NULL AND NOT corp_ip
+          AND coalesce(ua, '') NOT LIKE '%gce%'
+        outcome: any
+
+  # ==================================================================================================== Execution
+  - id: cl_attack_tool_user_agent
+    clouds: [aws, azure, gcp]
+    technique: T1059
+    sub_technique: T1059.009
+    tactic: Execution
+    severity: 75
+    branches:
+      - template: distinct_burst
+        filter: "regexp_matches(coalesce(ua, ''), {cfg.attack_ua_regex}) AND NOT coalesce(lower(actor) IN {cfg.redteam_principals}, false)"
+        outcome: any
+        params: {key: [actor_key], distinct: api, window_ms: "{cfg.hour_ms}", min_distinct: 1}
+      - template: distinct_burst
+        filter: "regexp_matches(coalesce(ua, ''), {cfg.scanner_ua_regex})"
+        outcome: any
+        params: {key: [actor_key], distinct: api, window_ms: "{cfg.hour_ms}", min_distinct: 1}
+        severity: 30
+
+  - id: aws_ssm_command
+    clouds: [aws]
+    technique: T1651
+    tactic: Execution
+    severity: 55
+    promote: {first_seen: 75}
+    branches:
+      - match: >-
+          is_ct AND app = 'ssm.amazonaws.com' AND api IN ('SendCommand', 'StartAutomationExecution', 'CreateAssociation')
+          AND NOT coalesce(ct_svc, false)
+          AND NOT coalesce(json_extract_string(ct_rp, '$.documentName') IN {cfg.ssm_allow_documents}, false)
+        severity_sql: >-
+          CASE WHEN json_array_length(json_extract(ct_rp, '$.instanceIds')) >= {cfg.ssm_min_targets} THEN 75 END
+      - template: distinct_burst
+        filter: >-
+          is_ct AND app = 'ssm.amazonaws.com' AND api = 'SendCommand' AND NOT coalesce(ct_svc, false)
+          AND NOT coalesce(json_extract_string(ct_rp, '$.documentName') IN {cfg.ssm_allow_documents}, false)
+        params: {key: [actor_key], distinct: "json_extract_string(ct_rp, '$.instanceIds')",
+                 window_ms: "{cfg.burst_window_ms}", min_distinct: "{cfg.ssm_min_targets}"}
+        severity: 75
+
+  - id: aws_ec2_userdata_modified
+    clouds: [aws]
+    technique: T1059
+    sub_technique: T1059.009
+    tactic: Execution
+    severity: 75
+    branches:
+      - match: >-
+          is_ct AND api = 'ModifyInstanceAttribute'
+          AND (json_extract_string(ct_rp, '$.attribute') = 'userData' OR json_extract(ct_rp, '$.userData') IS NOT NULL)
+        target: "json_extract_string(ct_rp, '$.instanceId')"
+      - template: sequence
+        severity: 85
+        params:
+          a_filter: "is_ct AND api = 'StopInstances' AND ok_row"
+          b_filter: >-
+            is_ct AND ok_row AND api = 'ModifyInstanceAttribute'
+            AND (json_extract_string(ct_rp, '$.attribute') = 'userData' OR json_extract(ct_rp, '$.userData') IS NOT NULL)
+          join: [["json_extract_string(ct_rp, '$.instancesSet.items[0].instanceId')", "json_extract_string(ct_rp, '$.instanceId')"]]
+          window_ms: "{cfg.stop_start_window_ms}"
+
+  - id: aws_serverless_code_change
+    clouds: [aws]
+    technique: T1648
+    tactic: Execution
+    severity: 50
+    promote: {first_seen: 70}
+    branches:
+      - match: "is_ct AND app = 'lambda.amazonaws.com' AND api LIKE 'UpdateFunctionCode%'"
+        severity_sql: "CASE WHEN NOT regexp_matches(coalesce(ua, ''), {cfg.iac_ua_regex}) THEN 70 END"
+        target: "lower(json_extract_string(ct_rp, '$.functionName'))"
+      - match: >-
+          is_ct AND app = 'sagemaker.amazonaws.com'
+          AND api IN ('CreateNotebookInstanceLifecycleConfig', 'UpdateNotebookInstanceLifecycleConfig', 'UpdateNotebookInstance')
+          AND coalesce(ct_rp, '') ILIKE '%LifecycleConfig%'
+        severity_sql: "CASE WHEN NOT regexp_matches(coalesce(ua, ''), {cfg.iac_ua_regex}) THEN 70 END"
+      # rules track: a new function is a signal (IaC deploys are context); the same identity creating or replacing a
+      # function and then wiring it to an event source / public URL / cross-principal invoke permission is the
+      # ATT&CK T1648 procedure ("create a Lambda function ... triggered by" an event) -> strong
+      - match: "is_ct AND ok_row AND app = 'lambda.amazonaws.com' AND api LIKE 'CreateFunction%'"
+        severity: 45
+        no_promote: true
+        severity_sql: "CASE WHEN regexp_matches(coalesce(ua, ''), {cfg.iac_ua_regex}) THEN 35 END"
+        target: "lower(regexp_extract(coalesce(json_extract_string(ct_rp, '$.functionName'), ''), '([^:]+)$', 1))"
+      - template: sequence
+        severity: 75
+        params:
+          a_filter: >-
+            is_ct AND ok_row AND app = 'lambda.amazonaws.com'
+            AND (api LIKE 'CreateFunction%' OR api LIKE 'UpdateFunctionCode%')
+            AND NOT regexp_matches(coalesce(ua, ''), {cfg.iac_ua_regex})
+          b_filter: >-
+            is_ct AND ok_row AND app = 'lambda.amazonaws.com'
+            AND (api LIKE 'CreateEventSourceMapping%' OR api LIKE 'CreateFunctionUrlConfig%' OR api LIKE 'AddPermission%')
+          join:
+            - - "nullif(lower(regexp_extract(coalesce(json_extract_string(ct_rp, '$.functionName'), ''), '(?:function:)?([^:]+)(?::[^:]*)?$', 1)), '')"
+              - "nullif(lower(regexp_extract(coalesce(json_extract_string(ct_rp, '$.functionName'), ''), '(?:function:)?([^:]+)(?::[^:]*)?$', 1)), '')"
+            - [actor_key, actor_key]
+          window_ms: "{cfg.hour_ms}"
+
+  - id: az_remote_exec
+    clouds: [azure]
+    technique: T1651
+    tactic: Execution
+    severity: 55
+    promote: {first_seen: 80}
+    branches:
+      - match: >-
+          is_aza AND (api_u IN ('MICROSOFT.COMPUTE/VIRTUALMACHINES/RUNCOMMAND/ACTION', 'MICROSOFT.COMPUTE/VIRTUALMACHINES/RUNCOMMANDS/WRITE',
+                                'MICROSOFT.COMPUTE/VIRTUALMACHINESCALESETS/VIRTUALMACHINES/RUNCOMMAND/ACTION',
+                                'MICROSOFT.HYBRIDCOMPUTE/MACHINES/RUNCOMMANDS/WRITE',
+                                'MICROSOFT.AUTOMATION/AUTOMATIONACCOUNTS/RUNBOOKS/WRITE',
+                                'MICROSOFT.AUTOMATION/AUTOMATIONACCOUNTS/RUNBOOKS/DRAFT/WRITE',
+                                'MICROSOFT.AUTOMATION/AUTOMATIONACCOUNTS/WEBHOOKS/WRITE')
+                      OR (api_u = 'MICROSOFT.COMPUTE/VIRTUALMACHINES/EXTENSIONS/WRITE'
+                          AND (coalesce(az_req, '') ILIKE '%CustomScript%' OR coalesce(az_req, '') ILIKE '%commandToExecute%')))
+          AND NOT regexp_matches(lower(coalesce(az_req, '')), {cfg.az_allow_extension_regex})
+        severity_sql: >-
+          CASE WHEN machine THEN 35
+               WHEN api_u LIKE '%RUNCOMMAND%' AND coalesce(az_caller, '') LIKE '%@%' THEN 70 END
+
+  - id: gcp_startup_script
+    clouds: [gcp]
+    technique: T1059
+    sub_technique: T1059.009
+    tactic: Execution
+    severity: 70
+    branches:
+      - match: >-
+          is_gcp AND api IN ('v1.compute.instances.setMetadata', 'beta.compute.instances.setMetadata',
+                             'v1.compute.projects.setCommonInstanceMetadata')
+          AND regexp_matches(coalesce(g_md, '') || coalesce(g_req, ''), '(startup-script|shutdown-script)')
+      - match: "is_gcp AND api ILIKE '%notebooks.v%.NotebookService.UpdateInstance' AND coalesce(g_req, '') ILIKE '%startup-script%'"
+
+  # ================================================================================================== Persistence
+  - id: aws_credential_for_other_user
+    clouds: [aws]
+    technique: T1098
+    sub_technique: T1098.001
+    tactic: Persistence
+    severity: 75
+    allow: {lists: [iam_admin_principals], severity: 45}
+    branches:
+      - match: >-
+          is_ct AND api IN ('CreateAccessKey', 'CreateLoginProfile', 'UpdateLoginProfile')
+          AND json_extract_string(ct_rp, '$.userName') IS NOT NULL
+          AND lower(json_extract_string(ct_rp, '$.userName'))
+              <> lower(coalesce(ct_uname, nullif(regexp_extract(ct_arn, '([^/]+)$', 1), ''), actor, ''))
+        target: "json_extract_string(ct_rp, '$.userName')"
+      - match: >-
+          is_ct AND api = 'CreateAccessKey'
+          AND (json_extract_string(ct_rp, '$.userName') IS NULL
+               OR lower(json_extract_string(ct_rp, '$.userName'))
+                  = lower(coalesce(ct_uname, nullif(regexp_extract(ct_arn, '([^/]+)$', 1), ''), actor, '')))
+        target: "coalesce(json_extract_string(ct_re, '$.accessKey.userName'), actor)"
+        severity: 35
+
+  - id: aws_role_trust_backdoor
+    clouds: [aws]
+    technique: T1098
+    sub_technique: T1098.003
+    tactic: Persistence
+    severity: 80
+    branches:
+      - match: "is_ct AND api IN ('UpdateAssumeRolePolicy', 'CreateRole')"
+        target: "json_extract_string(ct_rp, '$.roleName')"
+        severity_sql: >-
+          CASE WHEN regexp_matches(regexp_replace(lower(coalesce(json_extract_string(ct_rp, '$.policyDocument'),
+                                       json_extract_string(ct_rp, '$.assumeRolePolicyDocument'), '')), '\s|\\', '', 'g'),
+                                   '"aws":"\*"|"principal":"\*"|"aws":\["\*"\]')
+                 OR len(list_filter(regexp_extract_all(coalesce(json_extract_string(ct_rp, '$.policyDocument'),
+                                       json_extract_string(ct_rp, '$.assumeRolePolicyDocument'), ''), 'arn:aws:iam::([0-9]{12}):', 1),
+                                    lambda a: a <> coalesce(acct, '') AND NOT list_contains({cfg.trusted_aws_accounts:list}, a))) > 0
+               THEN 80 ELSE 50 END
+
+  - id: aws_federation_trust_change
+    clouds: [aws]
+    technique: T1484
+    sub_technique: T1484.002
+    tactic: Privilege Escalation
+    severity: 80
+    branches:
+      - match: >-
+          is_ct AND (api IN ('CreateSAMLProvider', 'UpdateSAMLProvider', 'DeleteSAMLProvider', 'CreateOpenIDConnectProvider',
+                             'UpdateOpenIDConnectProviderThumbprint', 'AddClientIDToOpenIDConnectProvider',
+                             'CreateTrustAnchor', 'UpdateTrustAnchor', 'EnableExternalIdPConfigurationForDirectory',
+                             'DisableExternalIdPConfigurationForDirectory', 'AssociateDirectory', 'DisassociateDirectory',
+                             'CreateInstanceAccessControlAttributeConfiguration')
+                     OR (api = 'CreateProfile' AND app = 'rolesanywhere.amazonaws.com'))
+
+  - id: aws_lambda_backdoor
+    clouds: [aws]
+    technique: T1546
+    tactic: Persistence
+    severity: 80
+    secondary: {technique: T1525, tactic: Persistence, severity: 80}
+    branches:
+      - match: >-
+          is_ct AND api LIKE 'AddPermission%'
+          AND NOT coalesce(json_extract_string(ct_rp, '$.functionName') IN {cfg.public_lambda_allow}, false)
+          AND (json_extract_string(ct_rp, '$.principal') = '*'
+               OR (nullif(regexp_extract(coalesce(json_extract_string(ct_rp, '$.principal'), ''), '([0-9]{12})', 1), '') IS NOT NULL
+                   AND regexp_extract(json_extract_string(ct_rp, '$.principal'), '([0-9]{12})', 1) <> coalesce(acct, '')
+                   AND NOT list_contains({cfg.trusted_aws_accounts:list},
+                                         regexp_extract(json_extract_string(ct_rp, '$.principal'), '([0-9]{12})', 1))))
+        target: "json_extract_string(ct_rp, '$.functionName')"
+      - match: >-
+          is_ct AND api LIKE 'CreateFunctionUrlConfig%' AND json_extract_string(ct_rp, '$.authType') = 'NONE'
+          AND NOT coalesce(json_extract_string(ct_rp, '$.functionName') IN {cfg.public_lambda_allow}, false)
+        severity: 70
+      - match: "is_ct AND api LIKE 'UpdateFunctionConfiguration%' AND coalesce(ct_rp, '') ILIKE '%layers%'"
+        label: secondary
+        severity_sql: >-
+          CASE WHEN len(list_filter(regexp_extract_all(ct_rp, 'arn:aws:lambda:[^:]+:([0-9]{12}):layer', 1),
+                                    lambda a: a <> coalesce(acct, '') AND NOT list_contains({cfg.trusted_aws_accounts:list}, a))) > 0
+               THEN 80 ELSE 40 END
+
+  - id: aws_keypair_new
+    clouds: [aws]
+    technique: T1098
+    sub_technique: T1098.004
+    tactic: Persistence
+    severity: 45
+    promote: {first_seen: 70}
+    branches:
+      - match: "is_ct AND app = 'ec2.amazonaws.com' AND api IN ('CreateKeyPair', 'ImportKeyPair')"
+        severity_sql: >-
+          CASE WHEN regexp_matches(lower(coalesce(json_extract_string(ct_rp, '$.keyName'), '')), {cfg.suspicious_name_regex})
+               THEN 70 END
+
+  - id: az_app_or_identity_credential
+    clouds: [azure]
+    technique: T1098
+    sub_technique: T1098.001
+    tactic: Persistence
+    severity: 75
+    allow: {lists: [app_owner_allow], severity: 45}
+    branches:
+      - match: >-
+          is_azd AND (au_name ILIKE '%Certificates and secrets management%' OR au_name = 'Add service principal credentials'
+                      OR (au_name IN ('Update application', 'Update service principal')
+                          AND regexp_matches(lower(coalesce(tr_json, '')), 'keydescription|keycredentials|passwordcredentials')))
+        target: "json_extract_string(tr_json, '$[0].displayName')"
+      - match: "is_azd AND au_name IN ('Add application', 'Add service principal')"
+        target: "json_extract_string(tr_json, '$[0].displayName')"
+        severity: 35
+      - match: >-
+          (is_azd AND au_name ILIKE 'Update application%' AND coalesce(tr_json, '') ILIKE '%FederatedIdentityCredential%')
+          OR (is_aza AND api_u = 'MICROSOFT.MANAGEDIDENTITY/USERASSIGNEDIDENTITIES/FEDERATEDIDENTITYCREDENTIALS/WRITE')
+        severity: 85
+        severity_sql: >-
+          CASE WHEN nullif(regexp_extract(coalesce(tr_json, az_req, ''), '(?i)issuer[^h]{0,24}(https?://[^"\\,\s]+)', 1), '') IS NOT NULL
+                AND NOT list_contains({cfg.trusted_oidc_issuers:list},
+                                      regexp_extract(coalesce(tr_json, az_req, ''), '(?i)issuer[^h]{0,24}(https?://[^"\\,\s]+)', 1))
+               THEN 90 END
+
+  - id: az_auth_method_added
+    clouds: [azure]
+    technique: T1556
+    sub_technique: T1556.006
+    tactic: Persistence
+    severity: 50
+    allow: {lists: [onboarding_principals], severity: 35}
+    branches:
+      - match: >-
+          is_azd AND (au_name IN ('User registered security info', 'Admin registered security info',
+                                  'User registered all required security info')
+                      OR (au_name = 'Update user' AND coalesce(tr_json, '') ILIKE '%StrongAuthenticationMethod%'))
+        severity_sql: >-
+          CASE WHEN coalesce(au_add, '') ILIKE '%temporary access pass%' OR coalesce(au_reason, '') ILIKE '%temporary access pass%' THEN 75
+               WHEN au_name LIKE 'Admin%' OR (au_name = 'Update user' AND target_user IS DISTINCT FROM actor) THEN 70
+               ELSE 35 END
+
+  - id: az_hidden_au
+    clouds: [azure]
+    technique: T1098
+    sub_technique: T1098.003
+    tactic: Persistence
+    severity: 70
+    branches:
+      - match: >-
+          is_azd AND (au_name IN ('Add member to restricted management administrative unit', 'Add scoped member to role')
+                      OR (au_name = 'Add administrative unit'
+                          AND regexp_matches(lower(coalesce(tr_json, '')), 'hiddenmembership|ismembermanagementrestricted[^a-z]{0,12}true')))
+
+  - id: gcp_sa_key_created
+    clouds: [gcp]
+    technique: T1098
+    sub_technique: T1098.001
+    tactic: Persistence
+    severity: 60
+    promote: {first_seen: 80}
+    branches:
+      - match: "is_gcp AND api IN ('google.iam.admin.v1.CreateServiceAccountKey', 'google.iam.admin.v1.UploadServiceAccountKey')"
+        target: "nullif(regexp_extract(coalesce(json_extract_string(g_req, '$.name'), g_res, ''), 'serviceAccounts/([^/@]+)', 1), '')"
+        severity_sql: >-
+          CASE WHEN api LIKE '%Upload%' THEN 80
+               WHEN lower(coalesce(g_principal, '')) NOT LIKE '%gserviceaccount.com' THEN 70 END
+
+  - id: gcp_ssh_key_metadata
+    clouds: [gcp]
+    technique: T1098
+    sub_technique: T1098.004
+    tactic: Persistence
+    severity: 65
+    branches:
+      - match: >-
+          is_gcp AND api IN ('v1.compute.instances.setMetadata', 'beta.compute.instances.setMetadata',
+                             'v1.compute.projects.setCommonInstanceMetadata')
+          AND coalesce(g_md, '') ILIKE '%ssh-keys%'
+        severity_sql: >-
+          CASE WHEN coalesce(ua, '') LIKE '%command/gcloud.compute.ssh%' THEN 35
+               WHEN api LIKE '%setCommonInstanceMetadata' THEN 75 END
+
+  # ========================================================================================= Privilege Escalation
+  - id: aws_admin_policy_attached
+    clouds: [aws]
+    technique: T1098
+    sub_technique: T1098.003
+    tactic: Privilege Escalation
+    severity: 75
+    branches:
+      - match: >-
+          is_ct AND ((api IN ('AttachUserPolicy', 'AttachRolePolicy', 'AttachGroupPolicy')
+                      AND regexp_matches(lower(coalesce(json_extract_string(ct_rp, '$.policyArn'), '')), {cfg.admin_policy_regex}))
+                     OR (api IN ('PutUserPolicy', 'PutRolePolicy', 'PutGroupPolicy', 'CreatePolicyVersion', 'CreatePolicy')
+                         AND regexp_matches(regexp_replace(lower(coalesce(ct_rp, '')), '\s|\\', '', 'g'),
+                                            '"action":"\*"|"action":\["\*"\]|"action":"iam:\*"')
+                         AND regexp_matches(regexp_replace(lower(coalesce(ct_rp, '')), '\s|\\', '', 'g'),
+                                            '"resource":"\*"|"resource":\["\*"\]')))
+        target: >-
+          coalesce(json_extract_string(ct_rp, '$.userName'), json_extract_string(ct_rp, '$.roleName'),
+                   json_extract_string(ct_rp, '$.groupName'))
+        severity_sql: >-
+          CASE WHEN lower(coalesce(json_extract_string(ct_rp, '$.userName'), json_extract_string(ct_rp, '$.roleName')))
+                    IN (actor, actor_key) THEN 85 END
+
+  - id: aws_iam_privesc_primitives
+    clouds: [aws]
+    technique: T1098
+    sub_technique: T1098.003
+    tactic: Privilege Escalation
+    severity: 60
+    promote: {first_seen: 80}
+    branches:
+      - match: >-
+          is_ct AND (api IN ('SetDefaultPolicyVersion', 'DeleteUserPermissionsBoundary', 'DeleteRolePermissionsBoundary',
+                             'PutUserPermissionsBoundary', 'PutRolePermissionsBoundary', 'AssociateIamInstanceProfile',
+                             'ReplaceIamInstanceProfileAssociation', 'UpdateAccessKey')
+                     OR (api = 'CreatePolicyVersion' AND lower(json_extract_string(ct_rp, '$.setAsDefault')) = 'true')
+                     OR (api = 'AddUserToGroup' AND regexp_matches(lower(coalesce(group_name, '')), {cfg.admin_group_regex})))
+        target: "coalesce(json_extract_string(ct_rp, '$.userName'), json_extract_string(ct_rp, '$.roleName'))"
+        severity_sql: >-
+          CASE WHEN lower(coalesce(json_extract_string(ct_rp, '$.userName'), json_extract_string(ct_rp, '$.roleName')))
+                    IN (actor, actor_key) THEN 80 END
+
+  - id: aws_federation_token
+    clouds: [aws]
+    technique: T1550
+    sub_technique: T1550.001
+    tactic: Lateral Movement
+    severity: 55
+    allow: {lists: [federation_brokers], severity: 35}
+    branches:
+      - match: "is_ct AND app = 'sts.amazonaws.com' AND api = 'GetFederationToken'"
+        severity_sql: "CASE WHEN coalesce(ct_rp, '') ILIKE '%AdministratorAccess%' THEN 80 END"
+      - template: sequence
+        severity: 80
+        params:
+          a_filter: "is_ct AND app = 'sts.amazonaws.com' AND api = 'GetFederationToken' AND ok_row"
+          b_filter: "is_ct AND api = 'ConsoleLogin' AND action = 'login_success' AND ct_type = 'FederatedUser'"
+          join: [[acct, acct]]
+          window_ms: "{cfg.federation_console_window_ms}"
+
+  - id: az_entra_privileged_role
+    clouds: [azure]
+    technique: T1098
+    sub_technique: T1098.003
+    tactic: Privilege Escalation
+    severity: 80
+    branches:
+      - match: >-
+          is_azd AND au_name IN ('Add member to role', 'Add eligible member to role', 'Add scoped member to role',
+                                 'Add member to role completed (PIM activation)', 'Add member to role outside of PIM (permanent)',
+                                 'Add eligible member (permanent)', 'Add eligible member (eligible)')
+          AND (regexp_matches(lower(coalesce(tr_json, '')), {cfg.entra_priv_role_regex})
+               OR len(list_intersect(regexp_extract_all(lower(coalesce(tr_json, '')), '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'),
+                                     {cfg.entra_priv_role_ids:list})) > 0)
+        target: "coalesce(target_user, json_extract_string(tr_json, '$[0].displayName'))"
+        severity_sql: >-
+          CASE WHEN au_name ILIKE '%PIM activation%' THEN 35
+               WHEN au_by_spid IS NOT NULL AND contains(lower(coalesce(tr_json, '')), lower(au_by_spid)) THEN 90
+               WHEN regexp_matches(coalesce(tr_json, ''), '"type"\s*:\s*"ServicePrincipal"') THEN 85 END
+
+  - id: az_rbac_privileged_assignment
+    clouds: [azure]
+    technique: T1098
+    sub_technique: T1098.003
+    tactic: Privilege Escalation
+    severity: 35
+    branches:
+      # Role id / principal: in properties.requestbody (REST / Event Hub export) or as top-level keys of
+      # Properties_d (Log Analytics AzureActivity) -> search the request, the response and the properties text.
+      - match: "is_aza AND api_u = 'MICROSOFT.AUTHORIZATION/ROLEASSIGNMENTS/WRITE'"
+        target: "nullif(regexp_extract(concat_ws(' ', az_req, az_props), '(?i)\"principalId\"\\s*:\\s*\"([0-9a-f-]{36})\"', 1), '')"
+        severity_sql: >-
+          CASE WHEN len(list_intersect(regexp_extract_all(lower(concat_ws(' ', az_req, az_resp, az_props)),
+                                                          'roledefinitions/([0-9a-f-]{36})', 1),
+                                       {cfg.az_priv_role_def_ids:list})) > 0
+               THEN CASE WHEN lower(coalesce(host, '')) NOT LIKE '%/resourcegroups/%' THEN 85 ELSE 75 END END
+
+  - id: az_elevate_access
+    clouds: [azure]
+    technique: T1098
+    sub_technique: T1098.003
+    tactic: Privilege Escalation
+    severity: 90
+    branches:
+      - match: >-
+          (is_aza AND api_u = 'MICROSOFT.AUTHORIZATION/ELEVATEACCESS/ACTION')
+          OR (is_azd AND (au_cat = 'AzureRBACRoleManagementElevateAccess'
+                          OR au_name ILIKE 'User has elevated their access to User Access Administrator%'))
+
+  - id: az_oauth_consent_privileged
+    clouds: [azure]
+    technique: T1528
+    tactic: Credential Access
+    severity: 75
+    branches:
+      - match: >-
+          is_azd AND au_name = 'Consent to application'
+          AND regexp_matches(lower(coalesce(tr_json, '')), {cfg.risky_scopes_regex})
+          AND NOT regexp_matches(lower(coalesce(tr_json, '')), 'isadminconsent[^a-z]{0,12}true')
+        target: "json_extract_string(tr_json, '$[0].displayName')"
+        severity_sql: >-
+          CASE WHEN len(list_filter({cfg.trusted_app_ids:list}, lambda a: contains(lower(coalesce(tr_json, '')), lower(a)))) > 0
+               THEN 35 END
+      - match: >-
+          is_azd AND au_name IN ('Add delegated permission grant', 'Add app role assignment to service principal')
+          AND (coalesce(tr_json, '') ILIKE '%AllPrincipals%'
+               OR len(list_intersect(regexp_extract_all(lower(coalesce(tr_json, '')), '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'),
+                                     {cfg.graph_priv_app_role_ids:list})) > 0)
+        target: "json_extract_string(tr_json, '$[0].displayName')"
+        severity: 85
+      # rules track: the user-level delegated grant carries the scopes ("Consent to application" often does not);
+      # 'Add OAuth2PermissionGrant' is the older name of the same audit activity
+      - match: >-
+          is_azd AND au_name IN ('Add delegated permission grant', 'Add OAuth2PermissionGrant')
+          AND regexp_matches(lower(coalesce(tr_json, '')), {cfg.risky_scopes_regex})
+          AND NOT coalesce(tr_json, '') ILIKE '%AllPrincipals%'
+        target: "json_extract_string(tr_json, '$[0].displayName')"
+        severity_sql: >-
+          CASE WHEN len(list_filter({cfg.trusted_app_ids:list}, lambda a: contains(lower(coalesce(tr_json, '')), lower(a)))) > 0
+               THEN 35 END
+
+  - id: az_guest_external
+    clouds: [azure]
+    technique: T1136
+    sub_technique: T1136.003
+    tactic: Persistence
+    severity: 50
+    promote: {first_seen: 70}
+    allow: {lists: [guest_inviters], severity: 35}
+    branches:
+      - match: >-
+          is_azd AND (au_name IN ('Invite external user', 'Add user sponsor')
+                      OR (au_name = 'Add user' AND coalesce(tr_json, '') ILIKE '%#EXT#%'))
+        target: "coalesce(target_user, json_extract_string(tr_json, '$[0].userPrincipalName'))"
+        severity_sql: >-
+          CASE WHEN len(list_filter({cfg.trusted_guest_domains:list},
+                                    lambda d: contains(lower(coalesce(tr_json, '')), replace(lower(d), '.', '_') || '#ext#')
+                                         OR contains(lower(coalesce(tr_json, '')), '@' || lower(d)))) > 0 THEN 35 END
+      - match: >-
+          is_azd AND au_name = 'Update user' AND coalesce(tr_json, '') ILIKE '%UserType%'
+          AND coalesce(tr_json, '') ILIKE '%Guest%' AND coalesce(tr_json, '') ILIKE '%Member%'
+        severity: 75
+        no_promote: true
+      - template: sequence
+        severity: 85
+        params:
+          a_rules: [az_guest_external]
+          b_rules: [az_entra_privileged_role]
+          join: [[target_user, target_user]]
+          window_ms: "{cfg.guest_priv_window_ms}"
+
+  - id: gcp_sensitive_grant
+    clouds: [gcp]
+    technique: T1098
+    sub_technique: T1098.003
+    tactic: Privilege Escalation
+    severity: 75
+    branches:
+      - match: >-
+          is_gcp AND (api ILIKE '%SetIamPolicy' OR api = 'storage.setIamPermissions') AND g_delta IS NOT NULL
+          AND len(list_filter(CAST(json_extract(g_delta, '$[*]') AS VARCHAR[]),
+                lambda d: json_extract_string(d, '$.action') = 'ADD'
+                     AND NOT regexp_matches(lower(coalesce(json_extract_string(d, '$.member'), '')),
+                                            '@(gcp-sa-[a-z0-9-]+\.iam\.gserviceaccount\.com|cloudservices\.gserviceaccount\.com)$')
+                     AND (list_contains({cfg.gcp_admin_roles:list}, lower(json_extract_string(d, '$.role')))
+                          OR list_contains({cfg.gcp_impersonation_roles:list}, lower(json_extract_string(d, '$.role')))
+                          OR json_extract_string(d, '$.member') IN ('allUsers', 'allAuthenticatedUsers')))) > 0
+        target: >-
+          nullif(regexp_extract(coalesce(json_extract_string(json_extract(g_delta, '$[0]'), '$.member'), ''), ':([^@]+)', 1), '')
+        severity_sql: >-
+          CASE WHEN len(list_filter(CAST(json_extract(g_delta, '$[*]') AS VARCHAR[]),
+                       lambda d: json_extract_string(d, '$.action') = 'ADD'
+                            AND (json_extract_string(d, '$.member') IN ('allUsers', 'allAuthenticatedUsers')
+                                 OR (regexp_matches(coalesce(json_extract_string(d, '$.member'), ''), '^(user|group|domain):')
+                                     AND NOT list_contains({cfg.trusted_domains:list},
+                                                           lower(regexp_extract(json_extract_string(d, '$.member'), '@(.+)$', 1)))
+                                     AND lower(regexp_extract(json_extract_string(d, '$.member'), '@(.+)$', 1))
+                                         <> lower(regexp_extract(coalesce(g_principal, ''), '@(.+)$', 1)))))) > 0
+               THEN 85 END
+
+  - id: gcp_sa_impersonation_use
+    clouds: [gcp]
+    technique: T1548
+    sub_technique: T1548.005
+    tactic: Privilege Escalation
+    severity: 60
+    promote: {first_seen: 80}
+    branches:
+      - match: >-
+          is_gcp AND ((app = 'iamcredentials.googleapis.com'
+                       AND regexp_matches(api, '(GenerateAccessToken|GenerateIdToken|SignBlob|SignJwt)$'))
+                      OR g_deleg IS NOT NULL)
+        target: "nullif(regexp_extract(coalesce(g_res, ''), 'serviceAccounts/([^/@]+)', 1), '')"
+        severity_sql: "CASE WHEN json_array_length(g_deleg) >= 2 THEN 80 END"
+      - template: distinct_burst
+        filter: "is_gcp AND app = 'iamcredentials.googleapis.com' AND regexp_matches(api, '(GenerateAccessToken|GenerateIdToken|SignBlob|SignJwt)$')"
+        params: {key: [actor_key], distinct: g_res, window_ms: "{cfg.burst_window_ms}", min_distinct: "{cfg.impersonation_min_targets}"}
+        severity: 80
+      - template: distinct_burst
+        filter: "is_gcp AND app = 'iamcredentials.googleapis.com' AND g_code = '7'"
+        outcome: any
+        params: {key: [actor_key], distinct: g_res, window_ms: "{cfg.burst_window_ms}", min_distinct: "{cfg.impersonation_min_targets}"}
+        severity: 70
+
+  # ====================================================================================================== Stealth
+  - id: cl_unused_region
+    clouds: [aws, azure, gcp]
+    technique: T1535
+    tactic: Stealth
+    severity: 60
+    branches:
+      - template: first_seen
+        filter: "is_write AND region IS NOT NULL AND NOT coalesce(app IN {cfg.global_services}, false)"
+        params: {key: [acct, region], hist_key: acct, baseline_days: "{cfg.b3_baseline_days}",
+                 min_history_days: "{cfg.b3_min_history_days}", max_per_actor_day: "{cfg.first_seen_max_per_actor_day}",
+                 summary_severity: "{cfg.first_seen_summary_severity}"}
+      - template: distinct_burst
+        filter: >-
+          is_write AND region IS NOT NULL AND len({cfg.allowed_regions:list}) > 0
+          AND NOT list_contains({cfg.allowed_regions:list}, region) AND NOT coalesce(app IN {cfg.global_services}, false)
+        params: {key: [acct, region], distinct: api, window_ms: "{cfg.hour_ms}", min_distinct: 1}
+      - match: "is_ct AND api = 'EnableRegion'"
+
+  - id: cl_account_create_delete_short
+    clouds: [aws, azure, gcp]
+    technique: T1136
+    sub_technique: T1136.003
+    tactic: Persistence
+    severity: 70
+    secondary: {technique: T1070, tactic: Defense Impairment, severity: 70}
+    branches:
+      - template: sequence
+        label: secondary
+        params:
+          a_filter: >-
+            ok_row AND ((is_ct AND api IN ('CreateUser', 'CreateAccessKey')) OR (is_azd AND au_name = 'Add user')
+                        OR (is_gcp AND api LIKE '%CreateServiceAccount'))
+          b_filter: >-
+            ok_row AND ((is_ct AND api IN ('DeleteUser', 'DeleteAccessKey')) OR (is_azd AND au_name = 'Delete user')
+                        OR (is_gcp AND api LIKE '%DeleteServiceAccount'))
+          join:
+            - - >-
+                CASE WHEN is_ct AND api = 'CreateUser' THEN 'u:' || lower(json_extract_string(ct_rp, '$.userName'))
+                     WHEN is_ct THEN 'k:' || json_extract_string(ct_re, '$.accessKey.accessKeyId')
+                     WHEN is_azd THEN 'u:' || target_user
+                     ELSE 'u:' || lower(nullif(regexp_extract(coalesce(json_extract_string(g_resp, '$.email'), ''), '^([^@]+)', 1), '')) END
+              - >-
+                CASE WHEN is_ct AND api = 'DeleteUser' THEN 'u:' || lower(json_extract_string(ct_rp, '$.userName'))
+                     WHEN is_ct THEN 'k:' || json_extract_string(ct_rp, '$.accessKeyId')
+                     WHEN is_azd THEN 'u:' || target_user
+                     ELSE 'u:' || lower(nullif(regexp_extract(coalesce(g_res, ''), 'serviceAccounts/([^/@]+)', 1), '')) END
+          window_ms: "{cfg.create_delete_window_ms}"
+
+  # =========================================================================================== Defense Impairment
+  - id: aws_logging_tamper
+    clouds: [aws]
+    technique: T1685
+    sub_technique: T1685.002
+    tactic: Defense Impairment
+    severity: 70
+    branches:
+      - match: >-
+          is_ct AND app = 'cloudtrail.amazonaws.com'
+          AND api IN ('StopLogging', 'DeleteTrail', 'DeleteEventDataStore', 'StopEventDataStoreIngestion', 'UpdateTrail',
+                      'PutEventSelectors', 'PutInsightSelectors')
+        severity_sql: >-
+          CASE WHEN api IN ('StopLogging', 'DeleteTrail', 'DeleteEventDataStore', 'StopEventDataStoreIngestion') THEN 90
+               WHEN regexp_matches(regexp_replace(lower(coalesce(ct_rp, '')), '\s|\\', '', 'g'),
+                                   '"includemanagementevents":false|"readwritetype":"readonly"|"excludemanagementeventsources":\["kms|"field":"readonly","equals":\["true"\]')
+               THEN 85 ELSE 65 END
+      - match: >-
+          is_ct AND api IN ('PutBucketLifecycle', 'PutBucketLifecycleConfiguration')
+          AND TRY_CAST(nullif(regexp_extract(coalesce(ct_rp, ''), '"[Dd]ays"\s*:\s*"?([0-9]+)', 1), '') AS INTEGER) <= {cfg.short_retention_days}
+        severity: 75
+      - match: "is_ct AND api = 'PutBucketLogging' AND coalesce(ct_rp, '') NOT ILIKE '%LoggingEnabled%'"
+        severity: 60
+      - match: >-
+          is_ct AND api IN ('DeleteBucketPolicy', 'PutBucketPolicy', 'DeleteBucket')
+          AND lower(json_extract_string(ct_rp, '$.bucketName')) IN (
+              SELECT lower(coalesce(json_extract_string(z.ct_rp, '$.s3BucketName'), json_extract_string(z.ct_re, '$.s3BucketName')))
+              FROM cloud_ev z WHERE z.is_ct AND z.api IN ('CreateTrail', 'UpdateTrail'))
+        severity: 80
+      - match: "is_ct AND api IN ('DeleteLogGroup', 'DeleteLogStream', 'PutRetentionPolicy', 'DeleteSubscriptionFilter')"
+        severity: 45
+        severity_sql: "CASE WHEN regexp_matches(lower(coalesce(ct_rp, '')), 'cloudtrail|flowlog|guardduty') THEN 75 END"
+
+  - id: aws_security_service_off
+    clouds: [aws]
+    technique: T1685
+    tactic: Defense Impairment
+    severity: 70
+    secondary: {technique: T1685, sub_technique: T1685.002, tactic: Defense Impairment, severity: 85}
+    branches:
+      - match: >-
+          is_ct AND ((app = 'guardduty.amazonaws.com'
+                      AND (api IN ('DeleteDetector', 'DisassociateFromMasterAccount', 'DisassociateFromAdministratorAccount',
+                                   'DeleteMembers', 'StopMonitoringMembers', 'DeletePublishingDestination', 'DeleteThreatIntelSet',
+                                   'CreateIPSet', 'UpdateIPSet')
+                           OR (api = 'UpdateDetector' AND lower(json_extract_string(ct_rp, '$.enable')) = 'false')
+                           OR (api = 'CreateFilter' AND json_extract_string(ct_rp, '$.action') = 'ARCHIVE')))
+                     OR (app = 'securityhub.amazonaws.com' AND api IN ('DisableSecurityHub', 'DisableImportFindingsForProduct', 'DeleteInsight'))
+                     OR (app = 'config.amazonaws.com' AND api IN ('StopConfigurationRecorder', 'DeleteDeliveryChannel',
+                                                                  'DeleteConfigurationRecorder', 'DeleteConfigRule'))
+                     OR (app = 'access-analyzer.amazonaws.com' AND api = 'DeleteAnalyzer')
+                     OR (app = 'macie2.amazonaws.com' AND api IN ('DisableMacie', 'UpdateMacieSession'))
+                     OR (app = 'inspector2.amazonaws.com' AND api = 'Disable')
+                     OR (app = 'detective.amazonaws.com' AND api = 'DeleteGraph')
+                     OR (app IN ('waf.amazonaws.com', 'wafv2.amazonaws.com', 'waf-regional.amazonaws.com')
+                         AND api IN ('DeleteWebACL', 'DisassociateWebACL'))
+                     OR (app = 'bedrock.amazonaws.com' AND api = 'DeleteGuardrail')
+                     OR (app = 'monitoring.amazonaws.com' AND api IN ('DeleteAlarms', 'DisableAlarmActions')))
+        severity_sql: >-
+          CASE WHEN api IN ('CreateIPSet', 'UpdateIPSet', 'DeleteAlarms', 'DisableAlarmActions', 'DeleteWebACL', 'DisassociateWebACL') THEN 65
+               WHEN app IN ('guardduty.amazonaws.com', 'config.amazonaws.com') THEN 85 END
+      - match: >-
+          is_ct AND ((app = 'ec2.amazonaws.com' AND api = 'DeleteFlowLogs')
+                     OR (app = 'route53resolver.amazonaws.com' AND api IN ('DeleteResolverQueryLogConfig', 'DisassociateResolverQueryLogConfig'))
+                     OR (app = 'bedrock.amazonaws.com' AND api = 'DeleteModelInvocationLoggingConfiguration'))
+        label: secondary
+      - match: >-
+          is_ct AND app = 'securityhub.amazonaws.com' AND api = 'BatchUpdateFindings' AND coalesce(ct_rp, '') ILIKE '%SUPPRESSED%'
+          AND json_array_length(json_extract(ct_rp, '$.findingIdentifiers')) >= 20
+
+  - id: cl_leave_hierarchy
+    clouds: [aws, gcp]
+    technique: T1666
+    tactic: Defense Impairment
+    severity: 90
+    branches:
+      - match: >-
+          (is_ct AND app = 'organizations.amazonaws.com'
+           AND api IN ('LeaveOrganization', 'RemoveAccountFromOrganization', 'DeleteOrganization', 'CloseAccount'))
+          OR (is_gcp AND (api ILIKE '%Projects.MoveProject' OR api = 'cloudresourcemanager.googleapis.com/projects.move'
+                          OR (api ILIKE '%Projects.UpdateProject' AND coalesce(g_req, '') ILIKE '%parent%')))
+        outcome: any
+        severity_sql: "CASE WHEN outcome = 'failure' THEN 75 END"
+
+  - id: cl_firewall_open_world
+    clouds: [aws, azure, gcp]
+    technique: T1686
+    sub_technique: T1686.001
+    tactic: Defense Impairment
+    severity: 70
+    branches:
+      - match: >-
+          is_ct AND api IN ('AuthorizeSecurityGroupIngress', 'ModifySecurityGroupRules', 'CreateNetworkAclEntry', 'ReplaceNetworkAclEntry')
+          AND regexp_matches(coalesce(ct_rp, ''), '"cidrIp(v6)?"\s*:\s*"(0\.0\.0\.0/0|::/0)"|"cidrBlock"\s*:\s*"0\.0\.0\.0/0"|"ipv6CidrBlock"\s*:\s*"::/0"')
+          AND (api NOT LIKE '%NetworkAclEntry' OR (coalesce(ct_rp, '') ILIKE '%"ruleAction":"allow"%' AND coalesce(ct_rp, '') NOT ILIKE '%"egress":true%'))
+          AND NOT coalesce(json_extract_string(ct_rp, '$.groupId') IN {cfg.public_sg_allow}, false)
+          AND (regexp_matches(coalesce(ct_rp, ''), '"(ipProtocol|protocol)"\s*:\s*"-1"')
+               OR len(list_filter({cfg.sensitive_ports:list}, lambda sp:
+                      sp BETWEEN coalesce(list_min(list_transform(regexp_extract_all(ct_rp, '"fromPort"\s*:\s*(-?[0-9]+)', 1), lambda x: TRY_CAST(x AS INTEGER))), 0)
+                         AND coalesce(list_max(list_transform(regexp_extract_all(ct_rp, '"toPort"\s*:\s*(-?[0-9]+)', 1), lambda x: TRY_CAST(x AS INTEGER))), 65535))) > 0
+               OR list_contains(list_transform(regexp_extract_all(ct_rp, '"fromPort"\s*:\s*(-?[0-9]+)', 1), lambda x: TRY_CAST(x AS INTEGER)), -1))
+      - match: >-
+          is_aza AND api_u IN ('MICROSOFT.NETWORK/NETWORKSECURITYGROUPS/SECURITYRULES/WRITE', 'MICROSOFT.NETWORK/NETWORKSECURITYGROUPS/WRITE')
+          AND regexp_matches(lower(coalesce(az_req, '')), '"access"\s*:\s*"allow"')
+          AND regexp_matches(lower(coalesce(az_req, '')), '"direction"\s*:\s*"inbound"')
+          AND regexp_matches(lower(coalesce(az_req, '')), '"sourceaddressprefix(es)?"\s*:\s*\[?\s*"(\*|0\.0\.0\.0/0|internet|any)"')
+          AND NOT coalesce(lower(host) IN {cfg.public_sg_allow}, false)
+          AND len(list_filter(regexp_extract_all(lower(az_req), '"destinationportranges?"\s*:\s*\[?\s*"([0-9*-]+)"', 1),
+                lambda r: r = '*' OR len(list_filter({cfg.sensitive_ports:list}, lambda sp:
+                       sp BETWEEN TRY_CAST(split_part(r, '-', 1) AS INTEGER)
+                          AND coalesce(TRY_CAST(nullif(split_part(r, '-', 2), '') AS INTEGER), TRY_CAST(split_part(r, '-', 1) AS INTEGER)))) > 0)) > 0
+      - match: >-
+          is_gcp AND regexp_matches(lower(api), 'v[0-9a-z]*\.compute\.firewalls\.(insert|patch|update)$')
+          AND coalesce(g_req, '') LIKE '%0.0.0.0/0%'
+          AND upper(coalesce(json_extract_string(g_req, '$.direction'), 'INGRESS')) = 'INGRESS'
+          AND (len(regexp_extract_all(coalesce(g_req, ''), '"ports"\s*:\s*\[')) = 0
+               OR len(list_filter(regexp_extract_all(g_req, '"ports"\s*:\s*\[([^\]]*)\]', 1), lambda lst:
+                      len(list_filter(regexp_extract_all(lst, '"([0-9-]+)"', 1), lambda r:
+                          len(list_filter({cfg.sensitive_ports:list}, lambda sp:
+                              sp BETWEEN TRY_CAST(split_part(r, '-', 1) AS INTEGER)
+                                 AND coalesce(TRY_CAST(nullif(split_part(r, '-', 2), '') AS INTEGER), TRY_CAST(split_part(r, '-', 1) AS INTEGER)))) > 0)) > 0)) > 0)
+
+  - id: az_diag_or_defender_off
+    clouds: [azure]
+    technique: T1685
+    sub_technique: T1685.002
+    tactic: Defense Impairment
+    severity: 80
+    branches:
+      - match: >-
+          is_aza AND (api_u IN ('MICROSOFT.INSIGHTS/DIAGNOSTICSETTINGS/DELETE', 'MICROSOFT.AADIAM/DIAGNOSTICSETTINGS/DELETE',
+                                'MICROSOFT.INSIGHTS/LOGPROFILES/DELETE', 'MICROSOFT.OPERATIONALINSIGHTS/WORKSPACES/DELETE',
+                                'MICROSOFT.OPERATIONALINSIGHTS/WORKSPACES/DATASOURCES/DELETE', 'MICROSOFT.NETWORK/NETWORKWATCHERS/FLOWLOGS/DELETE',
+                                'MICROSOFT.NETWORK/NETWORKWATCHERS/DELETE', 'MICROSOFT.SECURITY/ALERTSSUPPRESSIONRULES/WRITE',
+                                'MICROSOFT.SECURITYINSIGHTS/ALERTRULES/DELETE', 'MICROSOFT.SECURITYINSIGHTS/DATACONNECTORS/DELETE',
+                                'MICROSOFT.EVENTHUB/NAMESPACES/EVENTHUBS/DELETE')
+                      OR (api_u = 'MICROSOFT.SECURITY/PRICINGS/WRITE' AND regexp_matches(lower(coalesce(az_req, '')), '"pricingtier"\s*:\s*"free"'))
+                      OR (api_u = 'MICROSOFT.INSIGHTS/DIAGNOSTICSETTINGS/WRITE' AND regexp_matches(lower(coalesce(az_req, '')), '"enabled"\s*:\s*false')))
+          AND NOT EXISTS (SELECT 1 FROM cloud_ev z WHERE z.is_aza AND z.ok_row AND z.api_u LIKE '%/DELETE'
+                            AND z.api_u NOT LIKE '%DIAGNOSTICSETTINGS%'
+                            AND z.host = nullif(regexp_extract(e.host, '^(.*)/providers/microsoft\.insights/diagnosticsettings/', 1), '')
+                            AND abs(z.ts_ms - e.ts_ms) <= {cfg.diag_parent_delete_window_ms})
+
+  - id: az_lock_deleted
+    clouds: [azure]
+    technique: T1685
+    tactic: Defense Impairment
+    severity: 60
+    branches:
+      - match: "is_aza AND api_u = 'MICROSOFT.AUTHORIZATION/LOCKS/DELETE'"
+      - template: sequence
+        severity: 85
+        params:
+          a_filter: "is_aza AND api_u = 'MICROSOFT.AUTHORIZATION/LOCKS/DELETE' AND ok_row"
+          b_filter: "is_aza AND ok_row AND api_u LIKE '%/DELETE' AND api_u <> 'MICROSOFT.AUTHORIZATION/LOCKS/DELETE'"
+          join: [[actor_key, actor_key]]
+          pair_where: "starts_with(b.host, coalesce(nullif(regexp_extract(a.host, '^(.*)/providers/microsoft\\.authorization/locks/', 1), ''), a.host))"
+          window_ms: "{cfg.lock_destroy_window_ms}"
+
+  - id: az_ca_policy_change
+    clouds: [azure]
+    technique: T1556
+    sub_technique: T1556.009
+    tactic: Defense Impairment
+    severity: 45
+    branches:
+      - match: >-
+          is_azd AND au_name IN ('Delete conditional access policy', 'Update conditional access policy', 'Add conditional access policy',
+                                 'Delete named location', 'Update named location', 'Add named location', 'Update policy')
+        severity_sql: >-
+          (CASE WHEN au_name = 'Delete conditional access policy' THEN 80
+                WHEN au_name = 'Update conditional access policy'
+                     AND regexp_matches(lower(coalesce(tr_json, '')), 'disabled|enabledforreportingbutnotenforced|excludeusers|excludegroups|excludeapplications') THEN 75
+                WHEN au_name LIKE '% named location' AND regexp_matches(lower(coalesce(tr_json, '')), 'istrusted[^a-z]{0,12}true') THEN 70
+                ELSE 45 END)
+          + (CASE WHEN len({cfg.ca_admins:list}) > 0 AND NOT list_contains({cfg.ca_admins:list}, actor) THEN 10 ELSE 0 END)
+
+  - id: az_mfa_disabled
+    clouds: [azure]
+    technique: T1556
+    sub_technique: T1556.006
+    tactic: Defense Impairment
+    severity: 70
+    allow: {lists: [helpdesk_principals], severity: 45}
+    branches:
+      - match: >-
+          is_azd AND (au_name IN ('Disable Strong Authentication', 'Delete authentication method', 'Admin deleted security info',
+                                  'User deleted security info', 'Update User Risk and MFA Registration Policy')
+                      OR (au_name = 'Update user' AND coalesce(tr_json, '') ILIKE '%StrongAuthenticationRequirement%'
+                          AND regexp_matches(coalesce(tr_json, ''), 'State\\?"\s*:\s*0'))
+                      OR (au_name = 'Authentication Methods Policy Update' AND regexp_matches(lower(coalesce(tr_json, '')), '"state\\?"\s*:\s*\\?"disabled')))
+
+  - id: az_federation_change
+    clouds: [azure]
+    technique: T1484
+    sub_technique: T1484.002
+    tactic: Defense Impairment
+    severity: 85
+    branches:
+      - match: >-
+          is_azd AND (au_name IN ('Set federation settings on domain', 'Add unverified domain', 'Add partner to cross-tenant access setting',
+                                  'Update a partner cross-tenant access setting')
+                      OR (au_name = 'Set domain authentication' AND coalesce(tr_json, '') ILIKE '%Federated%')
+                      OR (au_name = 'Update user' AND coalesce(tr_json, '') ILIKE '%ImmutableId%'))
+      - match: "is_azd AND au_name = 'Verify domain'"
+        severity: 55
+      - template: sequence
+        severity: 90
+        params:
+          a_filter: "is_azd AND au_name = 'Verify domain' AND ok_row"
+          b_filter: >-
+            is_azd AND ok_row AND (au_name = 'Set federation settings on domain'
+                                   OR (au_name = 'Set domain authentication' AND coalesce(tr_json, '') ILIKE '%Federated%'))
+          join: [[acct, acct]]
+          window_ms: "{cfg.federation_verify_window_ms}"
+
+  - id: gcp_logging_tamper
+    clouds: [gcp]
+    technique: T1685
+    sub_technique: T1685.002
+    tactic: Defense Impairment
+    severity: 70
+    branches:
+      - match: >-
+          is_gcp AND (api ILIKE '%ConfigServiceV2.DeleteSink' OR api ILIKE '%ConfigServiceV2.DeleteBucket'
+                      OR api ILIKE '%ConfigServiceV2.CreateExclusion' OR api ILIKE '%ConfigServiceV2.UpdateExclusion'
+                      OR (api ILIKE '%ConfigServiceV2.UpdateSink'
+                          AND (regexp_matches(lower(coalesce(g_req, '')), '"disabled"\s*:\s*true')
+                               OR coalesce(json_extract_string(g_req, '$.updateMask'), '') ILIKE '%filter%'))
+                      OR (api ILIKE '%ConfigServiceV2.UpdateBucket'
+                          AND TRY_CAST(json_extract_string(g_req, '$.bucket.retentionDays') AS INTEGER) < {cfg.short_retention_days}))
+        severity_sql: >-
+          CASE WHEN api ILIKE '%DeleteSink' THEN 85 WHEN api ILIKE '%Exclusion' THEN 75 ELSE 80 END
+      - match: "is_gcp AND api ILIKE '%SetIamPolicy' AND regexp_matches(coalesce(g_audit_delta, ''), '\"action\"\\s*:\\s*\"REMOVE\"')"
+        severity: 90
+      - match: >-
+          is_gcp AND api = 'storage.buckets.update' AND coalesce(g_req, '') ILIKE '%lifecycle%'
+          AND TRY_CAST(nullif(regexp_extract(coalesce(g_req, ''), '"age"\s*:\s*([0-9]+)', 1), '') AS INTEGER) <= {cfg.short_retention_days}
+          AND lower(nullif(regexp_extract(coalesce(g_res, ''), 'buckets/([^/]+)', 1), '')) IN (
+              SELECT lower(nullif(regexp_extract(coalesce(z.g_req, ''), 'storage\.googleapis\.com/([^"/]+)', 1), ''))
+              FROM cloud_ev z WHERE z.is_gcp AND (z.api ILIKE '%CreateSink' OR z.api ILIKE '%UpdateSink'))
+        severity: 80
+      - match: >-
+          is_gcp AND (api = 'dns.policies.delete'
+                      OR (api IN ('dns.policies.patch', 'dns.policies.update') AND regexp_matches(lower(coalesce(g_req, '')), '"enablelogging"\s*:\s*false'))
+                      OR (regexp_matches(lower(api), 'v[0-9a-z]*\.compute\.subnetworks\.patch$')
+                          AND regexp_matches(lower(coalesce(g_req, '')), '"enable"\s*:\s*false') AND coalesce(g_req, '') ILIKE '%logConfig%'))
+        severity: 75
+
+  # ============================================================================================ Credential Access
+  - id: cl_secrets_mass_read
+    clouds: [aws, azure, gcp]
+    technique: T1555
+    sub_technique: T1555.006
+    tactic: Credential Access
+    severity: 75
+    branches:
+      - template: distinct_burst
+        filter: &secret_reads >-
+          ((is_ct AND ((app = 'secretsmanager.amazonaws.com' AND api IN ('GetSecretValue', 'BatchGetSecretValue'))
+                       OR (app = 'ssm.amazonaws.com' AND api IN ('GetParameter', 'GetParameters', 'GetParametersByPath')
+                           AND lower(json_extract_string(ct_rp, '$.withDecryption')) = 'true')))
+           OR (is_gcp AND api ILIKE '%SecretManagerService.AccessSecretVersion'))
+          AND NOT coalesce(ct_svc, false)
+        params: &secret_burst
+          key: [actor_key]
+          distinct: >-
+            coalesce(json_extract_string(ct_rp, '$.secretId'), json_extract_string(ct_rp, '$.name'),
+                     json_extract_string(ct_rp, '$.path'), json_extract_string(ct_rp, '$.names'),
+                     json_extract_string(ct_rp, '$.secretIdList'), nullif(regexp_extract(coalesce(g_res, ''), 'secrets/([^/]+)', 1), ''))
+          window_ms: "{cfg.secrets_window_ms}"
+          min_distinct: "{cfg.secrets_min_distinct}"
+        severity_sql: "CASE WHEN count(DISTINCT region) > 1 THEN 85 END"
+      - match: >-
+          is_ct AND api = 'BatchGetSecretValue' AND NOT coalesce(ct_svc, false)
+          AND (json_array_length(json_extract(ct_rp, '$.secretIdList')) >= {cfg.secrets_min_distinct}
+               OR json_extract(ct_rp, '$.filters') IS NOT NULL)
+      - template: distinct_burst
+        filter: *secret_reads
+        outcome: failure
+        params:
+          key: [actor_key]
+          distinct: >-
+            coalesce(json_extract_string(ct_rp, '$.secretId'), json_extract_string(ct_rp, '$.name'),
+                     nullif(regexp_extract(coalesce(g_res, ''), 'secrets/([^/]+)', 1), ''))
+          window_ms: "{cfg.secrets_window_ms}"
+          min_distinct: "{cfg.secrets_denied_min}"
+        severity: 65
+      - match: "is_aza AND api_u = 'MICROSOFT.KEYVAULT/VAULTS/ACCESSPOLICIES/WRITE'"
+        severity: 55
+
+  - id: aws_ec2_password_data
+    clouds: [aws]
+    technique: T1552
+    tactic: Credential Access
+    severity: 55
+    promote: {first_seen: 65}
+    branches:
+      - match: "is_ct AND api = 'GetPasswordData'"
+        outcome: any
+        target: "json_extract_string(ct_rp, '$.instanceId')"
+      - template: distinct_burst
+        filter: "is_ct AND api = 'GetPasswordData'"
+        outcome: any
+        params: {key: [actor_key], distinct: "json_extract_string(ct_rp, '$.instanceId')", window_ms: "{cfg.hour_ms}",
+                 min_distinct: "{cfg.password_data_min}"}
+        severity: 75
+      - template: distinct_burst
+        filter: "is_ct AND api = 'GetPasswordData'"
+        outcome: failure
+        params: {key: [actor_key], distinct: source_seq, window_ms: "{cfg.hour_ms}", min_distinct: "{cfg.password_data_min}"}
+        severity: 75
+
+  - id: az_mfa_fatigue
+    clouds: [azure]
+    technique: T1621
+    tactic: Credential Access
+    severity: 70
+    secondary: {technique: T1078, sub_technique: T1078.004, tactic: Initial Access, severity: 85}
+    branches:
+      - template: distinct_burst
+        filter: >-
+          is_azs AND (si_code IN {cfg.azure_mfa_deny_codes} OR coalesce(si_authdet, '') ILIKE '%MFA denied%'
+                      OR coalesce(si_authdet, '') ILIKE '%declined%' OR coalesce(si_authdet, '') ILIKE '%fraud%')
+        outcome: any
+        params: {key: [actor_key], distinct: source_seq, window_ms: "{cfg.mfa_window_ms}", min_distinct: "{cfg.mfa_min_prompts}"}
+      - template: sequence
+        label: secondary
+        params:
+          a_rules: [az_mfa_fatigue]
+          a_filter: "technique_id = 'T1621'"
+          b_filter: "is_azs AND si_code = '0'"
+          join: [[actor, actor]]
+          window_ms: "{cfg.mfa_success_window_ms}"
+      - match: "is_azs AND coalesce(si_authdet, '') ILIKE '%fraud%'"
+        outcome: any
+        severity: 85
+
+  - id: az_key_listing
+    clouds: [azure]
+    technique: T1552
+    tactic: Credential Access
+    severity: 45
+    promote: {first_seen: 70}
+    branches:
+      - match: &az_key_ops >-
+          is_aza AND api_u IN ('MICROSOFT.STORAGE/STORAGEACCOUNTS/LISTKEYS/ACTION', 'MICROSOFT.STORAGE/STORAGEACCOUNTS/REGENERATEKEY/ACTION',
+                               'MICROSOFT.STORAGE/STORAGEACCOUNTS/LISTACCOUNTSAS/ACTION', 'MICROSOFT.STORAGE/STORAGEACCOUNTS/LISTSERVICESAS/ACTION',
+                               'MICROSOFT.WEB/SITES/PUBLISHXML/ACTION', 'MICROSOFT.WEB/SITES/CONFIG/LIST/ACTION',
+                               'MICROSOFT.COGNITIVESERVICES/ACCOUNTS/LISTKEYS/ACTION', 'MICROSOFT.DOCUMENTDB/DATABASEACCOUNTS/LISTKEYS/ACTION',
+                               'MICROSOFT.DOCUMENTDB/DATABASEACCOUNTS/LISTCONNECTIONSTRINGS/ACTION',
+                               'MICROSOFT.CONTAINERSERVICE/MANAGEDCLUSTERS/LISTCLUSTERADMINCREDENTIAL/ACTION',
+                               'MICROSOFT.CONTAINERREGISTRY/REGISTRIES/LISTCREDENTIALS/ACTION',
+                               'MICROSOFT.COMPUTE/VIRTUALMACHINES/RETRIEVEBOOTDIAGNOSTICSDATA/ACTION',
+                               'MICROSOFT.HYBRIDCOMPUTE/MACHINES/EXTENSIONS/WRITE')
+        severity_sql: "CASE WHEN machine THEN 35 END"
+      - template: distinct_burst
+        filter: *az_key_ops
+        params: {key: [actor_key], distinct: lower(host), window_ms: "{cfg.hour_ms}", min_distinct: "{cfg.key_listing_min_resources}"}
+        severity: 80
+      - template: sequence
+        severity: 85
+        params:
+          a_filter: >-
+            is_aza AND ok_row AND api_u = 'MICROSOFT.COGNITIVESERVICES/ACCOUNTS/WRITE'
+            AND regexp_matches(lower(coalesce(az_req, '')), '"disablelocalauth"\s*:\s*false')
+          b_filter: "is_aza AND ok_row AND api_u = 'MICROSOFT.COGNITIVESERVICES/ACCOUNTS/LISTKEYS/ACTION'"
+          join: [[lower(host), "regexp_replace(lower(host), '/listkeys$', '')"]]
+          window_ms: "{cfg.foundry_window_ms}"
+
+  - id: cl_instance_metadata_read
+    clouds: [aws, gcp]
+    technique: T1552
+    sub_technique: T1552.005
+    tactic: Credential Access
+    severity: 55
+    promote: {first_seen: 70}
+    allow: {lists: [inventory_principals], severity: 35}
+    branches:
+      - match: "is_ct AND api = 'DescribeInstanceAttribute' AND json_extract_string(ct_rp, '$.attribute') = 'userData'"
+        target: "json_extract_string(ct_rp, '$.instanceId')"
+      - template: distinct_burst
+        filter: "is_ct AND api = 'DescribeInstanceAttribute' AND json_extract_string(ct_rp, '$.attribute') = 'userData'"
+        params: {key: [actor_key], distinct: "json_extract_string(ct_rp, '$.instanceId')", window_ms: "{cfg.hour_ms}",
+                 min_distinct: "{cfg.metadata_min_instances}"}
+        severity: 70
+      - template: distinct_burst
+        filter: "is_gcp AND api IN ('v1.compute.instances.get', 'beta.compute.instances.get', 'v1.compute.projects.get')"
+        params: {key: [actor_key], distinct: g_res, window_ms: "{cfg.hour_ms}", min_distinct: "{cfg.metadata_min_instances}"}
+        severity: 65
+
+  - id: cl_traffic_mirroring
+    clouds: [aws, azure, gcp]
+    technique: T1040
+    tactic: Credential Access
+    severity: 70
+    allow: {lists: [nsm_principals], severity: 35}
+    branches:
+      - match: >-
+          (is_ct AND api IN ('CreateTrafficMirrorSession', 'CreateTrafficMirrorTarget', 'CreateTrafficMirrorFilter'))
+          OR (is_aza AND api_u IN ('MICROSOFT.NETWORK/NETWORKWATCHERS/PACKETCAPTURES/WRITE',
+                                   'MICROSOFT.NETWORK/NETWORKINTERFACES/TAPCONFIGURATIONS/WRITE', 'MICROSOFT.NETWORK/VIRTUALNETWORKTAPS/WRITE'))
+          OR (is_gcp AND regexp_matches(lower(api), 'v[0-9a-z]*\.compute\.packetmirrorings\.(insert|patch)$'))
+
+  # ==================================================================================================== Discovery
+  - id: aws_ses_recon
+    clouds: [aws]
+    technique: T1526
+    tactic: Discovery
+    severity: 55
+    allow: {lists: [ses_admins], severity: 35}
+    branches:
+      - template: distinct_burst
+        filter: >-
+          is_ct AND app IN ('ses.amazonaws.com', 'sesv2.amazonaws.com', 'email.amazonaws.com')
+          AND api IN ('GetAccountSendingEnabled', 'GetSendQuota', 'ListIdentities', 'GetIdentityVerificationAttributes',
+                      'ListEmailIdentities', 'GetAccount', 'ListVerifiedEmailAddresses')
+        outcome: any
+        params: {key: [actor_key], distinct: api, window_ms: "{cfg.burst_window_ms}", min_distinct: "{cfg.ses_min_apis}"}
+        severity_sql: "CASE WHEN bool_or(coalesce(ct_akid, '') LIKE 'AKIA%') AND bool_or(hosting) THEN 70 END"
+
+  - id: gcp_testiam_burst
+    clouds: [gcp]
+    technique: T1069
+    sub_technique: T1069.003
+    tactic: Discovery
+    severity: 55
+    branches:
+      - template: distinct_burst
+        filter: "is_gcp AND api ILIKE '%testIamPermissions'"
+        outcome: any
+        params: {key: [actor_key], distinct: source_seq, window_ms: "{cfg.burst_window_ms}", min_distinct: "{cfg.testiam_min}"}
+        severity_sql: "CASE WHEN bool_and(coalesce(ua, '') LIKE '%mozilla%') THEN 30 END"
+      - match: "is_gcp AND api ILIKE '%testIamPermissions' AND json_array_length(json_extract(g_req, '$.permissions')) >= {cfg.testiam_min_perms}"
+        outcome: any
+        severity: 70
+
+  - id: aws_iam_policy_bruteforce
+    clouds: [aws]
+    technique: T1069
+    sub_technique: T1069.003
+    tactic: Discovery
+    severity: 60
+    branches:
+      - template: distinct_burst
+        filter: "is_ct AND ct_err = 'MalformedPolicyDocumentException'"
+        outcome: failure
+        params: {key: [actor_key], distinct: source_seq, window_ms: "{cfg.hour_ms}", min_distinct: "{cfg.policy_bf_min}"}
+        severity_sql: "CASE WHEN bool_and(coalesce(ua, '') LIKE '%console%') THEN 35 END"
+      - template: distinct_burst
+        filter: "is_ct AND api = 'UpdateAssumeRolePolicy'"
+        outcome: failure
+        params:
+          key: [actor_key]
+          distinct: "nullif(regexp_extract(coalesce(json_extract_string(ct_rp, '$.policyDocument'), ''), 'arn:aws:iam::[0-9]{12}:[a-z]+/[^\"\\\\,]+', 0), '')"
+          window_ms: "{cfg.hour_ms}"
+          min_distinct: "{cfg.trust_enum_min}"
+        severity: 65
+
+  # ============================================================================================= Lateral Movement
+  - id: aws_remote_access_multi
+    clouds: [aws]
+    technique: T1021
+    sub_technique: T1021.008
+    tactic: Lateral Movement
+    severity: 35
+    promote: {first_seen: 60}
+    branches:
+      - match: &aws_remote >-
+          is_ct AND ((app = 'ec2-instance-connect.amazonaws.com' AND api IN ('SendSSHPublicKey', 'SendSerialConsoleSSHPublicKey'))
+                     OR (app = 'ssm.amazonaws.com' AND api IN ('StartSession', 'ResumeSession'))
+                     OR (app = 'ec2.amazonaws.com' AND api = 'EnableSerialConsoleAccess'))
+        target: "coalesce(json_extract_string(ct_rp, '$.instanceId'), json_extract_string(ct_rp, '$.target'))"
+        severity_sql: "CASE WHEN api = 'EnableSerialConsoleAccess' THEN 70 END"
+      - template: distinct_burst
+        filter: *aws_remote
+        params: {key: [actor_key], distinct: "coalesce(json_extract_string(ct_rp, '$.instanceId'), json_extract_string(ct_rp, '$.target'))",
+                 window_ms: "{cfg.burst_window_ms}", min_distinct: "{cfg.remote_min_targets}"}
+        severity: 75
+
+  - id: az_remote_access
+    clouds: [azure]
+    technique: T1021
+    sub_technique: T1021.008
+    tactic: Lateral Movement
+    severity: 65
+    allow: {lists: [vm_ops_principals], severity: 35}
+    branches:
+      - match: >-
+          is_aza AND api_u IN ('MICROSOFT.NETWORK/BASTIONHOSTS/CREATESHAREABLELINKS/ACTION', 'MICROSOFT.NETWORK/BASTIONHOSTS/GETSHAREABLELINKS/ACTION',
+                               'MICROSOFT.SERIALCONSOLE/SERIALPORTS/CONNECT/ACTION', 'MICROSOFT.COMPUTE/VIRTUALMACHINES/LOGIN/ACTION')
+        severity_sql: "CASE WHEN api_u LIKE '%CREATESHAREABLELINKS%' THEN 75 END"
+
+  - id: aws_console_from_keys
+    clouds: [aws]
+    technique: T1550
+    sub_technique: T1550.001
+    tactic: Lateral Movement
+    severity: 60
+    branches:
+      - match: >-
+          is_ct AND app = 'signin.amazonaws.com' AND api = 'GetSigninToken'
+          AND NOT regexp_matches(coalesce(ua, ''), {cfg.console_broker_ua_regex})
+
+  # ================================================================================================= Exfiltration
+  - id: cl_snapshot_image_share_external
+    clouds: [aws, gcp]
+    technique: T1537
+    tactic: Exfiltration
+    severity: 85
+    branches:
+      - match: >-
+          is_ct AND ((api = 'ModifySnapshotAttribute' AND coalesce(ct_rp, '') ILIKE '%createVolumePermission%')
+                     OR (api = 'ModifyImageAttribute' AND coalesce(ct_rp, '') ILIKE '%launchPermission%'))
+          AND (regexp_matches(coalesce(json_extract_string(ct_rp, '$.createVolumePermission.add'), json_extract_string(ct_rp, '$.launchPermission.add'), ''),
+                              '"group"\s*:\s*"all"')
+               OR len(list_filter(regexp_extract_all(coalesce(json_extract_string(ct_rp, '$.createVolumePermission.add'),
+                                                              json_extract_string(ct_rp, '$.launchPermission.add'), ''), '"userId"\s*:\s*"([0-9]{12})"', 1),
+                                  lambda a: a <> coalesce(acct, '') AND NOT list_contains({cfg.trusted_aws_accounts:list}, a))) > 0)
+        target: "coalesce(json_extract_string(ct_rp, '$.snapshotId'), json_extract_string(ct_rp, '$.imageId'))"
+        severity_sql: >-
+          CASE WHEN regexp_matches(coalesce(json_extract_string(ct_rp, '$.createVolumePermission.add'), json_extract_string(ct_rp, '$.launchPermission.add'), ''),
+                                   '"group"\s*:\s*"all"') THEN 90 END
+      - match: >-
+          is_ct AND api IN ('ModifyDBSnapshotAttribute', 'ModifyDBClusterSnapshotAttribute')
+          AND lower(json_extract_string(ct_rp, '$.attributeName')) = 'restore'
+          AND (coalesce(json_extract_string(ct_rp, '$.valuesToAdd'), '') ILIKE '%"all"%'
+               OR len(list_filter(regexp_extract_all(coalesce(json_extract_string(ct_rp, '$.valuesToAdd'), ''), '([0-9]{12})', 1),
+                                  lambda a: a <> coalesce(acct, '') AND NOT list_contains({cfg.trusted_aws_accounts:list}, a))) > 0)
+        severity_sql: "CASE WHEN coalesce(json_extract_string(ct_rp, '$.valuesToAdd'), '') ILIKE '%\"all\"%' THEN 90 END"
+      - match: >-
+          is_ct AND app = 'ram.amazonaws.com' AND api IN ('CreateResourceShare', 'AssociateResourceShare')
+          AND lower(coalesce(json_extract_string(ct_rp, '$.allowExternalPrincipals'), 'true')) <> 'false'
+          AND len(list_filter(regexp_extract_all(coalesce(json_extract_string(ct_rp, '$.principals'), ''), '([0-9]{12})', 1),
+                              lambda a: a <> coalesce(acct, '') AND NOT list_contains({cfg.trusted_aws_accounts:list}, a))) > 0
+      - match: >-
+          is_gcp AND regexp_matches(lower(api), 'v[0-9a-z]*\.compute\.(disks|images|snapshots|machineimages)\.setiampolicy$')
+          AND (coalesce(g_req, '') ILIKE '%allUsers%' OR coalesce(g_req, '') ILIKE '%allAuthenticatedUsers%'
+               OR len(list_filter(regexp_extract_all(coalesce(g_req, ''), '"(?:user|serviceAccount|group|domain):[^"@]*@?([^"]+)"', 1),
+                                  lambda d: NOT list_contains({cfg.trusted_domains:list}, lower(d))
+                                       AND lower(d) <> lower(regexp_extract(coalesce(g_principal, ''), '@(.+)$', 1))
+                                       AND lower(d) NOT LIKE '%gserviceaccount.com')) > 0)
+        severity_sql: "CASE WHEN coalesce(g_req, '') ILIKE '%allUsers%' OR coalesce(g_req, '') ILIKE '%allAuthenticatedUsers%' THEN 90 END"
+
+  - id: cl_storage_public_or_external
+    clouds: [aws, azure, gcp]
+    technique: T1537
+    tactic: Exfiltration
+    severity: 75
+    branches:
+      - match: >-
+          is_ct AND api = 'PutBucketPolicy' AND coalesce(ct_rp, '') NOT ILIKE '%cloudfront%'
+          AND NOT coalesce(lower(json_extract_string(ct_rp, '$.bucketName')) IN {cfg.public_bucket_allow}, false)
+          AND (regexp_matches(regexp_replace(lower(coalesce(ct_rp, '')), '\s|\\', '', 'g'), '"principal":("\*"|\{"aws":"\*"\}|\{"aws":\["\*"\]\})')
+               OR len(list_filter(regexp_extract_all(coalesce(ct_rp, ''), 'arn:aws:iam::([0-9]{12}):', 1),
+                                  lambda a: a <> coalesce(acct, '') AND NOT list_contains({cfg.trusted_aws_accounts:list}, a))) > 0)
+        target: "json_extract_string(ct_rp, '$.bucketName')"
+        severity: 85
+      - match: >-
+          is_ct AND api IN ('PutBucketAcl', 'PutObjectAcl')
+          AND regexp_matches(coalesce(ct_rp, ''), 'AllUsers|AuthenticatedUsers|"x-amz-acl"\s*:\s*\[?\s*"public-read')
+          AND NOT coalesce(lower(json_extract_string(ct_rp, '$.bucketName')) IN {cfg.public_bucket_allow}, false)
+        severity: 80
+      - match: >-
+          is_ct AND (api = 'DeletePublicAccessBlock' OR api = 'DeleteBucketPublicAccessBlock'
+                     OR (api = 'PutBucketPublicAccessBlock' AND regexp_matches(lower(coalesce(ct_rp, '')), '":\s*false')))
+          AND NOT coalesce(lower(json_extract_string(ct_rp, '$.bucketName')) IN {cfg.public_bucket_allow}, false)
+        severity: 70
+      - match: >-
+          is_ct AND app = 's3.amazonaws.com' AND api = 'PutBucketReplication'
+          AND len(list_filter(regexp_extract_all(coalesce(ct_rp, ''), '"Account"\s*:\s*"([0-9]{12})"', 1),
+                              lambda a: a <> coalesce(acct, '') AND NOT list_contains({cfg.trusted_aws_accounts:list}, a))) > 0
+        severity: 85
+      - match: >-
+          is_ct AND ((api = 'SetRepositoryPolicy') OR api LIKE 'AddLayerVersionPermission%'
+                     OR api IN ('SetTopicAttributes', 'SetQueueAttributes', 'PutKeyPolicy'))
+          AND (regexp_matches(regexp_replace(lower(coalesce(ct_rp, '')), '\s|\\', '', 'g'), '"principal":("\*"|\{"aws":"\*"\})')
+               OR json_extract_string(ct_rp, '$.principal') = '*')
+        severity: 75
+      - match: >-
+          is_aza AND ((api_u = 'MICROSOFT.STORAGE/STORAGEACCOUNTS/WRITE'
+                       AND regexp_matches(lower(coalesce(az_req, '')), '"allowblobpublicaccess"\s*:\s*true|"defaultaction"\s*:\s*"allow"'))
+                      OR (api_u = 'MICROSOFT.STORAGE/STORAGEACCOUNTS/BLOBSERVICES/CONTAINERS/WRITE'
+                          AND regexp_matches(lower(coalesce(az_req, '')), '"publicaccess"\s*:\s*"(container|blob)"')))
+        severity: 75
+      - match: >-
+          is_gcp AND api IN ('storage.setIamPermissions', 'storage.setIamPolicy')
+          AND regexp_matches(coalesce(g_delta, '') || coalesce(g_req, ''), 'allUsers|allAuthenticatedUsers')
+        severity: 85
+
+  - id: aws_data_export_task
+    clouds: [aws]
+    technique: T1537
+    tactic: Exfiltration
+    severity: 70
+    branches:
+      - match: >-
+          is_ct AND (api IN ('CreateInstanceExportTask', 'ExportImage', 'StartExportTask', 'ExportTableToPointInTime')
+                     OR (app = 'datasync.amazonaws.com' AND api = 'CreateTask')
+                     OR (app = 'dms.amazonaws.com' AND api = 'StartReplicationTask')
+                     OR (app = 'batch.amazonaws.com' AND api = 'SubmitJob'))
+        outcome: any
+        severity_sql: >-
+          CASE WHEN outcome = 'failure' THEN 45
+               WHEN regexp_matches(lower(coalesce(ct_rp, '')), {cfg.export_allow_bucket_regex}) THEN 35
+               WHEN nullif(regexp_extract(coalesce(ct_rp, ''), '"(?:s3BucketOwner|ExportBucketOwner|S3BucketOwner)"\s*:\s*"([0-9]{12})"', 1), '') IS NOT NULL
+                    AND regexp_extract(ct_rp, '"(?:s3BucketOwner|ExportBucketOwner|S3BucketOwner)"\s*:\s*"([0-9]{12})"', 1) <> coalesce(acct, '')
+                    AND NOT list_contains({cfg.trusted_aws_accounts:list},
+                                          regexp_extract(ct_rp, '"(?:s3BucketOwner|ExportBucketOwner|S3BucketOwner)"\s*:\s*"([0-9]{12})"', 1))
+               THEN 85 END
+
+  - id: az_disk_sas_export
+    clouds: [azure]
+    technique: T1537
+    tactic: Exfiltration
+    severity: 70
+    promote: {first_seen: 85}
+    allow: {lists: [backup_principals], severity: 35}
+    branches:
+      - match: "is_aza AND api_u IN ('MICROSOFT.COMPUTE/DISKS/BEGINGETACCESS/ACTION', 'MICROSOFT.COMPUTE/SNAPSHOTS/BEGINGETACCESS/ACTION')"
+        severity_sql: >-
+          CASE WHEN TRY_CAST(nullif(regexp_extract(coalesce(az_req, ''), '"durationInSeconds"\s*:\s*([0-9]+)', 1), '') AS BIGINT) > 86400 THEN 80 END
+      - template: sequence
+        severity: 85
+        params:
+          a_filter: "is_aza AND ok_row AND api_u = 'MICROSOFT.COMPUTE/SNAPSHOTS/WRITE'"
+          b_filter: "is_aza AND ok_row AND api_u IN ('MICROSOFT.COMPUTE/DISKS/BEGINGETACCESS/ACTION', 'MICROSOFT.COMPUTE/SNAPSHOTS/BEGINGETACCESS/ACTION')"
+          join: [[actor_key, actor_key]]
+          window_ms: "{cfg.snapshot_export_window_ms}"
+
+  # ======================================================================================================= Impact
+  - id: cl_kms_key_destroy
+    clouds: [aws, azure, gcp]
+    technique: T1485
+    tactic: Impact
+    severity: 75
+    allow: {lists: [kms_admins], severity: 45}
+    branches:
+      - match: &kms_destroy >-
+          (is_ct AND app = 'kms.amazonaws.com'
+           AND (api IN ('ScheduleKeyDeletion', 'DisableKey', 'DeleteImportedKeyMaterial', 'ImportKeyMaterial')
+                OR (api = 'PutKeyPolicy' AND NOT contains(coalesce(json_extract_string(ct_rp, '$.policy'), ''), 'arn:aws:iam::' || coalesce(acct, '') || ':root'))))
+          OR (is_aza AND api_u IN ('MICROSOFT.KEYVAULT/VAULTS/DELETE', 'MICROSOFT.KEYVAULT/VAULTS/KEYS/DELETE',
+                                   'MICROSOFT.KEYVAULT/LOCATIONS/DELETEDVAULTS/PURGE/ACTION'))
+          OR (is_gcp AND (api ILIKE '%KeyManagementService.DestroyCryptoKeyVersion'
+                          OR (api ILIKE '%KeyManagementService.UpdateCryptoKeyVersion' AND coalesce(g_req, '') ILIKE '%DISABLED%')))
+        severity_sql: >-
+          CASE WHEN api_u LIKE '%PURGE/ACTION' THEN 90 WHEN api = 'PutKeyPolicy' THEN 85 WHEN is_gcp THEN 80 END
+      - template: distinct_burst
+        filter: *kms_destroy
+        params: {key: [actor_key], distinct: "coalesce(json_extract_string(ct_rp, '$.keyId'), lower(host), g_res)",
+                 window_ms: "{cfg.hour_ms}", min_distinct: "{cfg.kms_burst_min}"}
+        severity: 90
+
+  - id: cl_storage_ransom_encrypt
+    clouds: [aws, azure, gcp]
+    technique: T1486
+    tactic: Impact
+    severity: 80
+    allow: {lists: [ssec_allow_principals], severity: 35}
+    branches:
+      - match: &ssec >-
+          is_ct AND api IN ('PutObject', 'CopyObject', 'UploadPart', 'CreateMultipartUpload')
+          AND (coalesce(ct_rp, '') ILIKE '%x-amz-server-side-encryption-customer-algorithm%'
+               OR (coalesce(ct_rp, '') ILIKE '%aws:kms%'
+                   AND nullif(regexp_extract(coalesce(json_extract_string(ct_rp, '$."x-amz-server-side-encryption-aws-kms-key-id"'), ''), 'arn:aws:kms:[^:]+:([0-9]{12}):', 1), '') IS NOT NULL
+                   AND regexp_extract(json_extract_string(ct_rp, '$."x-amz-server-side-encryption-aws-kms-key-id"'), 'arn:aws:kms:[^:]+:([0-9]{12}):', 1) <> coalesce(acct, '')))
+        severity: 60
+      - template: distinct_burst
+        filter: *ssec
+        params: {key: [actor_key, "json_extract_string(ct_rp, '$.bucketName')"], distinct: "coalesce(json_extract_string(ct_rp, '$.key'), CAST(source_seq AS VARCHAR))",
+                 window_ms: "{cfg.burst_window_ms}", min_distinct: "{cfg.ransom_min_objects}"}
+        severity: 90
+      - match: >-
+          is_ct AND api = 'PutBucketEncryption'
+          AND len(list_filter(regexp_extract_all(coalesce(ct_rp, ''), 'arn:aws:kms:[^:]+:([0-9]{12}):', 1),
+                              lambda a: a <> coalesce(acct, '') AND NOT list_contains({cfg.trusted_aws_accounts:list}, a))) > 0
+        severity: 85
+      - template: sequence
+        severity: 85
+        params:
+          a_filter: "is_ct AND ok_row AND api IN ('DeleteObject', 'DeleteObjects')"
+          b_filter: "is_ct AND ok_row AND api = 'PutObject' AND regexp_matches(lower(coalesce(json_extract_string(ct_rp, '$.key'), '')), {cfg.ransom_note_regex})"
+          join: [[actor_key, actor_key]]
+          window_ms: "{cfg.hour_ms}"
+      - template: distinct_burst
+        filter: "is_gcp AND api = 'storage.objects.create' AND coalesce(g_authz, '') ILIKE '%storage.objects.delete%'"
+        params: {key: [actor_key], distinct: g_res, window_ms: "{cfg.burst_window_ms}", min_distinct: "{cfg.ransom_min_objects}"}
+        severity: 90
+      - match: >-
+          is_aza AND (api_u = 'MICROSOFT.STORAGE/STORAGEACCOUNTS/ENCRYPTIONSCOPES/WRITE'
+                      OR (api_u = 'MICROSOFT.STORAGE/STORAGEACCOUNTS/WRITE' AND regexp_matches(lower(coalesce(az_req, '')), '"keysource"\s*:\s*"microsoft\.keyvault"')))
+        severity: 55
+      - template: sequence
+        severity: 90
+        params:
+          a_filter: >-
+            is_aza AND ok_row AND (api_u = 'MICROSOFT.STORAGE/STORAGEACCOUNTS/ENCRYPTIONSCOPES/WRITE'
+                                   OR (api_u = 'MICROSOFT.STORAGE/STORAGEACCOUNTS/WRITE' AND regexp_matches(lower(coalesce(az_req, '')), '"keysource"\s*:\s*"microsoft\.keyvault"')))
+          b_rules: [cl_kms_key_destroy]
+          join: [[actor, actor]]
+          window_ms: "{cfg.cmk_destroy_window_ms}"
+      # rules track: AWS KMS ransomware with external key material: material imported into a key, then deleted (or the
+      # key disabled / scheduled for deletion). Data encrypted under that key is then unrecoverable by the owner while
+      # the actor keeps the material (same reading as the Sigma label_override of aws_kms_import_key_material -> T1486)
+      - template: sequence
+        severity: 90
+        params:
+          a_filter: "is_ct AND ok_row AND app = 'kms.amazonaws.com' AND api = 'ImportKeyMaterial'"
+          b_filter: >-
+            is_ct AND ok_row AND app = 'kms.amazonaws.com'
+            AND api IN ('DeleteImportedKeyMaterial', 'ScheduleKeyDeletion', 'DisableKey')
+          join:
+            - - &kms_key_id "nullif(regexp_extract(lower(coalesce(json_extract_string(ct_rp, '$.keyId'), '')), '([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|mrk-[0-9a-f]{32})', 1), '')"
+              - *kms_key_id
+          window_ms: "{cfg.cmk_destroy_window_ms}"
+
+  - id: cl_backup_destruction
+    clouds: [aws, azure, gcp]
+    technique: T1490
+    tactic: Impact
+    severity: 40
+    allow: {lists: [backup_principals], severity: 35}
+    branches:
+      - match: &backup_kill >-
+          (is_ct AND (api IN ('DeleteSnapshot', 'DeleteDBSnapshot', 'DeleteDBClusterSnapshot', 'DeleteRecoveryPoint', 'DeleteBackupVault',
+                              'DeleteBackupVaultLockConfiguration', 'DeleteBackupPlan', 'DeregisterImage', 'DeleteDBInstanceAutomatedBackup',
+                              'DeleteBucketReplication')
+                      OR (api = 'ModifyDBInstance' AND regexp_matches(lower(coalesce(ct_rp, '')), '"backupretentionperiod"\s*:\s*0[^0-9]|"deletionprotection"\s*:\s*false'))
+                      OR (api = 'PutBucketVersioning' AND regexp_matches(coalesce(ct_rp, ''), '"Status"\s*:\s*"Suspended"|"MfaDelete"\s*:\s*"Disabled"'))))
+          OR (is_aza AND (api_u IN ('MICROSOFT.COMPUTE/SNAPSHOTS/DELETE', 'MICROSOFT.COMPUTE/RESTOREPOINTCOLLECTIONS/DELETE',
+                                    'MICROSOFT.COMPUTE/RESTOREPOINTCOLLECTIONS/RESTOREPOINTS/DELETE', 'MICROSOFT.RECOVERYSERVICES/VAULTS/DELETE',
+                                    'MICROSOFT.RECOVERYSERVICES/VAULTS/BACKUPFABRICS/PROTECTIONCONTAINERS/PROTECTEDITEMS/DELETE',
+                                    'MICROSOFT.DATAPROTECTION/BACKUPVAULTS/DELETE')
+                          OR (api_u = 'MICROSOFT.RECOVERYSERVICES/VAULTS/BACKUPCONFIG/WRITE' AND regexp_matches(lower(coalesce(az_req, '')), 'softdeletefeaturestate"\s*:\s*"disabled'))))
+          OR (is_gcp AND regexp_matches(lower(api), 'v[0-9a-z]*\.compute\.snapshots\.delete|cloudsql\.backupruns\.delete|backupdr.*delete'))
+      - template: distinct_burst
+        filter: *backup_kill
+        params: {key: [actor_key], distinct: "coalesce(ct_rp, lower(host), g_res)", window_ms: "{cfg.hour_ms}",
+                 min_distinct: "{cfg.backup_burst_min}"}
+        severity: 85
+
+  - id: cl_compute_hijack
+    clouds: [aws, azure, gcp]
+    technique: T1496
+    sub_technique: T1496.001
+    tactic: Impact
+    severity: 75
+    allow: {lists: [ml_principals], severity: 45}
+    branches:
+      - match: &aws_big_launch >-
+          is_ct AND api = 'RunInstances'
+          AND (regexp_matches(lower(coalesce(json_extract_string(ct_rp, '$.instanceType'), '')), {cfg.aws_gpu_regex})
+               OR TRY_CAST(json_extract_string(ct_rp, '$.instancesSet.items[0].maxCount') AS INTEGER) >= {cfg.mass_launch_min})
+        outcome: any
+        severity_sql: "CASE WHEN outcome = 'failure' THEN 60 END"
+      - template: distinct_burst
+        filter: *aws_big_launch
+        params: {key: [actor_key], distinct: region, window_ms: "{cfg.hour_ms}", min_distinct: 3}
+        severity: 85
+      - match: "is_ct AND api = 'RequestServiceQuotaIncrease'"
+        severity: 35
+      - match: "is_ct AND api = 'RegisterTaskDefinition' AND regexp_matches(lower(coalesce(ct_rp, '')), {cfg.miner_regex})"
+        severity: 85
+      - match: &az_big_vm >-
+          is_aza AND api_u IN ('MICROSOFT.COMPUTE/VIRTUALMACHINES/WRITE', 'MICROSOFT.RESOURCES/DEPLOYMENTS/WRITE', 'MICROSOFT.COMPUTE/VIRTUALMACHINESCALESETS/WRITE')
+          AND regexp_matches(lower(coalesce(az_req, '')), {cfg.az_big_vm_regex})
+        severity: 70
+      - template: distinct_burst
+        filter: "is_aza AND api_u = 'MICROSOFT.COMPUTE/VIRTUALMACHINES/WRITE'"
+        params: {key: [actor_key], distinct: lower(host), window_ms: 86400000, min_distinct: "{cfg.azure_vm_burst_min}"}
+        severity: 85
+      - match: >-
+          is_gcp AND api IN ('v1.compute.instances.insert', 'beta.compute.instances.insert')
+          AND (coalesce(g_req, '') ILIKE '%guestAccelerators%'
+               OR regexp_matches(lower(coalesce(json_extract_string(g_req, '$.machineType'), '')), {cfg.gcp_big_machine_regex}))
+      - template: distinct_burst
+        filter: "is_gcp AND api IN ('v1.compute.instances.insert', 'beta.compute.instances.insert') AND coalesce(ua, '') NOT LIKE '%gce managed instance group%'"
+        params: {key: [actor_key], distinct: g_zone, window_ms: "{cfg.multizone_window_ms}", min_distinct: "{cfg.multizone_min}"}
+        severity: 85
+
+  - id: aws_service_hijack
+    clouds: [aws]
+    technique: T1496
+    sub_technique: T1496.004
+    tactic: Impact
+    severity: 60
+    promote: {first_seen: 75}
+    allow: {lists: [genai_principals, ses_admins], severity: 35}
+    branches:
+      - match: >-
+          is_ct AND app = 'bedrock.amazonaws.com'
+          AND api IN ('PutUseCaseForModelAccess', 'CreateFoundationModelAgreement', 'PutFoundationModelEntitlement')
+        severity: 70
+      - template: distinct_burst
+        filter: >-
+          is_ct AND app = 'bedrock.amazonaws.com'
+          AND api IN ('InvokeModel', 'InvokeModelWithResponseStream', 'Converse', 'ConverseStream')
+        params: {key: [actor_key], distinct: api, window_ms: "{cfg.hour_ms}", min_distinct: 1}
+      - template: distinct_burst
+        filter: "is_ct AND app = 'bedrock.amazonaws.com' AND ct_err IN ('AccessDeniedException', 'ValidationException', 'AccessDenied')"
+        outcome: failure
+        params: {key: [actor_key], distinct: source_seq, window_ms: "{cfg.burst_window_ms}", min_distinct: "{cfg.bedrock_denied_min}"}
+        severity: 70
+      - match: >-
+          is_ct AND api IN ('UpdateAccountSendingEnabled', 'PutAccountSendingAttributes', 'VerifyEmailIdentity', 'VerifyDomainIdentity',
+                            'CreateEmailIdentity', 'PutAccountDetails')
+        severity: 45
+        promote: {first_seen: 65}
+      - template: sequence
+        severity: 80
+        params:
+          a_rules: [aws_ses_recon]
+          b_filter: >-
+            is_ct AND ok_row AND api IN ('UpdateAccountSendingEnabled', 'PutAccountSendingAttributes', 'VerifyEmailIdentity',
+                                         'VerifyDomainIdentity', 'CreateEmailIdentity', 'PutAccountDetails')
+          join: [[actor, actor]]
+          window_ms: "{cfg.ses_chain_window_ms}"
+      - template: sequence
+        severity: 75
+        params:
+          a_filter: "is_ct AND ok_row AND api IN ('VerifyEmailIdentity', 'VerifyDomainIdentity', 'CreateEmailIdentity')"
+          b_filter: "is_ct AND ok_row AND api IN ('DeleteIdentity', 'DeleteEmailIdentity')"
+          join: [[acct, acct]]
+          window_ms: "{cfg.ses_chain_window_ms}"
+
+  - id: cl_access_removal
+    clouds: [aws, azure, gcp]
+    technique: T1531
+    tactic: Impact
+    severity: 45
+    allow: {lists: [iam_admin_principals], severity: 35}
+    branches:
+      - match: &removal >-
+          (is_ct AND api IN ('DeleteLoginProfile', 'DeleteAccessKey', 'DeactivateMFADevice', 'DeleteVirtualMFADevice', 'DetachUserPolicy',
+                             'RemoveUserFromGroup', 'UpdateAccountPasswordPolicy', 'DeleteAccountPasswordPolicy')
+           AND lower(coalesce(json_extract_string(ct_rp, '$.userName'), '')) <> coalesce(actor, ''))
+          OR (is_azd AND au_name IN ('Delete user', 'Disable account', 'Reset user password', 'Remove member from role', 'Revoke sign-in sessions'))
+          OR (is_gcp AND regexp_matches(api, '(?i)serviceAccounts\.(disable|delete)$|DisableServiceAccount|DeleteServiceAccount'))
+          OR (is_gcp AND api ILIKE '%SetIamPolicy' AND regexp_matches(coalesce(g_delta, ''), '"action"\s*:\s*"REMOVE"[^}]*"roles/owner"|"roles/owner"[^}]*"action"\s*:\s*"REMOVE"'))
+        target: >-
+          coalesce(json_extract_string(ct_rp, '$.userName'), target_user,
+                   nullif(regexp_extract(coalesce(g_res, ''), 'serviceAccounts/([^/@]+)', 1), ''))
+      - template: distinct_burst
+        filter: *removal
+        params:
+          key: [actor_key]
+          distinct: >-
+            coalesce(json_extract_string(ct_rp, '$.userName'), target_user, nullif(regexp_extract(coalesce(g_res, ''), 'serviceAccounts/([^/@]+)', 1), ''))
+          window_ms: "{cfg.removal_window_ms}"
+          min_distinct: "{cfg.removal_burst_min}"
+        severity: 80
+
+  # ====================================================================================== track Azure (native)
+  # reports/cloud/log_coverage.md P0-3 / P0-9 / P0-13 / P1-12: Key Vault data plane (azure_keyvault_json), Microsoft Graph
+  # activity (azure_graph_json), Entra ID Protection (azure_risk_json), service-principal sign-ins. Columns and flags
+  # (kv_*, gr_*, rk_*, si_tokid, is_kv / is_gr / is_idp / is_sp_signin, ip_net) and thresholds: config/cloud.yaml.
+  - id: az_kv_secret_sweep
+    clouds: [azure]
+    technique: T1555
+    sub_technique: T1555.006
+    tactic: Credential Access
+    severity: 70
+    allow: {lists: [kv_readers], severity: 35}
+    branches:
+      # many distinct secrets / keys / certificates read by one identity in minutes (apps read the same few all day)
+      - template: distinct_burst
+        filter: "is_kv AND api IN ('SecretGet', 'KeyGet', 'CertificateGet') AND kv_obj IS NOT NULL"
+        params: {key: [actor_key], distinct: "kv_vault || '/' || kv_kind || '/' || kv_obj", window_ms: "{cfg.kv_secret_window_ms}",
+                 min_distinct: "{cfg.kv_secret_min_distinct}"}
+        severity_sql: >-
+          CASE WHEN count(DISTINCT kv_vault) > 1 OR bool_or(regexp_matches(coalesce(ua, ''), {cfg.attack_ua_regex})) THEN 80 END
+      # listing secrets of several vaults in minutes (vault-by-vault reconnaissance before the reads)
+      - template: distinct_burst
+        filter: "is_kv AND api IN ('SecretList', 'KeyList', 'CertificateList') AND kv_vault IS NOT NULL"
+        params: {key: [actor_key], distinct: kv_vault, window_ms: "{cfg.kv_secret_window_ms}", min_distinct: "{cfg.kv_vault_sweep_min}"}
+        severity: 55
+
+  - id: az_kv_forbidden_then_get
+    clouds: [azure]
+    technique: T1555
+    sub_technique: T1555.006
+    tactic: Credential Access
+    severity: 55
+    branches:
+      # 403 / 401 on several objects or vaults: an identity probing what it can read
+      - template: distinct_burst
+        filter: "is_kv AND lower(coalesce(kv_status, '')) IN ('403', '401', '403.0', '401.0', 'forbidden', 'unauthorized')"
+        outcome: failure
+        params: {key: [actor_key], distinct: "coalesce(kv_vault || '/' || kv_obj, kv_vault)", window_ms: "{cfg.kv_denied_window_ms}",
+                 min_distinct: "{cfg.kv_denied_min}"}
+      # ... then the same identity reads successfully (it found a vault it can read, or was granted access)
+      - template: sequence
+        severity: 75
+        params:
+          a_rules: [az_kv_forbidden_then_get]
+          b_filter: "is_kv AND ok_row AND api IN ('SecretGet', 'KeyGet', 'CertificateGet', 'SecretList', 'SecretBackup', 'KeyBackup')"
+          join: [[actor_key, actor_key]]
+          window_ms: "{cfg.kv_denied_get_window_ms}"
+
+  - id: az_kv_purge
+    clouds: [azure]
+    technique: T1485
+    tactic: Impact
+    severity: 60
+    allow: {lists: [kv_admins], severity: 45}
+    branches:
+      - match: "is_kv AND api IN ('SecretPurge', 'CertificatePurge')"
+      # delete + purge of several secrets / certificates: recovery is impossible (soft delete defeated)
+      - template: distinct_burst
+        filter: "is_kv AND api IN ('SecretPurge', 'CertificatePurge', 'SecretDelete', 'CertificateDelete') AND kv_obj IS NOT NULL"
+        params: {key: [actor_key], distinct: "kv_vault || '/' || kv_obj", window_ms: "{cfg.kv_purge_window_ms}",
+                 min_distinct: "{cfg.kv_purge_min}", having: "count(*) FILTER (WHERE api LIKE '%Purge') >= 1"}
+        severity: 80
+      - match: "is_aza AND api_u = 'MICROSOFT.KEYVAULT/LOCATIONS/DELETEDVAULTS/PURGE/ACTION'"
+        severity: 75
+
+  - id: az_kv_key_destroy
+    clouds: [azure]
+    technique: T1486
+    tactic: Impact
+    severity: 65
+    allow: {lists: [kv_admins], severity: 45}
+    branches:
+      # deleting / purging a key: every resource encrypted with it as a customer-managed key becomes unreadable
+      - match: "is_kv AND api IN ('KeyDelete', 'KeyPurge')"
+        severity_sql: "CASE WHEN api = 'KeyPurge' THEN 80 END"
+
+  - id: az_kv_backup_export
+    clouds: [azure]
+    technique: T1555
+    sub_technique: T1555.006
+    tactic: Credential Access
+    severity: 70
+    allow: {lists: [kv_readers], severity: 35}
+    branches:
+      # backup blobs of several secrets / keys / certificates: restorable into an attacker's vault in the same geography
+      - template: distinct_burst
+        filter: "is_kv AND api IN ('SecretBackup', 'KeyBackup', 'CertificateBackup') AND kv_obj IS NOT NULL"
+        params: {key: [actor_key], distinct: "kv_vault || '/' || kv_obj", window_ms: "{cfg.kv_backup_window_ms}",
+                 min_distinct: "{cfg.kv_backup_min}"}
+
+  - id: az_graph_enum_burst
+    clouds: [azure]
+    technique: T1087
+    sub_technique: T1087.004
+    tactic: Discovery
+    severity: 60
+    allow: {lists: [inventory_principals], severity: 35}
+    branches:
+      # many directory object types listed by an identity that never enumerated the directory before (AzureHound, ROADrecon,
+      # GraphRunner); store = tenant, cold start judged on the tenant
+      - template: new_source_burst
+        filter: "is_gr AND gr_method = 'GET' AND gr_list AND gr_res IN {cfg.graph_enum_types} AND actor_key IS NOT NULL"
+        outcome: any
+        params: {store: acct, source: actor_key, distinct: gr_res, window_ms: "{cfg.graph_enum_window_ms}",
+                 min_distinct: "{cfg.graph_enum_min_types}", novel_days: "{cfg.graph_enum_baseline_days}"}
+        severity_sql: "CASE WHEN bool_or(regexp_matches(coalesce(ua, ''), {cfg.attack_ua_regex})) THEN 80 END"
+      # a known enumerator far above its own history (a daily inventory app is judged against itself)
+      - template: distinct_burst
+        filter: "is_gr AND gr_method = 'GET' AND gr_list AND gr_res IN {cfg.graph_enum_types} AND actor_key IS NOT NULL"
+        outcome: any
+        params: {key: [actor_key], distinct: gr_path, window_ms: "{cfg.graph_enum_window_ms}", min_distinct: "{cfg.graph_enum_min_calls}",
+                 having: "count(DISTINCT gr_res) >= {cfg.graph_enum_min_types}", baseline_mult: "{cfg.graph_enum_baseline_mult}",
+                 baseline_days: "{cfg.graph_enum_baseline_days}", require_history: true}
+        severity_sql: "CASE WHEN bool_or(regexp_matches(coalesce(ua, ''), {cfg.attack_ua_regex})) THEN 80 END"
+
+  - id: az_graph_mail_read
+    clouds: [azure]
+    technique: T1114
+    sub_technique: T1114.002
+    tactic: Collection
+    severity: 65
+    branches:
+      # one identity reading OTHER users' mailboxes through Graph (app-only Mail.Read, or delegated full access)
+      - template: new_source_burst
+        filter: "is_gr AND gr_method = 'GET' AND gr_mailbox IS NOT NULL AND actor_key IS NOT NULL"
+        outcome: any
+        params: {store: acct, source: actor_key, distinct: gr_mailbox, window_ms: "{cfg.graph_mail_window_ms}",
+                 min_distinct: "{cfg.graph_mail_min_mailboxes}", novel_days: "{cfg.graph_mail_baseline_days}"}
+        severity_sql: "CASE WHEN bool_or(regexp_matches(coalesce(ua, ''), {cfg.attack_ua_regex})) THEN 80 END"
+      - template: distinct_burst
+        filter: "is_gr AND gr_method = 'GET' AND gr_mailbox IS NOT NULL AND actor_key IS NOT NULL"
+        outcome: any
+        params: {key: [actor_key], distinct: gr_mailbox, window_ms: "{cfg.graph_mail_window_ms}", min_distinct: "{cfg.graph_mail_min_mailboxes}",
+                 baseline_mult: "{cfg.graph_mail_baseline_mult}", baseline_days: "{cfg.graph_mail_baseline_days}",
+                 require_history: true}
+
+  - id: az_graph_app_credential
+    clouds: [azure]
+    technique: T1098
+    sub_technique: T1098.001
+    tactic: Persistence
+    severity: 70
+    automation: true
+    branches:
+      # a password / key / federated credential added to an application or service principal through Graph
+      - match: "is_gr AND gr_method = 'POST' AND regexp_matches(coalesce(gr_path, ''), {cfg.graph_cred_paths_regex})"
+        severity_sql: "CASE WHEN regexp_matches(coalesce(ua, ''), {cfg.attack_ua_regex}) THEN 85 END"
+
+  - id: az_graph_token_replay
+    clouds: [azure]
+    technique: T1550
+    sub_technique: T1550.001
+    tactic: Lateral Movement
+    severity: 70
+    branches:
+      # the token of one sign-in (UniqueTokenIdentifier = Graph SignInActivityId) used for Graph from another network
+      - template: sequence
+        params:
+          a_filter: "is_azs AND si_tokid IS NOT NULL AND ip_net IS NOT NULL"
+          b_filter: "is_gr AND gr_tokid IS NOT NULL AND ip_net IS NOT NULL AND NOT coalesce(corp_ip, false)"
+          join: [[si_tokid, gr_tokid]]
+          window_ms: "{cfg.graph_token_window_ms}"
+          pair_where: "a.ip_net <> b.ip_net"
+        severity_sql: "CASE WHEN regexp_matches(coalesce(b.ua, ''), {cfg.attack_ua_regex}) THEN 85 END"
+
+  - id: az_idp_risky_signin
+    clouds: [azure]
+    technique: T1078
+    sub_technique: T1078.004
+    tactic: Initial Access
+    severity: 50
+    branches:
+      # Entra ID Protection sign-in risk (vendor verdict in a raw log field, like SigninLogs RiskLevelDuringSignIn)
+      - match: "is_idp AND rk IN {cfg.idp_signin_types}"
+        outcome: any
+        severity_sql: &idp_sev >-
+          CASE WHEN lower(coalesce(rk_state, '')) IN {cfg.idp_closed_states} OR lower(coalesce(rk_level, '')) IN ('low', 'none')
+               THEN 35 WHEN lower(rk_level) = 'high' THEN 65 END
+      # an analyst confirmed the account compromised (risk event or risky user state)
+      - match: >-
+          is_idp AND (lower(coalesce(rk_state, '')) = 'confirmedcompromised'
+                      OR lower(coalesce(rk_detail, '')) = 'adminconfirmedusercompromised')
+        outcome: any
+        severity: 80
+
+  - id: az_idp_password_spray
+    clouds: [azure]
+    technique: T1110
+    sub_technique: T1110.003
+    tactic: Credential Access
+    severity: 60
+    branches:
+      - match: "is_idp AND rk IN {cfg.idp_spray_types}"
+        outcome: any
+        severity_sql: *idp_sev
+
+  - id: az_idp_token_anomaly
+    clouds: [azure]
+    technique: T1550
+    sub_technique: T1550.001
+    tactic: Lateral Movement
+    severity: 60
+    branches:
+      # anomalous token / token issuer / attacker-in-the-middle / PRT access: a stolen session or token replayed
+      - match: "is_idp AND rk IN {cfg.idp_token_types}"
+        outcome: any
+        severity_sql: >-
+          CASE WHEN lower(coalesce(rk_state, '')) IN {cfg.idp_closed_states} OR lower(coalesce(rk_level, '')) IN ('low', 'none')
+               THEN 35 WHEN lower(rk_level) = 'high' THEN 75 END
+
+  - id: az_idp_mfa_fraud
+    clouds: [azure]
+    technique: T1621
+    tactic: Credential Access
+    severity: 75
+    branches:
+      # the user reported an MFA prompt they did not start
+      - match: "is_idp AND rk IN {cfg.idp_mfa_types}"
+        outcome: any
+        severity_sql: "CASE WHEN lower(coalesce(rk_state, '')) IN {cfg.idp_closed_states} THEN 35 END"
+
+  - id: az_idp_inbox_rule
+    clouds: [azure]
+    technique: T1114
+    sub_technique: T1114.003
+    tactic: Collection
+    severity: 65
+    branches:
+      - match: "is_idp AND rk IN {cfg.idp_inbox_types}"
+        outcome: any
+        severity_sql: "CASE WHEN lower(coalesce(rk_state, '')) IN {cfg.idp_closed_states} THEN 35 END"
+
+  - id: az_sp_signin_new_network
+    clouds: [azure]
+    technique: T1078
+    sub_technique: T1078.004
+    tactic: Initial Access
+    severity: 65
+    branches:
+      # a service principal (client credentials) signs in from a network it did not use in sp_signin_baseline_days:
+      # workloads sign in from fixed CI / cloud ranges, a leaked secret is used from the attacker's infrastructure
+      - template: first_seen
+        filter: >-
+          is_sp_signin AND si_code = '0' AND ip_net IS NOT NULL AND NOT coalesce(corp_ip, false)
+          AND NOT al_is_internal_ip(src_ip)
+        outcome: any
+        params: {key: [actor_key, ip_net], baseline_days: "{cfg.sp_signin_baseline_days}", exclude_machine: false}
+        severity_sql: "CASE WHEN hosting THEN 75 END"
+
+  # ======================================================================= track Identity SaaS (native, P0-7/11/12, P1-16)
+  # Okta System Log (is_okta), Google Workspace Reports + its Cloud Logging copy (is_gws, gw_ev = event name), M365 UAL
+  # JSON / Purview CSV (is_m365, m3_* = Parameters / AuditData), Auth0 (is_auth0, api = type code), Duo (is_duo,
+  # api = reason). Thresholds: cloud.yaml params "track Identity SaaS". Users are the person (@domain stripped), so an
+  # IdP compromise links to the same user's Entra / AWS SSO / GCP activity.
+  - id: okta_password_spray
+    clouds: [okta]
+    technique: T1110
+    sub_technique: T1110.003
+    tactic: Credential Access
+    severity: 75
+    secondary: {technique: T1078, sub_technique: T1078.004, tactic: Initial Access, severity: 85}
+    branches:
+      - template: distinct_burst
+        filter: >-
+          is_okta AND api IN ('user.session.start', 'user.authentication.authenticate', 'user.authentication.verify')
+          AND src_ip IS NOT NULL AND NOT al_is_internal_ip(src_ip)
+        outcome: failure
+        params: {key: [src_ip], distinct: actor_key, window_ms: "{cfg.idp_spray_window_ms}", min_distinct: "{cfg.idp_spray_min_users}"}
+      - template: sequence      # the spraying IP then signs in: one sprayed password was right
+        label: secondary
+        params:
+          a_rules: [okta_password_spray]
+          b_filter: "is_okta AND action = 'login_success'"
+          join: [[src_ip, src_ip]]
+          window_ms: "{cfg.idp_spray_success_window_ms}"
+
+  - id: okta_mfa_push_fatigue
+    clouds: [okta]
+    technique: T1621
+    tactic: Credential Access
+    severity: 70
+    secondary: {technique: T1078, sub_technique: T1078.004, tactic: Initial Access, severity: 85}
+    branches:
+      - template: distinct_burst
+        filter: >-
+          is_okta AND (api IN ('system.push.send_factor_verify_push', 'user.mfa.okta_verify.deny_push')
+                       OR (api = 'user.authentication.auth_via_mfa' AND ok_result IN ('FAILURE', 'DENY')))
+        outcome: any
+        params: {key: [actor_key], distinct: source_seq, window_ms: "{cfg.mfa_window_ms}", min_distinct: "{cfg.mfa_min_prompts}",
+                 having: "count(*) FILTER (WHERE api <> 'system.push.send_factor_verify_push') >= {cfg.idp_push_min_denied}"}
+      - template: sequence      # ... and the user finally approves: the attacker holds the session
+        label: secondary
+        params:
+          a_rules: [okta_mfa_push_fatigue]
+          b_filter: "is_okta AND ((api = 'user.authentication.auth_via_mfa' AND ok_result = 'SUCCESS') OR action = 'login_success')"
+          join: [[actor, actor]]
+          window_ms: "{cfg.mfa_success_window_ms}"
+
+  - id: okta_session_hijack
+    clouds: [okta]
+    technique: T1550
+    sub_technique: T1550.004
+    tactic: Lateral Movement
+    severity: 35             # roaming laptop (same browser, two networks) is context only (benign: ~4 % of users a day)
+    branches:
+      - template: multi_network_session
+        filter: "is_okta AND ok_sess IS NOT NULL AND NOT al_is_internal_ip(src_ip)"
+        outcome: any
+        params: {session: ok_sess, network: net, window_ms: "{cfg.idp_session_window_ms}", min_networks: 2}
+        # the cookie replayed from another browser / OS, a hosting ASN, or another country: token theft
+        severity_sql: "CASE WHEN count(DISTINCT ok_ua) > 1 OR bool_or(hosting) OR count(DISTINCT cc) > 1 THEN 85 END"
+
+  - id: okta_admin_grant
+    clouds: [okta]
+    technique: T1098
+    sub_technique: T1098.003
+    tactic: Privilege Escalation
+    severity: 60
+    allow: {lists: [iam_admin_principals], severity: 35}
+    branches:
+      - match: "is_okta AND ok_row AND api IN ('user.account.privilege.grant', 'group.privilege.grant')"
+        target: ok_tuser
+        severity_sql: "CASE WHEN regexp_matches(coalesce(ok_priv, ''), {cfg.okta_admin_role_regex}) THEN 85 END"
+
+  - id: okta_new_idp
+    clouds: [okta]
+    technique: T1484
+    sub_technique: T1484.002
+    tactic: Privilege Escalation
+    severity: 80
+    branches:
+      - match: "is_okta AND ok_row AND api IN {cfg.okta_idp_events}"
+
+  - id: okta_policy_weakened
+    clouds: [okta]
+    technique: T1556
+    sub_technique: T1556.009
+    tactic: Defense Impairment
+    severity: 70
+    allow: {lists: [iam_admin_principals], severity: 35}
+    branches:
+      - match: "is_okta AND ok_row AND api IN {cfg.okta_policy_weaken_events}"
+
+  - id: okta_api_token_created
+    clouds: [okta]
+    technique: T1098
+    sub_technique: T1098.001
+    tactic: Persistence
+    severity: 60
+    allow: {lists: [iam_admin_principals], severity: 35}
+    branches:
+      - match: "is_okta AND ok_row AND api = 'system.api_token.create'"
+
+  - id: okta_mfa_factor_change
+    clouds: [okta]
+    technique: T1556
+    sub_technique: T1556.006
+    tactic: Persistence
+    severity: 45
+    branches:
+      - match: "is_okta AND ok_row AND api IN ('user.mfa.factor.deactivate', 'user.mfa.factor.reset_all', 'user.mfa.factor.suspend')"
+        target: ok_tuser
+      - template: sequence      # after a spray / push fatigue / hijack on the same user: the attacker's own factor
+        severity: 80
+        params:
+          a_rules: [okta_password_spray, okta_mfa_push_fatigue, okta_session_hijack]
+          a_min_severity: 70
+          b_filter: "is_okta AND ok_row AND api IN ('user.mfa.factor.activate', 'user.mfa.factor.update', 'user.mfa.factor.deactivate', 'user.mfa.factor.reset_all')"
+          join: [[actor, actor]]
+          window_ms: "{cfg.idp_factor_after_compromise_ms}"
+
+  - id: gws_password_spray
+    clouds: [gws, gcp]
+    technique: T1110
+    sub_technique: T1110.003
+    tactic: Credential Access
+    severity: 75
+    secondary: {technique: T1078, sub_technique: T1078.004, tactic: Initial Access, severity: 85}
+    branches:
+      - template: distinct_burst
+        filter: "is_gws AND gw_ev = 'login_failure' AND src_ip IS NOT NULL AND NOT al_is_internal_ip(src_ip)"
+        outcome: any           # the Cloud Logging copy has no failure status (the event name says it)
+        params: {key: [src_ip], distinct: actor_key, window_ms: "{cfg.idp_spray_window_ms}", min_distinct: "{cfg.idp_spray_min_users}"}
+      - template: sequence
+        label: secondary
+        params:
+          a_rules: [gws_password_spray]
+          b_filter: "is_gws AND gw_ev = 'login_success'"
+          join: [[src_ip, src_ip]]
+          window_ms: "{cfg.idp_spray_success_window_ms}"
+
+  - id: gws_suspicious_login
+    clouds: [gws, gcp]
+    technique: T1078
+    sub_technique: T1078.004
+    tactic: Initial Access
+    severity: 70
+    branches:
+      - match: >-
+          is_gws AND (gw_ev IN ('suspicious_login', 'suspicious_login_less_secure_app', 'suspicious_programmatic_login',
+                                'gov_attack_warning', 'account_disabled_hijacked')
+                      OR (gw_ev = 'login_success' AND gw_susp = 'true'))
+        outcome: any
+
+  - id: gws_admin_role_grant
+    clouds: [gws, gcp]
+    technique: T1098
+    sub_technique: T1098.003
+    tactic: Privilege Escalation
+    severity: 60
+    allow: {lists: [iam_admin_principals], severity: 35}
+    branches:
+      - match: "is_gws AND gw_ev IN ('ASSIGN_ROLE', 'GRANT_ADMIN_PRIVILEGE', 'GRANT_DELEGATED_ADMIN_PRIVILEGES')"
+        outcome: any
+        target: gw_user
+        severity_sql: "CASE WHEN gw_ev = 'GRANT_ADMIN_PRIVILEGE' OR gw_role IN {cfg.gws_super_roles} THEN 85 END"
+
+  - id: gws_2sv_disabled
+    clouds: [gws, gcp]
+    technique: T1556
+    sub_technique: T1556.006
+    tactic: Persistence
+    severity: 65
+    branches:
+      - match: "is_gws AND (gw_ev = '2sv_disable' OR (gw_ev = 'ENFORCE_STRONG_AUTHENTICATION' AND gw_new = 'false'))"
+        outcome: any
+
+  - id: gws_oauth_broad_scope
+    clouds: [gws, gcp]
+    technique: T1528
+    tactic: Credential Access
+    severity: 70
+    branches:
+      - match: >-
+          is_gws AND gw_ev = 'authorize' AND regexp_matches(coalesce(gw_scope, ''), {cfg.gws_broad_scope_regex})
+          AND NOT coalesce(gw_client IN {cfg.gws_trusted_oauth_clients}, false)
+        outcome: any
+
+  - id: gws_domain_wide_delegation
+    clouds: [gws, gcp]
+    technique: T1550
+    sub_technique: T1550.001
+    tactic: Lateral Movement
+    severity: 85
+    branches:
+      - match: "is_gws AND gw_ev = 'AUTHORIZE_API_CLIENT_ACCESS'"
+        outcome: any
+
+  - id: m365_inbox_forward_rule
+    clouds: [m365]
+    technique: T1114
+    sub_technique: T1114.003
+    tactic: Collection
+    severity: 45             # forwarding inside the tenant is a signal; outside it is the BEC pattern
+    branches:
+      - match: >-
+          is_m365 AND ((api IN {cfg.m365_forward_ops} AND m3_fwd IS NOT NULL)
+                       OR (api = 'UpdateInboxRules' AND regexp_matches(lower(coalesce(m3_par, '')), 'forward|redirect')))
+        outcome: any
+        target: m3_fwd
+        severity_sql: "CASE WHEN m3_fwd_ext THEN 85 END"
+
+  - id: m365_inbox_hiding_rule
+    clouds: [m365]
+    technique: T1564
+    sub_technique: T1564.008
+    tactic: Stealth
+    severity: 55
+    branches:
+      - match: "is_m365 AND api IN ('New-InboxRule', 'Set-InboxRule') AND m3_hide"
+        outcome: any
+        severity_sql: "CASE WHEN m3_lure THEN 80 END"
+
+  - id: m365_mailbox_delegation
+    clouds: [m365]
+    technique: T1098
+    sub_technique: T1098.002
+    tactic: Persistence
+    severity: 55
+    allow: {lists: [iam_admin_principals], severity: 35}
+    branches:
+      - match: "is_m365 AND api IN ('Add-MailboxPermission', 'Add-RecipientPermission', 'Add-MailboxFolderPermission')"
+        outcome: any
+        severity_sql: "CASE WHEN coalesce(m3_rights, '') LIKE '%fullaccess%' OR coalesce(m3_rights, '') LIKE '%sendas%' THEN 70 END"
+
+  - id: m365_admin_role_grant
+    clouds: [m365]
+    technique: T1098
+    sub_technique: T1098.003
+    tactic: Privilege Escalation
+    severity: 55
+    allow: {lists: [iam_admin_principals], severity: 35}
+    branches:
+      - match: "is_m365 AND api IN ('Add member to role.', 'Add eligible member to role.')"
+        outcome: any
+        target: file_path
+        severity_sql: "CASE WHEN regexp_matches(lower(coalesce(m3_mp, '')), {cfg.entra_priv_role_regex}) THEN 85 END"
+
+  - id: m365_oauth_consent
+    clouds: [m365]
+    technique: T1528
+    tactic: Credential Access
+    severity: 50
+    branches:
+      - match: "is_m365 AND api IN ('Consent to application.', 'Add delegated permission grant.', 'Add app role assignment grant to user.')"
+        outcome: any
+        severity_sql: "CASE WHEN regexp_matches(lower(coalesce(m3_mp, m3_par, '')), {cfg.risky_scopes_regex}) THEN 75 END"
+
+  - id: m365_mass_download
+    clouds: [m365]
+    technique: T1213
+    sub_technique: T1213.002
+    tactic: Collection
+    severity: 70
+    branches:
+      # interactive (browser / web) downloads from one IP: nobody pulls 50 distinct files an hour by hand. Keyed on the
+      # IP too, so the burst starts at the first download of THAT source, not at the user's own earlier downloads.
+      - template: distinct_burst
+        filter: "is_m365 AND api IN ('FileDownloaded', 'FileDownloadedFromBrowser') AND actor_key IS NOT NULL"
+        outcome: any
+        params: {key: [actor_key, "coalesce(src_ip, '')"], distinct: "coalesce(file_path, CAST(source_seq AS VARCHAR))",
+                 window_ms: "{cfg.m365_download_window_ms}", min_distinct: "{cfg.m365_download_min}"}
+      # sync client (OneDrive / SharePoint library sync): far above the user's own sync volume
+      - template: distinct_burst
+        filter: "is_m365 AND api IN ('FileSyncDownloadedFull', 'FileSyncDownloadedPartial') AND actor_key IS NOT NULL"
+        outcome: any
+        params: {key: [actor_key], distinct: "coalesce(file_path, CAST(source_seq AS VARCHAR))", window_ms: "{cfg.m365_download_window_ms}",
+                 min_distinct: "{cfg.m365_download_min}", baseline_mult: "{cfg.m365_download_baseline_mult}", baseline_days: 14}
+
+  - id: m365_external_sharing
+    clouds: [m365]
+    technique: T1567
+    tactic: Exfiltration
+    severity: 55
+    branches:
+      - match: &m365_share >-
+          is_m365 AND (api = 'AnonymousLinkCreated'
+                       OR (api IN {cfg.m365_share_ops} AND (m3_tt = 'guest' OR (m3_tgt LIKE '%@%'
+                           AND regexp_extract(m3_tgt, '@([a-z0-9.-]+)', 1) IS DISTINCT FROM m3_own_dom
+                           AND NOT coalesce(regexp_extract(m3_tgt, '@([a-z0-9.-]+)', 1) IN {cfg.idp_internal_domains}, false)))))
+        outcome: any
+        target: m3_tgt
+      - template: distinct_burst
+        filter: *m365_share
+        outcome: any
+        params: {key: [actor_key], distinct: "coalesce(file_path, CAST(source_seq AS VARCHAR))", window_ms: "{cfg.m365_share_window_ms}",
+                 min_distinct: "{cfg.m365_share_burst_min}"}
+        severity: 80
+
+  - id: m365_audit_disabled
+    clouds: [m365]
+    technique: T1685
+    sub_technique: T1685.002
+    tactic: Defense Impairment
+    severity: 85
+    branches:
+      - match: >-
+          is_m365 AND ((api IN ('Set-AdminAuditLogConfig', 'Set-Mailbox', 'Set-OrganizationConfig') AND m3_audit_off)
+                       OR api = 'Set-MailboxAuditBypassAssociation')
+        outcome: any
+
+  - id: auth0_credential_stuffing
+    clouds: [auth0]
+    technique: T1110
+    sub_technique: T1110.004
+    tactic: Credential Access
+    severity: 75
+    secondary: {technique: T1078, sub_technique: T1078.004, tactic: Initial Access, severity: 85}
+    branches:
+      - template: distinct_burst
+        filter: "is_auth0 AND api IN ('f', 'fp', 'fu', 'fcoa', 'pwd_leak') AND src_ip IS NOT NULL AND NOT al_is_internal_ip(src_ip)"
+        outcome: any
+        params: {key: [src_ip], distinct: actor_key, window_ms: "{cfg.idp_spray_window_ms}", min_distinct: "{cfg.idp_spray_min_users}"}
+      - match: "is_auth0 AND api IN ('limit_mu', 'limit_wc')"   # Auth0 brute-force protection blocked the IP
+        outcome: any
+        severity: 60
+      - template: sequence
+        label: secondary
+        params:
+          a_rules: [auth0_credential_stuffing]
+          a_min_severity: 70
+          b_filter: "is_auth0 AND action = 'login_success'"
+          join: [[src_ip, src_ip]]
+          window_ms: "{cfg.idp_spray_success_window_ms}"
+
+  - id: auth0_mfa_push_fatigue
+    clouds: [auth0]
+    technique: T1621
+    tactic: Credential Access
+    severity: 70
+    secondary: {technique: T1078, sub_technique: T1078.004, tactic: Initial Access, severity: 85}
+    branches:
+      - template: distinct_burst
+        filter: "is_auth0 AND api IN ('gd_send_pn', 'gd_auth_rejected', 'gd_auth_failed')"
+        outcome: any
+        params: {key: [actor_key], distinct: source_seq, window_ms: "{cfg.mfa_window_ms}", min_distinct: "{cfg.mfa_min_prompts}",
+                 having: "count(*) FILTER (WHERE api <> 'gd_send_pn') >= {cfg.idp_push_min_denied}"}
+      - template: sequence
+        label: secondary
+        params:
+          a_rules: [auth0_mfa_push_fatigue]
+          b_filter: "is_auth0 AND api IN ('gd_auth_succeed', 's')"
+          join: [[actor, actor]]
+          window_ms: "{cfg.mfa_success_window_ms}"
+
+  - id: duo_push_fatigue
+    clouds: [duo]
+    technique: T1621
+    tactic: Credential Access
+    severity: 70
+    secondary: {technique: T1078, sub_technique: T1078.004, tactic: Initial Access, severity: 85}
+    branches:
+      - template: distinct_burst
+        filter: "is_duo AND duo_factor IN ('duo_push', 'phone_call') AND outcome = 'failure' AND api IN {cfg.duo_push_fail_reasons}"
+        outcome: any
+        params: {key: [actor_key], distinct: source_seq, window_ms: "{cfg.mfa_window_ms}", min_distinct: "{cfg.mfa_min_prompts}"}
+      - template: sequence
+        label: secondary
+        params:
+          a_rules: [duo_push_fatigue]
+          b_filter: "is_duo AND action = 'login_success'"
+          join: [[actor, actor]]
+          window_ms: "{cfg.mfa_success_window_ms}"
+
+  - id: duo_user_marked_fraud
+    clouds: [duo]
+    technique: T1621
+    tactic: Credential Access
+    severity: 75
+    branches:
+      - match: "is_duo AND (api = 'user_marked_fraud' OR duo_result = 'fraud')"
+        outcome: any
+
+  # ====================================================================================== Behavioural (catalog §5)
+  - id: cl_first_seen_api
+    clouds: [aws, azure, gcp]
+    technique: T1078
+    sub_technique: T1078.004
+    tactic: Initial Access
+    context: true      # novelty alone is not an intrusion: never seeds or adds Initial Access by itself
+    severity: 40
+    branches:
+      - template: first_seen
+        filter: "(is_write OR api IN {cfg.sensitive_read_apis}) AND actor_key IS NOT NULL"
+        params: {key: [acct, actor_key, api], baseline_days: "{cfg.b1_baseline_days}",
+                 max_per_actor_day: "{cfg.first_seen_max_per_actor_day}", summary_severity: "{cfg.first_seen_summary_severity}"}
+        severity_sql: "CASE WHEN api IN {cfg.sensitive_apis} OR api LIKE '%SetIamPolicy' THEN 60 END"
+
+  - id: cl_first_seen_geo
+    clouds: [aws, azure, gcp]
+    technique: T1078
+    sub_technique: T1078.004
+    tactic: Initial Access
+    context: true      # novelty alone is not an intrusion: never seeds or adds Initial Access by itself
+    severity: 45
+    # rules track: a stolen key's first call is usually a read (whoami / list buckets, users, roles), so the
+    # recon-first APIs count as activity too; still the first row per (actor, network) per day, still context
+    branches:
+      - template: first_seen
+        filter: "(action = 'login_success' OR is_write OR api IN {cfg.recon_first_apis}) AND cc IS NOT NULL"
+        params: {key: [actor_key, cc], baseline_days: "{cfg.b2_country_baseline_days}", min_history_days: "{cfg.b2_min_history_days}",
+                 max_per_actor_day: "{cfg.first_seen_max_per_actor_day}", summary_severity: "{cfg.first_seen_summary_severity}"}
+        severity: 60
+        severity_sql: "CASE WHEN hosting THEN 70 END"
+      - template: first_seen
+        filter: "(action = 'login_success' OR is_write OR api IN {cfg.recon_first_apis}) AND asn IS NOT NULL"
+        params: {key: [actor_key, asn], baseline_days: "{cfg.b2_country_baseline_days}", min_history_days: "{cfg.b2_min_history_days}",
+                 max_per_actor_day: "{cfg.first_seen_max_per_actor_day}", summary_severity: "{cfg.first_seen_summary_severity}"}
+        severity: 45
+      - template: first_seen
+        filter: "(action = 'login_success' OR is_write OR api IN {cfg.recon_first_apis}) AND asn IS NULL AND net IS NOT NULL AND NOT al_is_internal_ip(src_ip)"
+        params: {key: [actor_key, net], baseline_days: "{cfg.b2_prefix_baseline_days}", min_history_days: "{cfg.b2_min_history_days}",
+                 max_per_actor_day: "{cfg.first_seen_max_per_actor_day}", summary_severity: "{cfg.first_seen_summary_severity}"}
+        severity: 30
+
+  - id: cl_rare_api_account
+    clouds: [aws, azure, gcp]
+    technique: T1078
+    sub_technique: T1078.004
+    tactic: Initial Access
+    context: true      # novelty alone is not an intrusion: never seeds or adds Initial Access by itself
+    severity: 45
+    branches:
+      - template: first_seen
+        filter: "(is_write OR api IN {cfg.sensitive_read_apis}) AND acct IS NOT NULL"
+        params: {key: [acct, api], hist_key: acct, baseline_days: "{cfg.b3_baseline_days}", min_history_days: "{cfg.b3_min_history_days}",
+                 max_prior_count: "{cfg.b3_rare_api_max_calls}", max_prior_actors: 1,
+                 max_per_actor_day: "{cfg.first_seen_max_per_actor_day}", summary_severity: "{cfg.first_seen_summary_severity}"}
+
+  - id: cl_discovery_burst
+    clouds: [aws, azure, gcp]
+    technique: T1580
+    tactic: Discovery
+    severity: 60
+    branches:
+      - template: distinct_burst
+        filter: &discovery_reads >-
+          ((is_ct AND regexp_matches(coalesce(api, ''), '^(List|Describe|Get|Search|Lookup|BatchGet|Scan)')
+            AND api NOT IN ('GetObject', 'GetSecretValue', 'GetParameter', 'GetParameters', 'GetParametersByPath'))
+           OR (is_aza AND api_u LIKE '%/READ')
+           OR (is_gcp AND regexp_matches(coalesce(api, ''), '\.(list|get|aggregatedList|search|testIamPermissions|getIamPolicy)$')))
+          AND NOT regexp_matches(coalesce(ua, ''), {cfg.inventory_ua_regex}) AND NOT coalesce(ct_svc, false)
+        outcome: any
+        params: {key: ["coalesce(session, actor_key)"], distinct: api, window_ms: "{cfg.b4_window_ms}", min_distinct: "{cfg.b4_min_distinct}",
+                 having: "count(DISTINCT app) >= {cfg.b4_min_services}", baseline_mult: "{cfg.b4_baseline_mult}",
+                 baseline_days: "{cfg.b4_baseline_days}"}
+        severity_sql: "CASE WHEN bool_or(coalesce(ct_instance_role, false)) OR bool_or(api = 'GetCallerIdentity') THEN 75 END"
+      # rules track, low tier: a smaller sweep (>= b4_low_min_distinct APIs over >= b4_min_services services) that
+      # carries the stolen-credential fingerprint: several denied APIs, or several recon-first APIs (whoami, list
+      # users / roles / buckets); never from the console UA. No baseline_mult: an identity that never listed
+      # anything would be cold-started by its own first sweep, which is the case this tier is for.
+      - template: distinct_burst
+        filter: *discovery_reads
+        outcome: any
+        params:
+          key: ["coalesce(session, actor_key)"]
+          distinct: api
+          window_ms: "{cfg.b4_window_ms}"
+          min_distinct: "{cfg.b4_low_min_distinct}"
+          having: >-
+            count(DISTINCT app) >= {cfg.b4_min_services}
+            AND count(*) FILTER (WHERE coalesce(ua, '') LIKE '%console.amazonaws.com%') = 0
+            AND (count(DISTINCT api) FILTER (WHERE denied) >= {cfg.b4_low_min_denied}
+                 OR count(DISTINCT api) FILTER (WHERE api IN {cfg.recon_first_apis}) >= {cfg.b4_low_min_recon})
+        severity: 55
+
+  - id: cl_denied_spike
+    clouds: [aws, azure, gcp]
+    technique: T1580
+    tactic: Discovery
+    severity: 60
+    secondary: {technique: T1098, tactic: Privilege Escalation, severity: 70}
+    branches:
+      - template: rate_spike
+        filter: "NOT coalesce(ct_type = 'AWSService', false)"
+        outcome: any
+        # rules track: keyed on the identity only. Keyed on (identity, IP), a known identity calling from a NEW IP had
+        # no history for that key and was capped at cold_start severity: exactly the stolen-key case was muted.
+        params: {key: [actor_key], num: denied, distinct: api, window_ms: "{cfg.b5_window_ms}",
+                 min_num: "{cfg.b5_min_num}", min_distinct: "{cfg.b5_min_distinct}", min_ratio: "{cfg.b5_min_ratio}",
+                 z: "{cfg.b5_z}", sigma_floor: "{cfg.b5_sigma_floor}", baseline_days: "{cfg.b5_baseline_days}"}
+        label_sql: >-
+          CASE WHEN count(DISTINCT api) FILTER (WHERE app IN ('iam.amazonaws.com', 'sts.amazonaws.com')
+                                                   OR api_u LIKE 'MICROSOFT.AUTHORIZATION/%' OR api ILIKE '%SetIamPolicy') >= 3
+               THEN 'secondary' END
+        severity_sql: >-
+          CASE WHEN bool_and(coalesce(ua, '') LIKE '%console.amazonaws.com%' AND regexp_matches(coalesce(api, ''), '^(Describe|List|Get)'))
+               THEN 30 END
+
+  - id: cl_impossible_travel
+    clouds: [aws, azure, gcp]
+    technique: T1078
+    sub_technique: T1078.004
+    tactic: Initial Access
+    severity: 65
+    branches:
+      - template: geo_velocity
+        filter: "action = 'login_success' OR (is_write AND ok_row)"
+        outcome: any
+        params: {min_km: "{cfg.b6_min_km}", max_kmh: "{cfg.b6_max_kmh}", ignore_same_asn: true}
+
+  - id: cl_new_principal_privileged
+    clouds: [aws, azure, gcp]
+    technique: T1136
+    sub_technique: T1136.003
+    tactic: Persistence
+    severity: 85
+    secondary: {technique: T1098, sub_technique: T1098.003, tactic: Privilege Escalation, severity: 85}
+    branches:
+      - template: sequence
+        params:
+          a_filter: &new_principal_a >-
+            ok_row AND ((is_ct AND api IN ('CreateUser', 'CreateRole', 'CreateLoginProfile'))
+                        OR (is_azd AND au_name IN ('Add user', 'Add service principal', 'Add application', 'Invite external user'))
+                        OR (is_gcp AND api LIKE '%CreateServiceAccount'))
+          b_filter: "ok_row AND NOT coalesce(machine, false) AND (api IN {cfg.sensitive_apis} OR api LIKE '%SetIamPolicy')"
+          join:
+            - - &new_principal_key >-
+                lower(CASE WHEN is_ct THEN coalesce(json_extract_string(ct_rp, '$.userName'), json_extract_string(ct_rp, '$.roleName'))
+                           WHEN is_azd AND au_name IN ('Add service principal', 'Add application') THEN json_extract_string(tr_json, '$[0].displayName')
+                           WHEN is_azd THEN target_user
+                           ELSE nullif(regexp_extract(coalesce(json_extract_string(g_resp, '$.email'), ''), '^([^@]+)', 1), '') END)
+              - actor_key
+          window_ms: "{cfg.b7_window_ms}"
+      - template: sequence
+        params:
+          a_filter: "ok_row AND ((is_ct AND api = 'CreateAccessKey') OR (is_gcp AND api LIKE '%CreateServiceAccountKey'))"
+          b_filter: "ok_row AND (api IN {cfg.sensitive_apis} OR api LIKE '%SetIamPolicy')"
+          join:
+            - - >-
+                coalesce(json_extract_string(ct_re, '$.accessKey.accessKeyId'),
+                         nullif(regexp_extract(coalesce(g_resp, ''), '"name"\s*:\s*"[^"]*/keys/([0-9a-f]+)"', 1), ''))
+              - "coalesce(ct_akid, nullif(regexp_extract(coalesce(g_keyname, ''), '/keys/([0-9a-f]+)$', 1), ''))"
+          window_ms: "{cfg.b7_window_ms}"
+      - template: sequence
+        label: secondary
+        params:
+          a_filter: *new_principal_a
+          b_rules: [aws_admin_policy_attached, az_entra_privileged_role, az_rbac_privileged_assignment, gcp_sensitive_grant,
+                    aws_iam_privesc_primitives]
+          join: [[*new_principal_key, target_user]]
+          window_ms: "{cfg.b7_window_ms}"
+
+  - id: seq_new_key_used_new_ip
+    clouds: [aws, gcp]
+    technique: T1098
+    sub_technique: T1098.001
+    tactic: Persistence
+    severity: 80
+    branches:
+      - template: sequence
+        params:
+          a_filter: "ok_row AND ((is_ct AND api = 'CreateAccessKey') OR (is_gcp AND api LIKE '%CreateServiceAccountKey'))"
+          b_filter: "(is_ct AND ct_akid IS NOT NULL) OR (is_gcp AND g_keyname IS NOT NULL)"
+          join:
+            - - >-
+                coalesce(json_extract_string(ct_re, '$.accessKey.accessKeyId'),
+                         nullif(regexp_extract(coalesce(g_resp, ''), '"name"\s*:\s*"[^"]*/keys/([0-9a-f]+)"', 1), ''))
+              - "coalesce(ct_akid, nullif(regexp_extract(coalesce(g_keyname, ''), '/keys/([0-9a-f]+)$', 1), ''))"
+          pair_where: "b.src_ip IS NOT NULL AND b.src_ip IS DISTINCT FROM a.src_ip AND b.net IS DISTINCT FROM a.net"
+          window_ms: "{cfg.b8_window_ms}"
+        severity_sql: "CASE WHEN b.api IN {cfg.recon_first_apis} OR b.api IN {cfg.sensitive_apis} THEN 90 END"
+
+  - id: seq_role_chain
+    clouds: [aws, gcp]
+    technique: T1548
+    sub_technique: T1548.005
+    tactic: Privilege Escalation
+    severity: 60
+    branches:
+      - template: first_seen
+        filter: &assume_role "is_ct AND app = 'sts.amazonaws.com' AND api IN ('AssumeRole', 'AssumeRoleWithWebIdentity', 'AssumeRoleWithSAML', 'AssumeRoot')"
+        params: {key: [actor_key, "lower(json_extract_string(ct_rp, '$.roleArn'))"], baseline_days: "{cfg.b9_baseline_days}",
+                 max_per_actor_day: "{cfg.first_seen_max_per_actor_day}", summary_severity: "{cfg.first_seen_summary_severity}"}
+        target: "nullif(regexp_extract(coalesce(json_extract_string(ct_rp, '$.roleArn'), ''), ':role/(?:.*/)?([^/]+)$', 1), '')"
+      - match: >-
+          is_ct AND app = 'sts.amazonaws.com' AND api IN ('AssumeRole', 'AssumeRoleWithWebIdentity', 'AssumeRoleWithSAML')
+          AND NOT coalesce(ct_svc, false)
+          AND nullif(regexp_extract(coalesce(json_extract_string(ct_rp, '$.roleArn'), ''), '::([0-9]{12}):', 1), '') IS NOT NULL
+          AND regexp_extract(json_extract_string(ct_rp, '$.roleArn'), '::([0-9]{12}):', 1) <> coalesce(acct, '')
+          AND NOT list_contains({cfg.trusted_aws_accounts:list}, regexp_extract(json_extract_string(ct_rp, '$.roleArn'), '::([0-9]{12}):', 1))
+        severity: 75
+        target: "nullif(regexp_extract(coalesce(json_extract_string(ct_rp, '$.roleArn'), ''), ':role/(?:.*/)?([^/]+)$', 1), '')"
+      - template: sequence
+        severity: 75
+        params:
+          a_filter: "is_ct AND ok_row AND app = 'sts.amazonaws.com' AND api = 'AssumeRole'"
+          b_filter: "is_ct AND ok_row AND app = 'sts.amazonaws.com' AND api = 'AssumeRole' AND ct_akid IS NOT NULL"
+          join: [["json_extract_string(ct_re, '$.credentials.accessKeyId')", ct_akid]]
+          window_ms: "{cfg.b9_window_ms}"
+      - match: "is_gcp AND json_array_length(g_deleg) >= 2"
+        severity: 75
+
+  - id: seq_grant_then_data_access
+    clouds: [aws, azure, gcp]
+    technique: T1098
+    sub_technique: T1098.003
+    tactic: Privilege Escalation
+    severity: 85
+    secondary: {technique: T1530, tactic: Collection, severity: 85}
+    branches:
+      - template: sequence
+        label: secondary
+        params:
+          a_rules: [aws_admin_policy_attached, aws_role_trust_backdoor, az_rbac_privileged_assignment, gcp_sensitive_grant,
+                    az_oauth_consent_privileged, aws_iam_privesc_primitives]
+          a_min_severity: 45
+          b_filter: >-
+            ok_row AND (api IN ('GetObject', 'ListObjects', 'ListObjectsV2', 'GetSecretValue', 'BatchGetSecretValue', 'GetPasswordData',
+                                'storage.objects.get', 'storage.objects.list', 'GetBlob')
+                        OR api LIKE '%AccessSecretVersion'
+                        OR (api IN ('GetParameter', 'GetParameters', 'GetParametersByPath') AND lower(json_extract_string(ct_rp, '$.withDecryption')) = 'true')
+                        OR api_u IN ('MICROSOFT.STORAGE/STORAGEACCOUNTS/LISTKEYS/ACTION', 'MICROSOFT.STORAGE/STORAGEACCOUNTS/LISTACCOUNTSAS/ACTION')
+                        OR (api = 'DescribeInstanceAttribute' AND json_extract_string(ct_rp, '$.attribute') = 'userData'))
+          join: [[target_user, actor_key]]
+          window_ms: "{cfg.b10_window_ms}"
+        severity_sql: "CASE WHEN a.actor IS DISTINCT FROM b.actor AND a.actor IS DISTINCT FROM b.actor_key THEN 90 END"
+
+  - id: seq_logging_off_then_write
+    clouds: [aws, azure, gcp]
+    technique: T1685
+    sub_technique: T1685.002
+    tactic: Defense Impairment
+    severity: 75
+    # a pipeline deploying on schedule after someone else's tamper is not the attacker acting blind: context, unless the
+    # CI identity itself looks wrong (new network, denied burst, attack tool UA). The tamper alert itself is unchanged.
+    automation: true
+    branches:
+      - template: sequence
+        params:
+          a_rules: [aws_logging_tamper, aws_security_service_off, az_diag_or_defender_off, gcp_logging_tamper, az_lock_deleted]
+          a_min_severity: "{cfg.b11_min_severity}"
+          b_filter: "is_write AND ok_row AND NOT coalesce(machine, false)"
+          join: [[acct, acct]]
+          window_ms: "{cfg.b11_window_ms}"
+        # the tamper actor writing (90) or anyone writing from the tamper's source IP (85) is the attacker acting in
+        # the blind window; any other identity's routine write in the account is only a signal (50)
+        severity_sql: >-
+          CASE WHEN a.actor = b.actor OR a.actor = b.actor_key OR a.actor = b.src_user THEN 90
+               WHEN b.src_ip IS NOT NULL AND b.src_ip = a.src_ip THEN 85 ELSE 50 END
+
+  - id: cl_session_multi_asn
+    clouds: [aws, azure]
+    technique: T1550
+    sub_technique: T1550.001
+    tactic: Lateral Movement
+    severity: 70
+    branches:
+      - template: multi_network_session
+        filter: "is_ct AND ct_akid LIKE 'ASIA%' AND ct_vpce IS NULL AND NOT coalesce(ct_svc, false) AND NOT al_is_internal_ip(src_ip)"
+        outcome: any
+        params: {session: ct_akid, network: net, window_ms: "{cfg.b12_window_ms}", min_networks: "{cfg.b12_min_networks}"}
+        # without an ASN (no geo.asn_db_path, no SigninLogs ASN) the network is a /16 or /48 prefix: a laptop moving
+        # between office, VPN and home changes prefix all day, so this is context (35), not token-theft evidence
+        severity_sql: &b12_sev >-
+          CASE WHEN bool_or(hosting) OR count(DISTINCT cc) > 1 THEN 85 WHEN bool_and(asn IS NULL) THEN 35 END
+      - template: multi_network_session
+        filter: "is_ct AND ct_akid LIKE 'AKIA%' AND ct_vpce IS NULL AND NOT coalesce(ct_svc, false) AND NOT al_is_internal_ip(src_ip)"
+        outcome: any
+        params: {session: ct_akid, network: net, window_ms: "{cfg.b12_long_key_window_ms}", min_networks: "{cfg.b12_min_networks}"}
+        severity_sql: *b12_sev
+      - template: multi_network_session
+        filter: "is_azs AND si_sess IS NOT NULL AND NOT al_is_internal_ip(src_ip)"
+        outcome: any
+        params: {session: si_sess, network: net, window_ms: "{cfg.b12_window_ms}", min_networks: "{cfg.b12_min_networks}"}
+        severity_sql: *b12_sev
+
+  - id: cl_mass_destruction
+    clouds: [aws, azure, gcp]
+    technique: T1485
+    tactic: Impact
+    severity: 85
+    branches:
+      - template: distinct_burst
+        filter: "is_ct AND api IN ('DeleteObject', 'DeleteObjects')"
+        params: {key: [actor_key, "json_extract_string(ct_rp, '$.bucketName')"],
+                 distinct: "coalesce(json_extract_string(ct_rp, '$.key'), CAST(source_seq AS VARCHAR))",
+                 window_ms: "{cfg.b13_object_window_ms}", min_distinct: "{cfg.b13_min_objects}",
+                 baseline_mult: "{cfg.b13_baseline_mult}", baseline_days: "{cfg.b13_baseline_days}"}
+      - template: distinct_burst
+        filter: "(is_gcp AND api = 'storage.objects.delete') OR (is_azb AND api = 'DeleteBlob')"
+        params: {key: [actor_key, "coalesce(sb_account, nullif(regexp_extract(coalesce(g_res, ''), 'buckets/([^/]+)', 1), ''), src_ip)"],
+                 distinct: "coalesce(g_res, sb_key, CAST(source_seq AS VARCHAR))",
+                 window_ms: "{cfg.b13_object_window_ms}", min_distinct: "{cfg.b13_min_objects}",
+                 baseline_mult: "{cfg.b13_baseline_mult}", baseline_days: "{cfg.b13_baseline_days}"}
+      - template: distinct_burst
+        filter: "(is_ct AND api = 'DeleteBucket') OR (is_gcp AND api = 'storage.buckets.delete') OR (is_aza AND api_u = 'MICROSOFT.STORAGE/STORAGEACCOUNTS/DELETE')"
+        params: {key: [actor_key, acct], distinct: "coalesce(json_extract_string(ct_rp, '$.bucketName'), g_res, lower(host))",
+                 window_ms: "{cfg.b13_resource_window_ms}", min_distinct: "{cfg.b13_min_buckets}"}
+      - template: distinct_burst
+        filter: >-
+          (is_ct AND is_write AND regexp_matches(coalesce(api, ''), '^(Delete|Terminate|Remove|Purge|Deregister|ScheduleKeyDeletion)')
+           AND api NOT IN ('DeleteObject', 'DeleteObjects'))
+          OR (is_aza AND api_u LIKE '%/DELETE') OR (is_gcp AND regexp_matches(coalesce(api, ''), '\.(delete|destroy)$') AND api <> 'storage.objects.delete')
+        params: {key: [actor_key, acct], distinct: "coalesce(ct_rp, lower(host), g_res)", window_ms: "{cfg.b13_resource_window_ms}",
+                 min_distinct: "{cfg.b13_min_resources}", baseline_mult: "{cfg.b13_baseline_mult}", baseline_days: "{cfg.b13_baseline_days}"}
+      - template: distinct_burst
+        filter: "is_aza AND api_u = 'MICROSOFT.STORAGE/STORAGEACCOUNTS/REGENERATEKEY/ACTION'"
+        params: {key: [actor_key], distinct: lower(host), window_ms: "{cfg.b13_resource_window_ms}", min_distinct: "{cfg.b13_min_buckets}"}
+      - template: sequence
+        severity: 95
+        params:
+          a_rules: [cl_backup_destruction, aws_logging_tamper, aws_security_service_off, az_diag_or_defender_off, gcp_logging_tamper]
+          a_min_severity: 40
+          b_rules: [cl_mass_destruction]
+          join: [[acct, acct]]
+          window_ms: "{cfg.b13_prior_window_ms}"
+
+  - id: cl_exfil_volume
+    clouds: [aws, azure, gcp]
+    technique: T1530
+    tactic: Collection
+    severity: 75
+    branches:
+      - template: distinct_burst
+        filter: "is_ct AND api = 'GetObject'"
+        params: {key: [actor_key, acct], distinct: "coalesce(json_extract_string(ct_rp, '$.key'), CAST(source_seq AS VARCHAR))",
+                 window_ms: "{cfg.b14_window_ms}", min_distinct: "{cfg.b14_min_objects}",
+                 baseline_mult: "{cfg.b14_baseline_mult}", baseline_days: "{cfg.b14_baseline_days}"}
+        severity_sql: &b14_sev "CASE WHEN NOT bool_or(corp_ip) AND bool_and(provider IS NULL) AND bool_and(NOT al_is_internal_ip(src_ip)) THEN 85 END"
+      - template: distinct_burst
+        filter: "is_ct AND api = 'GetObject'"
+        params: {key: [actor_key, acct], distinct: source_seq, window_ms: "{cfg.b14_window_ms}", min_distinct: 1,
+                 having: "sum(TRY_CAST(json_extract_string(ct_add, '$.bytesTransferredOut') AS DOUBLE)) > {cfg.b14_min_bytes}"}
+        severity_sql: *b14_sev
+      - template: distinct_burst
+        filter: "(is_gcp AND api = 'storage.objects.get') OR (is_azb AND api = 'GetBlob')"
+        # AccountKey / SAS / anonymous reads have no principal: the caller IP stands for it (NULL keys are skipped)
+        params: {key: ["coalesce(actor_key, src_ip)", "coalesce(src_ip, '')"], distinct: "coalesce(g_res, sb_key, CAST(source_seq AS VARCHAR))",
+                 window_ms: "{cfg.b14_window_ms}", min_distinct: "{cfg.b14_min_objects}",
+                 baseline_mult: "{cfg.b14_baseline_mult}", baseline_days: "{cfg.b14_baseline_days}"}
+        severity_sql: *b14_sev
+      - template: distinct_burst
+        filter: "is_azb AND api = 'GetBlob'"
+        params: {key: ["coalesce(actor_key, src_ip)", sb_account], distinct: source_seq, window_ms: "{cfg.b14_window_ms}", min_distinct: 1,
+                 having: "sum(bytes_out) > {cfg.b14_min_bytes}"}
+        severity_sql: *b14_sev
+      - template: distinct_burst
+        filter: >-
+          is_aza AND api_u IN ('MICROSOFT.STORAGE/STORAGEACCOUNTS/LISTACCOUNTSAS/ACTION', 'MICROSOFT.STORAGE/STORAGEACCOUNTS/LISTSERVICESAS/ACTION',
+                               'MICROSOFT.COMPUTE/DISKS/BEGINGETACCESS/ACTION', 'MICROSOFT.STORAGE/STORAGEACCOUNTS/LISTKEYS/ACTION')
+        params: {key: [actor_key], distinct: api_u, window_ms: "{cfg.b14_window_ms}", min_distinct: "{cfg.b14_sas_min}"}
+
+  - id: cl_storage_data_access
+    clouds: [aws, azure, gcp]
+    technique: T1530
+    tactic: Collection
+    severity: 70
+    branches:
+      # a source (principal, else caller IP for AccountKey / SAS / anonymous reads) that never read this bucket /
+      # storage account in st_novel_days pulls >= st_min_objects distinct objects in an hour (store cold start)
+      - template: new_source_burst
+        filter: &st_read >-
+          NOT coalesce(machine, false)
+          AND ((is_ct AND api = 'GetObject') OR (is_gcp AND api = 'storage.objects.get') OR (is_azb AND api = 'GetBlob'))
+        params:
+          store: &st_store >-
+            lower(coalesce(json_extract_string(ct_rp, '$.bucketName'), nullif(regexp_extract(coalesce(g_res, ''), 'buckets/([^/]+)', 1), ''), sb_account))
+          source: &st_source "coalesce(actor_key, src_ip)"
+          distinct: &st_obj "coalesce(json_extract_string(ct_rp, '$.key'), g_res, sb_key)"
+          window_ms: "{cfg.st_window_ms}"
+          min_distinct: "{cfg.st_min_objects}"
+          novel_days: "{cfg.st_novel_days}"
+          store_history_days: "{cfg.st_store_history_days}"
+        # shared key / SAS / anonymous reads are not attributable to anyone -> 80; a new internal reader -> 50
+        severity_sql: &st_sev >-
+          CASE WHEN bool_and(al_is_internal_ip(src_ip) OR coalesce(corp_ip, false)) THEN 50
+               WHEN bool_or(actor_key IS NULL) THEN 80 END
+      # a known source reading >= st_baseline_mult x its own hourly p95 (new sources are the branch above)
+      - template: distinct_burst
+        filter: *st_read
+        params: {key: [*st_source, *st_store], distinct: *st_obj, window_ms: "{cfg.st_window_ms}",
+                 min_distinct: "{cfg.st_min_objects}", baseline_mult: "{cfg.st_baseline_mult}",
+                 baseline_days: "{cfg.st_baseline_days}", require_history: true}
+        severity: 65
+        severity_sql: *st_sev
+      # storage account keys / SAS listed, then key or SAS blob reads on that account from the same IP or network
+      - template: sequence
+        severity: 85
+        params:
+          a_filter: >-
+            is_aza AND ok_row AND api_u IN ('MICROSOFT.STORAGE/STORAGEACCOUNTS/LISTKEYS/ACTION',
+                                            'MICROSOFT.STORAGE/STORAGEACCOUNTS/LISTACCOUNTSAS/ACTION',
+                                            'MICROSOFT.STORAGE/STORAGEACCOUNTS/LISTSERVICESAS/ACTION')
+          b_filter: >-
+            is_azb AND ok_row AND api IN ('GetBlob', 'ListBlobs', 'CopyBlob', 'GetBlobProperties')
+            AND lower(coalesce(sb_auth, '')) IN ('accountkey', 'sas')
+          join: [["nullif(regexp_extract(lower(host), '/storageaccounts/([^/]+)', 1), '')", "lower(sb_account)"]]
+          pair_where: "(b.src_ip = a.src_ip OR (a.net IS NOT NULL AND b.net = a.net)) AND NOT coalesce(b.corp_ip, false)"
+          window_ms: "{cfg.st_key_use_window_ms}"
+
+  - id: cl_dormant_identity_reactivated
+    clouds: [aws, azure, gcp]
+    technique: T1078
+    sub_technique: T1078.004
+    tactic: Initial Access
+    severity: 60
+    branches:
+      - template: first_seen
+        filter: "actor_key IS NOT NULL"
+        params: {key: [actor_key], baseline_days: "{cfg.b15_dormant_days}", require_older_history: true,
+                 min_history_days: 0, min_actor_events: 0}
+        severity_sql: "CASE WHEN is_write OR api IN {cfg.sensitive_read_apis} THEN 75 END"
+
+  - id: cl_new_user_agent_family
+    clouds: [aws, azure, gcp]
+    technique: T1059
+    sub_technique: T1059.009
+    tactic: Execution
+    severity: 45
+    branches:
+      - template: first_seen
+        filter: "is_write AND ua_family IN {cfg.scripting_ua_families}"
+        params: {key: [actor_key, ua_family], baseline_days: "{cfg.b16_baseline_days}",
+                 max_per_actor_day: "{cfg.first_seen_max_per_actor_day}", summary_severity: "{cfg.first_seen_summary_severity}"}
+
+  - id: seq_risky_signin_then_persistence
+    clouds: [aws, azure]
+    technique: T1098
+    tactic: Persistence
+    severity: 85
+    branches:
+      - template: sequence
+        params:
+          a_rules: [az_risky_signin_success, az_valid_password_new_country, az_mfa_fatigue, az_risky_auth_protocol, cl_first_seen_geo,
+                    cl_impossible_travel, aws_console_login_no_mfa]
+          a_min_severity: 45
+          b_rules: [az_auth_method_added, az_app_or_identity_credential, az_oauth_consent_privileged, az_entra_privileged_role,
+                    aws_credential_for_other_user, aws_keypair_new]
+          join: [[actor, actor]]
+          window_ms: "{cfg.b17_window_ms}"
+
+  - id: cl_volume_zscore
+    clouds: [aws, azure, gcp]
+    technique: T1078
+    sub_technique: T1078.004
+    tactic: Initial Access
+    severity: 50
+    branches:
+      - template: rate_spike
+        filter: "actor_key IS NOT NULL AND NOT coalesce(machine, false)"
+        params: {key: [actor_key], num: is_write, window_ms: "{cfg.b18_window_ms}", min_num: "{cfg.b18_min_num}",
+                 z: "{cfg.b18_z}", sigma_floor: "{cfg.b18_sigma_floor}", baseline_days: "{cfg.b18_baseline_days}"}
+
+  # ======================================================================================================================
+  # Rules track (native rule quality, reports/cloud/rule_catalog.md): gaps from the public-dataset eval
+  # (reports/ext/cloud_eval.md) and the novel / missed synthetic stories, written as general detections.
+  # Tests: backend/tests/test_detect_cloud_native_rules.py.
+  - id: aws_console_unknown_user
+    clouds: [aws]
+    technique: T1110
+    tactic: Credential Access
+    severity: 65
+    secondary: {technique: T1078, sub_technique: T1078.004, tactic: Initial Access, severity: 85}
+    branches:
+      # a console sign-in for a user name that does not exist in the account (CloudTrail hides the typed name as
+      # HIDDEN_DUE_TO_SECURITY_REASONS): one is a typo (context), a few from one IP are user-name guessing
+      - match: &unknown_user >-
+          is_ct AND api = 'ConsoleLogin' AND action = 'login_failed'
+          AND coalesce(ct_msg, '') ILIKE 'No username found in supplied account%'
+        outcome: any
+        severity: 35
+      - template: distinct_burst
+        filter: *unknown_user
+        outcome: any
+        params: {key: [src_ip], distinct: source_seq, window_ms: "{cfg.bf_window_ms}",
+                 min_distinct: "{cfg.unknown_user_min_failures}"}
+      - template: sequence
+        label: secondary
+        params:
+          a_rules: [aws_console_unknown_user]
+          a_min_severity: 45
+          b_filter: "is_ct AND api = 'ConsoleLogin' AND action = 'login_success'"
+          join: [[src_ip, src_ip]]
+          window_ms: "{cfg.bf_success_window_ms}"
+
+  - id: cl_storage_enum_burst
+    clouds: [azure, gcp]        # S3: aws_s3_bucket_enum (track AWS)
+    technique: T1619
+    tactic: Discovery
+    severity: 50
+    branches:
+      # object listing across many buckets / containers in a short window (ATT&CK T1619 names the List Blobs and
+      # ListObjectsV2 procedures); a caller outside corp / private ranges -> 60
+      - template: distinct_burst
+        filter: >-
+          NOT coalesce(machine, false) AND NOT regexp_matches(coalesce(ua, ''), {cfg.inventory_ua_regex})
+          AND ((is_gcp AND api = 'storage.objects.list') OR (is_azb AND api IN ('ListBlobs', 'ListContainers')))
+        outcome: any
+        params:
+          key: ["coalesce(actor_key, src_ip)"]
+          distinct: >-
+            lower(coalesce(nullif(regexp_extract(coalesce(g_res, ''), 'buckets/([^/]+)', 1), ''),
+                           nullif(regexp_extract(coalesce(sb_key, ''), '^/([^/]+/[^/?]+)', 1), ''), sb_account))
+          window_ms: "{cfg.storage_enum_window_ms}"
+          min_distinct: "{cfg.storage_enum_min_buckets}"
+        severity_sql: "CASE WHEN bool_and(NOT coalesce(corp_ip, false) AND NOT al_is_internal_ip(src_ip) AND src_ip IS NOT NULL) THEN 60 END"
+
+  - id: cl_storage_write_new_bucket
+    clouds: [aws, azure, gcp]
+    technique: T1537
+    tactic: Exfiltration
+    severity: 75
+    automation: true
+    branches:
+      # many objects written (put / copy / rewrite) by a person into a bucket that had NO activity in this account
+      # (any read, list, write or its creation) for xfer_new_bucket_novel_days: data moved to a store the account does
+      # not use, typically one the actor controls (T1537). A bucket created in the account first is known (its
+      # create call is history); account cold start (store_history_days) caps at cold_start.severity.
+      - template: new_source_burst
+        filter: >-
+          (is_ct AND app = 's3.amazonaws.com' AND json_extract_string(ct_rp, '$.bucketName') IS NOT NULL)
+          OR (is_gcp AND app = 'storage.googleapis.com' AND g_res LIKE '%buckets/%') OR is_azb
+        outcome: any
+        params:
+          store: acct
+          source: >-
+            lower(coalesce(json_extract_string(ct_rp, '$.bucketName'), nullif(regexp_extract(coalesce(g_res, ''), 'buckets/([^/]+)', 1), ''),
+                           nullif(regexp_extract(coalesce(sb_key, ''), '^/([^/]+/[^/?]+)', 1), ''), sb_account))
+          distinct: >-
+            CASE WHEN ok_row AND NOT coalesce(machine, false)
+                      AND api IN ('PutObject', 'CopyObject', 'CompleteMultipartUpload', 'storage.objects.create',
+                                  'storage.objects.rewrite', 'storage.objects.copy', 'PutBlob', 'PutBlockList', 'CopyBlob',
+                                  'CopyBlobFromURL', 'PutBlockFromURL')
+                 THEN coalesce(json_extract_string(ct_rp, '$.key'), g_res, sb_key) END
+          window_ms: "{cfg.xfer_new_bucket_window_ms}"
+          min_distinct: "{cfg.xfer_new_bucket_min_objects}"
+          novel_days: "{cfg.xfer_new_bucket_novel_days}"
+          store_history_days: "{cfg.st_store_history_days}"
+        severity_sql: "CASE WHEN bool_and(al_is_internal_ip(src_ip) OR coalesce(corp_ip, false)) THEN 50 END"
+
+  - id: aws_sts_token_new_network
+    clouds: [aws]
+    technique: T1550
+    sub_technique: T1550.001
+    tactic: Lateral Movement
+    severity: 75
+    branches:
+      # temporary credentials (AssumeRole / GetSessionToken / federation) issued to one network, then used from
+      # another: the token was taken and replayed elsewhere. Prefix-only networks (no ASN file) are a signal (50):
+      # a laptop can change /16 between VPN and home; a hosting provider / another ASN is strong.
+      - template: sequence
+        params:
+          a_filter: >-
+            is_ct AND ok_row AND app = 'sts.amazonaws.com'
+            AND api IN ('AssumeRole', 'GetSessionToken', 'GetFederationToken', 'AssumeRoleWithSAML', 'AssumeRoleWithWebIdentity')
+            AND NOT coalesce(ct_svc, false) AND ct_vpce IS NULL AND net IS NOT NULL AND NOT al_is_internal_ip(src_ip)
+          b_filter: >-
+            is_ct AND ct_akid LIKE 'ASIA%' AND NOT coalesce(ct_svc, false) AND ct_vpce IS NULL
+            AND net IS NOT NULL AND NOT al_is_internal_ip(src_ip)
+          join: [["json_extract_string(ct_re, '$.credentials.accessKeyId')", ct_akid]]
+          pair_where: >-
+            b.net IS DISTINCT FROM a.net AND NOT coalesce(b.corp_ip, false) AND NOT coalesce(a.corp_ip, false)
+            AND b.provider IS NULL AND NOT coalesce(a.asn = b.asn, false)
+          window_ms: "{cfg.sts_reuse_window_ms}"
+        severity_sql: "CASE WHEN coalesce(b.hosting, false) THEN 85 WHEN a.asn IS NULL OR b.asn IS NULL THEN 50 END"
+
+  - id: cl_compute_snapshot_create
+    clouds: [aws, azure, gcp]
+    technique: T1578
+    sub_technique: T1578.001
+    tactic: Defense Impairment
+    severity: 55
+    allow: {lists: [backup_principals], severity: 35}
+    automation: true
+    branches:
+      # a person snapshotting / imaging several volumes, databases or instances within an hour (backup services are
+      # machine identities and never count): the ATT&CK T1578.001 step before mounting or sharing the copies
+      - template: distinct_burst
+        filter: >-
+          ok_row AND NOT coalesce(machine, false)
+          AND ((is_ct AND api IN ('CreateSnapshot', 'CreateSnapshots', 'CreateDBSnapshot', 'CreateDBClusterSnapshot',
+                                  'CopySnapshot', 'CopyDBSnapshot', 'CreateImage'))
+               OR (is_aza AND api_u IN ('MICROSOFT.COMPUTE/SNAPSHOTS/WRITE', 'MICROSOFT.COMPUTE/IMAGES/WRITE'))
+               OR (is_gcp AND regexp_matches(lower(coalesce(api, '')), 'compute\.(snapshots\.insert|disks\.createsnapshot|images\.insert|machineimages\.insert)$')))
+        params:
+          key: [actor_key]
+          distinct: >-
+            coalesce(json_extract_string(ct_rp, '$.volumeId'), json_extract_string(ct_rp, '$.dBInstanceIdentifier'),
+                     json_extract_string(ct_rp, '$.dBClusterIdentifier'), json_extract_string(ct_rp, '$.sourceSnapshotId'),
+                     json_extract_string(ct_rp, '$.instanceId'), json_extract_string(ct_rp, '$.instanceSpecification.instanceId'),
+                     lower(host), g_res)
+          window_ms: "{cfg.hour_ms}"
+          min_distinct: "{cfg.snapshot_burst_min}"
+
+  - id: seq_novel_network_then_action
+    clouds: [aws, azure, gcp]
+    technique: T1078
+    sub_technique: T1078.004
+    tactic: Initial Access
+    severity: 70
+    branches:
+      # an established identity seen from a network it never used (cl_first_seen_geo, context on its own) and, from
+      # the SAME IP within the window, a discovery / credential / collection / exfiltration alert: the valid account
+      # is being used by someone else. A = the follow-on alert, B = the novel-network event, so the hit (ts = first
+      # B) sits on the access itself, not on the later action.
+      - template: sequence
+        params:
+          # (sequence sides read alerts of rules that ran BEFORE this one: aws_s3_bucket_enum runs later in the file)
+          a_rules: [cl_discovery_burst, cl_denied_spike, cl_secrets_mass_read, cl_storage_enum_burst,
+                    cl_storage_data_access, cl_exfil_volume, cl_storage_write_new_bucket]
+          a_min_severity: 45
+          b_rules: [cl_first_seen_geo]
+          join: [[actor, actor], [src_ip, src_ip]]
+          order: any
+          pair_where: "b.ts_ms <= a.ts_ms"
+          window_ms: "{cfg.novel_network_action_window_ms}"
+
+  # ======================================================================================================================
+  # Track AWS (reports/cloud/log_coverage.md P0-5 VPC Flow, P1-2 Route 53 Resolver, P1-8 Network Firewall, P0-15 S3 data
+  # events, P1-4 IAM Identity Center). Port scans, beaconing and exfil volume on flow rows come from the generic network
+  # templates (config/rules.yaml port_scan / beaconing / exfil_volume); these rules add what those cannot see.
+  # Network rows have no user: hits are keyed by host (instance) and IPs; outcome: any (flows are not API calls).
+  # ---------------------------------------------------------------------------------------------- VPC Flow Logs
+  - id: aws_vpcflow_mining_port
+    clouds: [aws]
+    technique: T1496
+    sub_technique: T1496.001
+    tactic: Impact
+    severity: 70
+    branches:
+      - template: distinct_burst
+        filter: >-
+          (is_vpcflow OR (is_nfw AND nfw_type = 'netflow')) AND action = 'conn_allowed' AND dst_port IN {cfg.mining_ports}
+          AND al_is_internal_ip(src_ip) AND NOT al_is_internal_ip(dst_ip)
+        outcome: any
+        params: {key: [host, dst_ip], distinct: source_seq, window_ms: "{cfg.mining_window_ms}",
+                 min_distinct: "{cfg.mining_min_flows}"}
+        severity_sql: "CASE WHEN count(DISTINCT dst_port) = 1 AND sum(coalesce(bytes_out, 0)) >= 1000000 THEN 80 END"
+
+  - id: aws_vpcflow_inbound_after_open
+    clouds: [aws]
+    technique: T1133
+    tactic: Initial Access
+    severity: 80
+    branches:
+      # a security group / NACL opened to the world on an admin port, then an accepted inbound flow from a public IP to
+      # an admin port of an instance in that account (the open rule alone is Defense Impairment; this is the use)
+      - template: sequence
+        params:
+          a_rules: [cl_firewall_open_world]
+          b_filter: >-
+            is_vpcflow AND action = 'conn_allowed' AND dst_port IN {cfg.sensitive_ports}
+            AND NOT al_is_internal_ip(src_ip) AND al_is_internal_ip(dst_ip) AND NOT coalesce(corp_ip, false)
+          join: [[acct, acct]]
+          window_ms: "{cfg.inbound_after_open_window_ms}"
+
+  # ----------------------------------------------------------------------------------------- Route 53 Resolver
+  - id: aws_r53_dns_tunnel
+    clouds: [aws]
+    technique: T1071
+    sub_technique: T1071.004
+    tactic: Command and Control
+    severity: 75
+    branches:
+      - template: distinct_burst
+        filter: "is_r53 AND dns_apex IS NOT NULL AND dns_apex NOT IN {cfg.dns_tunnel_allow_apex}"
+        outcome: any
+        params: {key: [host, dns_apex], distinct: dst_domain, window_ms: "{cfg.dns_tunnel_window_ms}",
+                 min_distinct: "{cfg.dns_tunnel_min_names}",
+                 having: "avg(length(split_part(dst_domain, '.', 1))) >= {cfg.dns_tunnel_min_label}"}
+        severity_sql: "CASE WHEN count(*) FILTER (WHERE r53_qtype IN ('TXT', 'NULL')) * 2 >= count(*) THEN 85 END"
+
+  - id: aws_r53_dga_nxdomain
+    clouds: [aws]
+    technique: T1568
+    sub_technique: T1568.002
+    tactic: Command and Control
+    severity: 65
+    branches:
+      - template: distinct_burst
+        filter: "is_r53 AND r53_rcode = 'NXDOMAIN' AND dns_apex IS NOT NULL AND dns_apex NOT IN {cfg.dns_tunnel_allow_apex}"
+        outcome: any
+        params: {key: [host], distinct: dst_domain, window_ms: "{cfg.dga_window_ms}", min_distinct: "{cfg.dga_min_nx}",
+                 having: "count(DISTINCT dns_apex) >= {cfg.dga_min_apex}"}
+
+  - id: aws_r53_firewall_hit
+    clouds: [aws]
+    technique: T1071
+    sub_technique: T1071.004
+    tactic: Command and Control
+    severity: 65
+    branches:
+      # Route 53 Resolver DNS Firewall matched a deny-list domain: ALERT = the lookup went through, BLOCK = prevented
+      - template: distinct_burst
+        filter: "is_r53 AND r53_fw IN ('BLOCK', 'ALERT')"
+        outcome: any
+        params: {key: [host, dns_apex], distinct: dst_domain, window_ms: "{cfg.hour_ms}", min_distinct: 1}
+        severity_sql: "CASE WHEN bool_and(r53_fw = 'BLOCK') THEN 50 END"
+
+  - id: aws_r53_mining_pool
+    clouds: [aws]
+    technique: T1496
+    sub_technique: T1496.001
+    tactic: Impact
+    severity: 70
+    branches:
+      - template: distinct_burst
+        filter: "is_r53 AND regexp_matches(coalesce(dst_domain, ''), {cfg.mining_domain_regex})"
+        outcome: any
+        params: {key: [host, dns_apex], distinct: dst_domain, window_ms: "{cfg.hour_ms}", min_distinct: 1}
+
+  # ------------------------------------------------------------------------------------- AWS Network Firewall
+  # Suricata alerts (event_type alert -> action ips_alert). The class comes from the rule message + category text; an
+  # alert the engine blocked is a prevented attempt (severity 40-45, signal only).
+  - id: aws_nfw_mining_alert
+    clouds: [aws]
+    technique: T1496
+    sub_technique: T1496.001
+    tactic: Impact
+    severity: 75
+    branches:
+      - template: distinct_burst
+        filter: "is_nfw AND action = 'ips_alert' AND regexp_matches(lower(concat_ws(' ', signature, nfw_cat)), {cfg.nfw_mining_regex})"
+        outcome: any
+        params: {key: [host, dst_ip], distinct: "coalesce(nfw_sid, signature)", window_ms: "{cfg.hour_ms}", min_distinct: 1}
+        severity_sql: "CASE WHEN bool_and(outcome = 'blocked') THEN 40 END"
+
+  - id: aws_nfw_c2_alert
+    clouds: [aws]
+    technique: T1071
+    tactic: Command and Control
+    severity: 75
+    branches:
+      - template: distinct_burst
+        filter: >-
+          is_nfw AND action = 'ips_alert' AND regexp_matches(lower(concat_ws(' ', signature, nfw_cat)), {cfg.nfw_c2_regex})
+          AND NOT regexp_matches(lower(concat_ws(' ', signature, nfw_cat)), {cfg.nfw_mining_regex})
+        outcome: any
+        params: {key: [host, dst_ip], distinct: "coalesce(nfw_sid, signature)", window_ms: "{cfg.hour_ms}", min_distinct: 1}
+        severity_sql: "CASE WHEN bool_and(outcome = 'blocked') THEN 45 WHEN bool_or(vendor_severity = '1') THEN 85 END"
+
+  - id: aws_nfw_exploit_alert
+    clouds: [aws]
+    technique: T1190
+    tactic: Initial Access
+    severity: 80
+    branches:
+      - template: distinct_burst
+        filter: >-
+          is_nfw AND action = 'ips_alert' AND regexp_matches(lower(concat_ws(' ', signature, nfw_cat)), {cfg.nfw_exploit_regex})
+          AND NOT al_is_internal_ip(src_ip) AND al_is_internal_ip(dst_ip)
+        outcome: any
+        params: {key: [host, src_ip], distinct: "coalesce(nfw_sid, signature)", window_ms: "{cfg.hour_ms}", min_distinct: 1}
+        severity_sql: "CASE WHEN bool_and(outcome = 'blocked') THEN 40 END"
+
+  - id: aws_nfw_scan_alert
+    clouds: [aws]
+    technique: T1046
+    tactic: Discovery
+    severity: 55
+    secondary: {technique: T1595, tactic: Reconnaissance, severity: 30}   # internet scanner probing the edge
+    branches:
+      - template: distinct_burst
+        filter: >-
+          is_nfw AND action = 'ips_alert' AND regexp_matches(lower(concat_ws(' ', signature, nfw_cat)), {cfg.nfw_scan_regex})
+          AND NOT regexp_matches(lower(concat_ws(' ', signature, nfw_cat)), {cfg.nfw_exploit_regex})
+        outcome: any
+        params: {key: [host, src_ip], distinct: "coalesce(nfw_sid, signature)", window_ms: "{cfg.hour_ms}", min_distinct: 1}
+        label_sql: "CASE WHEN bool_and(NOT al_is_internal_ip(src_ip)) THEN 'secondary' END"
+        severity_sql: "CASE WHEN bool_and(NOT al_is_internal_ip(src_ip)) THEN 30 WHEN bool_and(outcome = 'blocked') THEN 40 END"
+
+  # ----------------------------------------------------------------------------------------- S3 data events
+  - id: aws_s3_lifecycle_expire
+    clouds: [aws]
+    technique: T1485
+    sub_technique: T1485.001
+    tactic: Impact
+    severity: 65
+    allow: {lists: [backup_principals], severity: 35}
+    automation: true
+    branches:
+      # lifecycle rule expiring current or noncurrent object versions within s3_lifecycle_max_days (Codefinger: SSE-C
+      # re-encryption, then a short expiration so the victim must pay before the data is gone)
+      - match: &s3_lc >-
+          is_ct AND api IN ('PutBucketLifecycle', 'PutBucketLifecycleConfiguration') AND ok_row
+          AND coalesce(list_min(list_transform(regexp_extract_all(coalesce(ct_rp, ''),
+                '"(?:Expiration|NoncurrentVersionExpiration)"\s*:\s*\{[^{}]*"(?:Days|NoncurrentDays)"\s*:\s*"?([0-9]+)', 1),
+                lambda x: TRY_CAST(x AS INTEGER))), 100000) <= {cfg.s3_lifecycle_max_days}
+      - template: sequence
+        severity: 90
+        params:
+          a_rules: [cl_storage_ransom_encrypt]
+          a_min_severity: 85               # the bulk re-encryption burst, not each single SSE-C copy
+          b_filter: *s3_lc
+          join: [[actor_key, actor_key]]
+          window_ms: "{cfg.s3_lifecycle_after_ssec_window_ms}"
+
+  - id: aws_s3_version_purge
+    clouds: [aws]
+    technique: T1485
+    tactic: Impact
+    severity: 80
+    allow: {lists: [backup_principals], severity: 35}
+    branches:
+      # DeleteObject WITH a versionId removes the version for good (a plain delete only adds a delete marker)
+      - template: distinct_burst
+        filter: "is_ct AND api = 'DeleteObject' AND json_extract_string(ct_rp, '$.versionId') IS NOT NULL"
+        params: {key: [actor_key, "json_extract_string(ct_rp, '$.bucketName')"],
+                 distinct: "json_extract_string(ct_rp, '$.key') || '#' || json_extract_string(ct_rp, '$.versionId')",
+                 window_ms: "{cfg.s3_version_purge_window_ms}", min_distinct: "{cfg.s3_version_purge_min}"}
+
+  - id: aws_s3_bucket_enum
+    clouds: [aws]
+    technique: T1619
+    tactic: Discovery
+    severity: 50
+    branches:
+      - template: distinct_burst
+        filter: >-
+          is_ct AND api IN ('ListObjects', 'ListObjectsV2', 'ListObjectVersions', 'GetBucketAcl', 'GetBucketPolicy',
+                            'GetBucketPolicyStatus', 'GetBucketLocation', 'HeadBucket')
+          AND NOT coalesce(machine, false) AND NOT regexp_matches(coalesce(ua, ''), {cfg.inventory_ua_regex})
+        outcome: any
+        params: {key: ["coalesce(session, actor_key)"], distinct: "json_extract_string(ct_rp, '$.bucketName')",
+                 window_ms: "{cfg.s3_enum_window_ms}", min_distinct: "{cfg.s3_enum_min_buckets}"}
+        severity_sql: "CASE WHEN count(*) FILTER (WHERE denied) * 3 >= count(*) OR bool_and(NOT coalesce(corp_ip, false) AND NOT al_is_internal_ip(src_ip) AND src_ip IS NOT NULL) THEN 60 END"
+
+  - id: aws_s3_anonymous_read
+    clouds: [aws]
+    technique: T1530
+    tactic: Collection
+    severity: 65
+    allow: {lists: [public_bucket_allow], severity: 35}
+    branches:
+      # anonymous principal (userIdentity.type AWSAccount without a principal id) pulling many objects
+      - template: distinct_burst
+        filter: "is_ct AND api = 'GetObject' AND ct_type = 'AWSAccount' AND actor IS NULL AND src_ip IS NOT NULL"
+        params: {key: [src_ip, "json_extract_string(ct_rp, '$.bucketName')"], distinct: "json_extract_string(ct_rp, '$.key')",
+                 window_ms: "{cfg.hour_ms}", min_distinct: "{cfg.s3_anon_min_objects}"}
+
+  # ------------------------------------------------------------------------------ IAM Identity Center sign-in
+  # signin.amazonaws.com CredentialChallenge / CredentialVerification / UserAuthentication (serviceEventDetails verdict,
+  # additionalEventData.CredentialType / AuthWorkflowID). config/sources.yaml maps a failed CredentialVerification to
+  # login_failed and UserAuthentication to login_success / login_failed.
+  - id: aws_sso_password_spray
+    clouds: [aws]
+    technique: T1110
+    sub_technique: T1110.003
+    tactic: Credential Access
+    severity: 70
+    secondary: {technique: T1078, sub_technique: T1078.004, tactic: Initial Access, severity: 85}
+    branches:
+      - template: distinct_burst
+        filter: >-
+          is_ct AND api = 'CredentialVerification' AND outcome = 'failure' AND upper(coalesce(ct_cred, '')) LIKE '%PASSWORD%'
+          AND NOT coalesce(corp_ip, false)
+        outcome: any
+        params: {key: [src_ip], distinct: actor_key, window_ms: "{cfg.sso_spray_window_ms}", min_distinct: "{cfg.sso_spray_min_users}"}
+      - template: sequence
+        label: secondary
+        params:
+          a_rules: [aws_sso_password_spray]
+          b_filter: "is_ct AND api = 'UserAuthentication' AND outcome = 'success'"
+          join: [[src_ip, src_ip]]
+          window_ms: "{cfg.sso_spray_window_ms}"
+
+  - id: aws_sso_bruteforce
+    clouds: [aws]
+    technique: T1110
+    sub_technique: T1110.001
+    tactic: Credential Access
+    severity: 70
+    secondary: {technique: T1078, sub_technique: T1078.004, tactic: Initial Access, severity: 85}
+    branches:
+      - template: distinct_burst
+        filter: >-
+          is_ct AND api = 'CredentialVerification' AND outcome = 'failure' AND upper(coalesce(ct_cred, '')) LIKE '%PASSWORD%'
+        outcome: any
+        params: {key: [actor_key], distinct: source_seq, window_ms: "{cfg.sso_bf_window_ms}", min_distinct: "{cfg.sso_bf_min_failures}"}
+      - template: sequence
+        label: secondary
+        params:
+          a_rules: [aws_sso_bruteforce]
+          a_filter: "technique_id = 'T1110'"
+          b_filter: "is_ct AND api = 'UserAuthentication' AND outcome = 'success'"
+          join: [[actor, actor]]
+          window_ms: "{cfg.sso_bf_window_ms}"
+
+  - id: aws_sso_mfa_fatigue
+    clouds: [aws]
+    technique: T1621
+    tactic: Credential Access
+    severity: 70
+    branches:
+      # the password was accepted, then the second factor is challenged / fails again and again for one user
+      - template: distinct_burst
+        filter: >-
+          is_ct AND api IN ('CredentialChallenge', 'CredentialVerification')
+          AND upper(coalesce(ct_cred, 'PASSWORD')) NOT LIKE '%PASSWORD%'
+          AND (api = 'CredentialChallenge' OR outcome = 'failure')
+        outcome: any
+        params: {key: [actor_key], distinct: source_seq, window_ms: "{cfg.sso_mfa_window_ms}", min_distinct: "{cfg.sso_mfa_min_challenges}"}
+        severity_sql: "CASE WHEN bool_and(NOT coalesce(corp_ip, false)) AND count(*) FILTER (WHERE outcome = 'failure') >= 3 THEN 80 END"
+
+  - id: aws_sso_mfa_device_new_net
+    clouds: [aws]
+    technique: T1556
+    sub_technique: T1556.006
+    tactic: Persistence
+    severity: 35
+    branches:
+      # an MFA device registered (Identity Center self-service or IAM EnableMFADevice) from a network the user has not
+      # used in sso_newnet_days (activity in the hour before, e.g. the attacker's own sign-in, does not count)
+      - match: >-
+          is_ct AND ok_row AND regexp_matches(lower(coalesce(api, '')), {cfg.sso_mfa_regex}) AND lower(api) NOT LIKE 'start%'
+          AND src_ip IS NOT NULL AND net IS NOT NULL AND NOT coalesce(corp_ip, false) AND NOT al_is_internal_ip(src_ip)
+        severity_sql: >-
+          CASE WHEN EXISTS (SELECT 1 FROM cloud_ev z WHERE z.actor_key = e.actor_key AND z.ts_ms < e.ts_ms - {cfg.hour_ms}
+                            AND z.ts_ms >= e.ts_ms - {cfg.sso_newnet_days} * 86400000)
+                AND NOT EXISTS (SELECT 1 FROM cloud_ev z WHERE z.actor_key = e.actor_key AND z.net = e.net
+                                AND z.ts_ms < e.ts_ms - {cfg.hour_ms} AND z.ts_ms >= e.ts_ms - {cfg.sso_newnet_days} * 86400000)
+               THEN 75 END
+
+  # ======================================================================================================================
+  # Track K8s + GCP (reports/cloud/log_coverage.md P0-8, P0-14, P1-5, P1-11). The Kubernetes rules read one view
+  # (config/cloud.yaml kverb / kres / ksub / kns / kname / kreq / kcode / kuser) over generic, EKS and AKS audit (is_k8s)
+  # and GKE Cloud Audit Logs (is_gke), so the same SQL covers every shape. kfinal = the request's final record
+  # (ResponseComplete / Panic; GKE has one record). Control-plane / node / controller identities (k8s_sys) never count.
+  - id: k8s_api_new_network
+    clouds: [k8s, gcp]
+    technique: T1078
+    sub_technique: T1078.004
+    tactic: Initial Access
+    severity: 50
+    branches:
+      # kubectl / API use by a cluster user from a network (ASN, else /16) not used in k8s_newip_baseline_days
+      - template: first_seen
+        filter: >-
+          (is_k8s OR is_gke) AND kfinal AND NOT k8s_sys AND net IS NOT NULL AND src_ip IS NOT NULL
+          AND NOT al_is_internal_ip(src_ip) AND NOT coalesce(corp_ip, false)
+        outcome: any
+        params: {key: [acct, actor_key, net], baseline_days: "{cfg.k8s_newip_baseline_days}", max_per_actor_day: 1,
+                 summary_severity: 50}
+        severity_sql: "CASE WHEN kanon OR hosting THEN 65 END"
+
+  - id: k8s_anonymous_access
+    clouds: [k8s, gcp]
+    technique: T1078
+    sub_technique: T1078.001
+    tactic: Initial Access
+    severity: 75
+    branches:
+      # system:anonymous / system:unauthenticated served a real resource (health / version endpoints have no objectRef)
+      - match: >-
+          kfinal AND kanon AND k8s_ok AND kres IS NOT NULL
+          AND kres NOT IN ('selfsubjectreviews', 'selfsubjectaccessreviews', 'selfsubjectrulesreviews')
+        severity_sql: "CASE WHEN kverb IN ('create', 'update', 'patch', 'delete') OR kres = 'secrets' OR ksub IS NOT NULL THEN 90 END"
+
+  - id: k8s_pod_exec
+    clouds: [k8s, gcp]
+    technique: T1609
+    tactic: Execution
+    severity: 35       # routine exec by people who exec regularly is context; the escalations below are the signal
+    allow: {lists: [k8s_admins], severity: 35}
+    branches:
+      # kubectl exec / attach into a running container. 65 when this actor has not exec'd in k8s_newip_baseline_days but
+      # was already active 3+ days ago (no cold-start noise); 75 for kube-system, a service account, anonymous or a
+      # download-and-run / reverse-shell command.
+      - match: "kfinal AND k8s_ok AND kres = 'pods' AND ksub IN ('exec', 'attach') AND NOT k8s_sys"
+        severity_sql: >-
+          CASE WHEN kanon OR kns = 'kube-system' OR coalesce(kuser, '') LIKE 'system:serviceaccount:%'
+                    OR regexp_matches(coalesce(k8s_cmd, ''), {cfg.k8s_bad_cmd_regex}) THEN 75
+               WHEN EXISTS (SELECT 1 FROM cloud_ev z WHERE z.actor_key = e.actor_key AND z.ts_ms < e.ts_ms - 3 * 86400000)
+                    AND NOT EXISTS (SELECT 1 FROM cloud_ev z WHERE z.actor_key = e.actor_key AND z.kres = 'pods'
+                                    AND z.ksub IN ('exec', 'attach') AND z.ts_ms < e.ts_ms - {cfg.hour_ms}
+                                    AND z.ts_ms >= e.ts_ms - {cfg.k8s_newip_baseline_days} * 86400000) THEN 65 END
+
+  - id: k8s_privileged_workload
+    clouds: [k8s, gcp]
+    technique: T1610
+    tactic: Execution
+    severity: 70
+    secondary: {technique: T1611, tactic: Privilege Escalation, severity: 85}
+    automation: true
+    branches:
+      # pod / workload spec with privileged, hostPID / hostNetwork / hostIPC, hostPath or dangerous capabilities
+      - match: >-
+          kfinal AND k8s_ok AND kverb IN ('create', 'update', 'patch') AND ksub IS NULL AND NOT k8s_sys
+          AND kres IN ('pods', 'deployments', 'daemonsets', 'statefulsets', 'replicasets', 'jobs', 'cronjobs')
+          AND k8s_priv AND NOT k8s_hostroot
+        severity_sql: >-
+          CASE WHEN k8s_bad_image OR k8s_bad_cmd THEN 80 WHEN kns IN {cfg.k8s_priv_namespaces} THEN 40 END
+      # escape-ready: host root / container runtime socket / kubelet dir mounted, or privileged + hostPID (nsenter)
+      - match: >-
+          kfinal AND k8s_ok AND kverb IN ('create', 'update', 'patch') AND ksub IS NULL AND NOT k8s_sys
+          AND kres IN ('pods', 'deployments', 'daemonsets', 'statefulsets', 'replicasets', 'jobs', 'cronjobs')
+          AND k8s_hostroot
+        label: secondary
+        severity_sql: "CASE WHEN kns IN {cfg.k8s_priv_namespaces} AND NOT k8s_bad_image AND NOT k8s_bad_cmd THEN 40 END"
+
+  - id: k8s_cluster_admin_binding
+    clouds: [k8s, gcp]
+    technique: T1098
+    sub_technique: T1098.006
+    tactic: Privilege Escalation
+    severity: 80
+    allow: {lists: [k8s_admins], severity: 45}
+    automation: true
+    branches:
+      # (cluster)rolebinding to cluster-admin / admin / edit; 95 when the subject is anonymous / every user
+      - match: >-
+          kfinal AND k8s_ok AND kverb IN ('create', 'update', 'patch') AND kres IN ('clusterrolebindings', 'rolebindings')
+          AND NOT k8s_sys
+          AND regexp_matches(coalesce(kreq, ''), '"roleRef"\s*:\s*\{[^}]*"name"\s*:\s*"(cluster-admin|admin|edit)"')
+        severity_sql: >-
+          CASE WHEN regexp_matches(coalesce(kreq, ''), '"system:(anonymous|unauthenticated|authenticated)"') THEN 95
+               WHEN NOT regexp_matches(coalesce(kreq, ''), '"roleRef"\s*:\s*\{[^}]*"name"\s*:\s*"cluster-admin"') THEN 60 END
+
+  - id: k8s_secrets_sweep
+    clouds: [k8s, gcp]
+    technique: T1552
+    sub_technique: T1552.007
+    tactic: Credential Access
+    severity: 70
+    allow: {lists: [k8s_secret_readers, k8s_admins], severity: 35}
+    branches:
+      # many distinct secrets read (or tried) by one actor; 80 across >= 3 namespaces or touching kube-system
+      - template: distinct_burst
+        filter: "kfinal AND kres = 'secrets' AND kverb IN ('get', 'list', 'watch') AND ksub IS NULL AND NOT k8s_sys"
+        outcome: any
+        params: {key: [acct, actor_key], distinct: "coalesce(kns, '*') || '/' || coalesce(kname, '*')",
+                 window_ms: "{cfg.k8s_secrets_window_ms}", min_distinct: "{cfg.k8s_secrets_min_distinct}"}
+        severity_sql: "CASE WHEN count(DISTINCT kns) >= 3 OR bool_or(kns = 'kube-system') THEN 80 END"
+      # cluster-wide secret listing (all namespaces in one call)
+      - match: "kfinal AND k8s_ok AND kres = 'secrets' AND kverb IN ('list', 'watch') AND kns IS NULL AND NOT k8s_sys"
+        severity: 60
+
+  - id: k8s_sa_token_create
+    clouds: [k8s, gcp]
+    technique: T1528
+    tactic: Credential Access
+    severity: 60
+    allow: {lists: [k8s_admins], severity: 35}
+    automation: true
+    branches:
+      # TokenRequest for a service account by a person / workload (kubelet token requests are system:node:*)
+      - match: "kfinal AND k8s_ok AND kres = 'serviceaccounts' AND ksub = 'token' AND kverb = 'create' AND NOT k8s_sys"
+        severity_sql: "CASE WHEN kns = 'kube-system' OR kanon THEN 75 END"
+      # legacy long-lived token Secret bound to a service account
+      - match: >-
+          kfinal AND k8s_ok AND kres = 'secrets' AND kverb = 'create' AND NOT k8s_sys
+          AND coalesce(kreq, '') LIKE '%kubernetes.io/service-account-token%'
+        severity: 70
+
+  - id: k8s_api_discovery
+    clouds: [k8s, gcp]
+    technique: T1613
+    tactic: Discovery
+    severity: 55
+    branches:
+      # enumeration of RBAC / credential / node resource types (not `kubectl get all`) by one actor
+      - template: distinct_burst
+        filter: "kfinal AND kverb IN ('list', 'get', 'watch', 'create') AND kres IN {cfg.k8s_discovery_resources} AND NOT k8s_sys"
+        outcome: any
+        params: {key: [acct, actor_key], distinct: kres, window_ms: "{cfg.k8s_discovery_window_ms}",
+                 min_distinct: "{cfg.k8s_discovery_min_resources}"}
+        severity_sql: "CASE WHEN count(*) FILTER (WHERE k8s_denied) >= 3 OR bool_or(kanon) THEN 70 END"
+      # permission probing: many distinct forbidden requests by one actor
+      - template: distinct_burst
+        filter: "kfinal AND k8s_denied AND NOT k8s_sys"
+        outcome: any
+        params: {key: [acct, actor_key], distinct: "k8s_op || ' ' || k8s_obj", window_ms: "{cfg.k8s_forbidden_window_ms}",
+                 min_distinct: "{cfg.k8s_forbidden_min}"}
+        severity: 60
+
+  - id: k8s_cronjob_persistence
+    clouds: [k8s, gcp]
+    technique: T1053
+    sub_technique: T1053.007
+    tactic: Persistence
+    severity: 45
+    automation: true
+    branches:
+      # CronJob created / changed by a person; 80 with a download-and-run command or an image outside the trusted
+      # registries, 70 when privileged or in kube-system
+      - match: "kfinal AND k8s_ok AND kres = 'cronjobs' AND kverb IN ('create', 'update', 'patch') AND ksub IS NULL AND NOT k8s_sys"
+        severity_sql: "CASE WHEN k8s_bad_cmd OR k8s_bad_image THEN 80 WHEN k8s_priv OR kns = 'kube-system' THEN 70 END"
+
+  # ------------------------------------------------------------------------------------------- GCP audit (P1-11)
+  - id: gcp_vpcsc_violation
+    clouds: [gcp]
+    technique: T1537
+    tactic: Exfiltration
+    severity: 55
+    branches:
+      # VPC Service Controls blocked a request that would move data across the perimeter (egress violation)
+      - match: >-
+          gcp_vpcsc AND regexp_matches(coalesce(g_md, g_mdjson, ''), 'egressViolations|RESOURCES_NOT_IN_SAME_SERVICE_PERIMETER')
+        outcome: any
+      # repeated perimeter denials by one actor (probing for a way out)
+      - template: distinct_burst
+        filter: "gcp_vpcsc"
+        outcome: any
+        params: {key: [actor_key], distinct: "coalesce(g_res, '') || '|' || coalesce(api, '')",
+                 window_ms: "{cfg.gcp_vpcsc_window_ms}", min_distinct: "{cfg.gcp_vpcsc_min}"}
+        severity: 70
+
+  - id: gcp_bq_export_external
+    clouds: [gcp]
+    technique: T1537
+    tactic: Exfiltration
+    severity: 75
+    branches:
+      # BigQuery EXPORT (extract) job to a bucket outside gcp_trusted_export_regex (metadata or metadataJson shape)
+      - match: >-
+          is_gcp AND app = 'bigquery.googleapis.com'
+          AND upper(coalesce(json_extract_string(g_md2, '$.jobChange.job.jobConfig.type'), '')) IN ('EXPORT', 'EXTRACT')
+          AND NOT regexp_matches(lower(coalesce(json_extract_string(g_md2, '$.jobChange.job.jobConfig.extractConfig.destinationUris[0]'),
+                                                json_extract_string(g_md2, '$.jobChange.job.jobConfig.extractConfig.destinationUrisTruncated[0]'),
+                                                'gs://corp-unknown')), {cfg.gcp_trusted_export_regex})
+
+  - id: gcp_bq_bulk_read
+    clouds: [gcp]
+    technique: T1213
+    sub_technique: T1213.006
+    tactic: Collection
+    severity: 60
+    allow: {lists: [gcp_analytics_principals], severity: 35}
+    automation: true
+    branches:
+      # one query billing >= gcp_bq_bulk_bytes by a person
+      - match: >-
+          is_gcp AND app = 'bigquery.googleapis.com' AND NOT coalesce(machine, false)
+          AND TRY_CAST(json_extract_string(g_md2, '$.jobChange.job.jobStats.queryStats.totalBilledBytes') AS BIGINT)
+              >= {cfg.gcp_bq_bulk_bytes}
+      # many distinct tables read (tableDataRead) by one actor
+      - template: distinct_burst
+        filter: "is_gcp AND app = 'bigquery.googleapis.com' AND g_md2 LIKE '%tableDataRead%' AND NOT coalesce(machine, false)"
+        params: {key: [actor_key], distinct: g_res, window_ms: "{cfg.gcp_bq_read_window_ms}",
+                 min_distinct: "{cfg.gcp_bq_read_min_tables}"}
+        severity: 70
+
+  - id: gcp_serverless_public_invoker
+    clouds: [gcp]
+    technique: T1098
+    sub_technique: T1098.003
+    tactic: Persistence
+    severity: 65
+    branches:
+      # Cloud Run service / Cloud Function made invokable by allUsers / allAuthenticatedUsers
+      - match: >-
+          is_gcp AND app IN ('run.googleapis.com', 'cloudfunctions.googleapis.com') AND api ILIKE '%SetIamPolicy'
+          AND regexp_matches(coalesce(g_req, '') || coalesce(g_delta, ''), '"(allUsers|allAuthenticatedUsers)"')
+
+  - id: gcp_serverless_deploy
+    clouds: [gcp]
+    technique: T1648
+    tactic: Execution
+    severity: 45
+    allow: {lists: [gcp_deployer_principals], severity: 35}
+    automation: true
+    branches:
+      # Cloud Run / Cloud Functions deploy by a person; 75 with the default compute SA (project Editor) or a
+      # download-and-run command in the spec
+      - match: >-
+          is_gcp AND app IN ('run.googleapis.com', 'cloudfunctions.googleapis.com') AND NOT coalesce(machine, false)
+          AND regexp_matches(coalesce(api, ''), '\.(CreateService|ReplaceService|UpdateService|CreateFunction|UpdateFunction|CreateJob|RunJob)$')
+        severity_sql: >-
+          CASE WHEN regexp_matches(coalesce(g_req, ''), '[0-9]+-compute@developer\.gserviceaccount\.com')
+                    OR regexp_matches(coalesce(g_req, ''), {cfg.k8s_bad_cmd_regex}) THEN 75 END
+
+  - id: gcp_wif_provider_untrusted
+    clouds: [gcp]
+    technique: T1484
+    sub_technique: T1484.002
+    tactic: Privilege Escalation
+    severity: 70
+    automation: true
+    branches:
+      # workload identity federation provider trusting an issuer / AWS account outside the trusted lists
+      - match: >-
+          is_gcp AND regexp_matches(coalesce(api, ''), 'WorkloadIdentityPools\.(Create|Update)WorkloadIdentityPoolProvider$')
+          AND ((json_extract_string(g_req, '$.workloadIdentityPoolProvider.oidc.issuerUri') IS NOT NULL
+                AND NOT list_contains({cfg.trusted_oidc_issuers:list}, json_extract_string(g_req, '$.workloadIdentityPoolProvider.oidc.issuerUri')))
+               OR (json_extract_string(g_req, '$.workloadIdentityPoolProvider.aws.accountId') IS NOT NULL
+                   AND NOT list_contains({cfg.trusted_aws_accounts:list}, json_extract_string(g_req, '$.workloadIdentityPoolProvider.aws.accountId'))))
+        severity_sql: "CASE WHEN json_extract_string(g_req, '$.workloadIdentityPoolProvider.attributeCondition') IS NULL THEN 80 END"
+
+  # ------------------------------------------------------------------------------------- GCP network (P0-14, P1-5)
+  - id: gcp_vpcflow_mining_port
+    clouds: [gcp]
+    technique: T1496
+    sub_technique: T1496.001
+    tactic: Impact
+    severity: 70
+    branches:
+      - template: distinct_burst
+        filter: >-
+          is_gflow AND dst_port IN {cfg.mining_ports} AND al_is_internal_ip(src_ip) AND NOT al_is_internal_ip(dst_ip)
+        outcome: any
+        params: {key: [host, dst_ip], distinct: source_seq, window_ms: "{cfg.mining_window_ms}",
+                 min_distinct: "{cfg.mining_min_flows}"}
+
+  - id: gcp_dns_tunnel
+    clouds: [gcp]
+    technique: T1071
+    sub_technique: T1071.004
+    tactic: Command and Control
+    severity: 75
+    branches:
+      - template: distinct_burst
+        filter: "is_gdns AND dns_apex IS NOT NULL AND dns_apex NOT IN {cfg.dns_tunnel_allow_apex}"
+        outcome: any
+        params: {key: [host, dns_apex], distinct: dst_domain, window_ms: "{cfg.dns_tunnel_window_ms}",
+                 min_distinct: "{cfg.dns_tunnel_min_names}",
+                 having: "avg(length(split_part(dst_domain, '.', 1))) >= {cfg.dns_tunnel_min_label}"}
+        severity_sql: "CASE WHEN count(*) FILTER (WHERE upper(gd_qtype) IN ('TXT', 'NULL')) * 2 >= count(*) THEN 85 END"
+
+  - id: gcp_dns_dga_nxdomain
+    clouds: [gcp]
+    technique: T1568
+    sub_technique: T1568.002
+    tactic: Command and Control
+    severity: 65
+    branches:
+      - template: distinct_burst
+        filter: "is_gdns AND upper(gd_rcode) = 'NXDOMAIN' AND dns_apex IS NOT NULL AND dns_apex NOT IN {cfg.dns_tunnel_allow_apex}"
+        outcome: any
+        params: {key: [host], distinct: dst_domain, window_ms: "{cfg.dga_window_ms}", min_distinct: "{cfg.dga_min_nx}",
+                 having: "count(DISTINCT dns_apex) >= {cfg.dga_min_apex}"}
+  # GCP firewall rows (gcp_firewall_json) feed the generic network rules (config/rules.yaml port_scan: denied / allowed
+  # connections per source IP) and the cloud_ev columns gf_disp / gf_dir; no extra native rule (internet background
+  # scanning would make an "allowed after denied" rule noisy).

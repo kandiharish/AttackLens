@@ -272,13 +272,13 @@ def run_worker(job: dict) -> dict:
     part = Path(job["out"]) / f"part-{k}.log"
     target = job["target_bytes"]
     written = events = 0
-    step = (hi - lo) / max(1.0, target / 420.0)
     ms, first_ms, last_ms = lo, None, None
     buf, h = bytearray(), hashlib.sha256()
     t0 = time.perf_counter()
     with open(part, "wb", buffering=0) as fh:
         while written < target:
             if events:
+                step = gd.next_step(ms, lo, hi, events, written, target, prior_avg=420.0)
                 ms = min(hi - 1, ms + int(round(step * rng.uniform(1 - gd.JITTER, 1 + gd.JITTER))))
             line = noise.line(ms).encode("utf-8") + b"\n"
             buf += line
@@ -290,10 +290,6 @@ def run_worker(job: dict) -> dict:
                 fh.write(buf)
                 h.update(buf)
                 buf.clear()
-            if events % gd.RECAL == 0:
-                remaining = (target - written) / (written / events)
-                if remaining >= gd.RECAL:
-                    step = max(0.0, (hi - ms) / (remaining + gd.TAIL_MARGIN))
         if buf:
             fh.write(buf)
             h.update(buf)

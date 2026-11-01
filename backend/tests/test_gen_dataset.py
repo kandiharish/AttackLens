@@ -228,3 +228,37 @@ def test_cli_two_workers_slices_and_determinism(tmp_path) -> None:
     assert half <= p1["first_ts_ms"] <= p1["last_ts_ms"] < START_MS + 7 * DAY_MS
     for p in a["parts"]:
         assert hashlib.sha256((tmp_path / "a" / p["file"]).read_bytes()).hexdigest() == p["sha256"]
+
+
+# ----------------------------------------------------------------------------- clock regression
+# Before the per-event re-aim, the step was frozen for the last < RECAL events: when the tail had more
+# events than estimated, the clock pinned at hi-1 (64K seed 13: gaps 78 and 79 were 0 ms), and when it
+# had fewer, the run stopped at ~94 % of the window (64K seeds 3/9/10).
+@pytest.mark.parametrize("seed", [12, 13])
+def test_small_run_tail_never_clamps(tmp_path, seed) -> None:
+    m = gd.build(_args(tmp_path / "s", size="64K", workers=1, alert_ratio=0.01, seed=seed))
+    ts = [_ts_ms(line) for line in (tmp_path / "s" / "part-0.jsonl").read_bytes().splitlines()]
+    gaps = [b - a for a, b in zip(ts, ts[1:])]
+    mean = sum(gaps) / len(gaps)
+    bad = [(i, g) for i, g in enumerate(gaps) if not 0.6 * mean <= g <= 1.45 * mean]
+    assert bad == []
+    assert ts[-1] < START_MS + 7 * DAY_MS - 1                                    # never pinned at hi-1
+    assert ts[-1] >= START_MS + 7 * DAY_MS * 95 // 100                           # reaches the last 5 %
+    assert m["parts"][0]["events"] == len(ts)
+
+
+def test_next_step_bounded_and_never_reaches_clamp() -> None:
+    lo, hi, target = 0, 1_000_000, 100 * 800                 # 100 events of the 800-byte prior
+    mean0 = hi / (100 + gd.TAIL_MARGIN)
+    assert gd.next_step(0, lo, hi, 0, 0, target) == pytest.approx(mean0)                # on plan
+    # behind schedule (clock far back) -> step capped at +8 % of the run mean, not a catch-up jump
+    s = gd.next_step(0, lo, hi, 50, 50 * 800, target)
+    assert s == pytest.approx(mean0 * (1 + gd.STEP_BOUND))
+    # ahead of schedule -> step floored at -8 %, not collapsed
+    s = gd.next_step(900_000, lo, hi, 50, 50 * 800, target)
+    assert s == pytest.approx(mean0 * (1 - gd.STEP_BOUND))
+    # bytes already exhausted but events keep coming, clock 1 ms short of the end: the step is capped so
+    # a full +30 % jitter still stays below hi-1, and is never negative
+    for ms in (hi - 2_000, hi - 2, hi - 1):
+        s = gd.next_step(ms, lo, hi, 120, target + 5_000, target)
+        assert 0.0 <= s and ms + s * (1 + gd.JITTER) <= hi - 1

@@ -14,7 +14,7 @@ import duckdb
 
 from attacklens.context import RunContext
 from attacklens.db import register_events
-from attacklens.link import sql_path
+from attacklens.link import DEFAULT_LINK, sql_path
 from attacklens.models import ReachNext
 from attacklens.schemas import CANONICAL_COLUMNS
 
@@ -105,6 +105,8 @@ def prepare(ctx: RunContext) -> dict[str, int]:
     excl, ltypes = _lit(p["excluded_logon_ids"]), _lit([int(x) for x in p["admin_logon_types"]])
     sshp, groups = _lit(p["ssh_process_names"]), _lit(p["admin_groups"])
     ports = _lit([int(x) for x in p["ports"]])
+    internal_re = str((ctx.cfg.get("linking") or {}).get("link", {}).get("internal_ip_regex")
+                      or DEFAULT_LINK["internal_ip_regex"]).replace("'", "''")
     not_machine = "NOT coalesce(is_machine, FALSE) AND NOT ends_with(u, '$')"
     roots, sudo_win = _lit(p["ssh_root_users"]), int(p["sudo_window_ms"])
     con.execute(f"""CREATE OR REPLACE TEMP TABLE _reach_ssh AS
@@ -156,9 +158,13 @@ def prepare(ctx: RunContext) -> dict[str, int]:
         WITH ev AS ({ev}), ipmap AS ({_ip_map_sql(work)}),
         f AS (SELECT host, src_ip, dst_ip, dst_port, ts_ms, action FROM ev
               WHERE ts_ok AND action IN ('conn_allowed', 'conn_out') AND dst_port IN ({ports}) AND dst_ip IS NOT NULL),
-        r AS (SELECT CASE WHEN f.action = 'conn_out' THEN lower(f.host) ELSE coalesce(s.host, lower(f.host)) END
-                     AS src_host, d.host AS dst_host, f.dst_ip, f.dst_port AS port, f.ts_ms
-              FROM f LEFT JOIN ipmap s ON f.src_ip = s.ip JOIN ipmap d ON f.dst_ip = d.ip)
+        -- conn_out is logged by the source host itself; a conn_allowed row is logged by a device (firewall), so
+        -- its source is the mapped host or the src IP, never the device. Unmapped internal IPs stay IP entities.
+        r AS (SELECT CASE WHEN f.action = 'conn_out' THEN lower(f.host) ELSE coalesce(s.host, lower(f.src_ip)) END
+                     AS src_host,
+                     coalesce(d.host, CASE WHEN regexp_matches(f.dst_ip, '{internal_re}') THEN lower(f.dst_ip) END)
+                     AS dst_host, f.dst_ip, f.dst_port AS port, f.ts_ms
+              FROM f LEFT JOIN ipmap s ON f.src_ip = s.ip LEFT JOIN ipmap d ON f.dst_ip = d.ip)
         SELECT src_host, dst_host, port, min(ts_ms) AS ts_ms,
                arg_min('allowed flow ' || src_host || ' -> ' || dst_ip || ':' || port::VARCHAR || ' at '
                        || {_iso('ts_ms')}, ts_ms) AS evidence

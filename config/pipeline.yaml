@@ -44,3 +44,66 @@ ingest:
 
 telemetry:
   interval_s: 0.5            # RSS sampling period
+
+# Run progress + ETA (progress.py writes <out>/progress.json; progress_eta.py estimates; GET /api/runs shows it).
+eta:
+  progress_interval_s: 2.0          # progress.json rewrite period (also written at every stage boundary)
+  query_progress: true              # DuckDB query_progress() for the ingest fraction (needs enable_progress_bar,
+                                    # never printed: enable_progress_bar_print=false)
+  ingest_copy_share: 0.9            # share of ingest wall in the COPY batches (the rest is accounting)
+  history_glob: "data/out/*/run_metrics.json"   # earlier runs (repo-relative); errored / partial runs ignored
+  history_ttl_s: 60                 # history rescan period (files re-parsed only on mtime change)
+  similar_runs: 5                   # runs nearest in input size (same dominant source type if any) per stage
+  small_input_bytes: 1.0e8          # runs below this give the per-stage floor (fixed overhead), not the rate
+  additive: true                    # expected = floor + marginal s/MB x MB (false: max(floor, s/MB x MB))
+  gap_estimate: true                # add this run's measured time between stages to each remaining boundary
+  calibrate_skip: [profile]         # stages left out of calibrate (I/O-bound sniffing, cold-cache noise)
+  live_min_fraction: 0.05           # from this stage_fraction on, the current stage also uses its live rate
+  live_blend: true                  # remaining = f x live + (1 - f) x history (DuckDB progress is not linear)
+  overrun_share: 0.5                # stage without a fraction (all but ingest): remaining = expected - elapsed
+                                    # down to the knee (1 - this) x expected, then this x expected x knee / elapsed
+  overrun_decay: true               # false: old rule max(expected - elapsed, this x elapsed), which RISES while a
+                                    # stage overruns. Leave-one-out replay over 22 runs >= 100 MB (odd / even
+                                    # halves): median |err| 55.7 / 56.1 % vs 54.8 / 52.5 %, ETA rises within a
+                                    # stage 4 / 12 vs 52 / 87 (1 Nov; history noise dominates)
+  calibrate: true                   # scale history by this run's actual/expected wall over finished stages
+  calibrate_min_expected_s: 2.0     # ... counting only stages expected to take at least this long
+  calibrate_overrun: false          # also count an overrunning current stage (over-reacts to load spikes)
+  calibrate_min: 0.5
+  calibrate_max: 2.0
+  no_history_zero: [integrity]      # later-added stages (run.py STAGES[8]) that count 0 s while no earlier run
+                                    # has their wall (else every ETA would be null until such a run exists)
+
+# SigmaHQ community rules (config/sigma/, mapping in config/sigma_map.yaml), run by Stage 2 next to config/rules.yaml.
+# Compiled once per content hash of rules + map + attack data (cache_dir); min_level / status filter the cached output.
+sigma:
+  enabled: true
+  dir: "config/sigma"
+  cache_dir: "data/cache/sigma"
+  min_level: "low"                          # informational < low < medium < high < critical
+  status: [stable, test, experimental]      # deprecated / unsupported are never run
+  batch_size: 250                           # rule predicates per events scan (bounded SQL size)
+  check_batch: 400                          # rules per EXPLAIN compile check (bisected on error)
+  max_alerts_per_rule: 1000                 # per run; overflow is counted (sigma_alerts_capped_by_rule)
+  live: true                                # run Sigma in live cycles ...
+  live_min_level: high                      # ... but only high/critical rules (keeps cycle latency low)
+
+# User uploads (api_upload.py): POST /api/uploads (multipart, streamed) and POST /api/uploads/local (hard link).
+# root must stay under data/raw so POST /api/runs accepts raw_dir = data/raw/uploads/<upload_id>. POST /api/runs
+# accepts only data/raw/<set> or <root>/<upload_id> (exact depth); root itself, data/raw, and the dot-dirs
+# <root>/.incoming (partial uploads) and <root>/.meta are refused, and profile.py never ingests dot-directories.
+upload:
+  root: "data/raw/uploads"
+  allowed_extensions: [".log", ".txt", ".csv", ".json", ".jsonl", ".ndjson", ".cef", ".syslog"]
+  max_bytes: 68719476736          # 64 GiB per upload (all files together)
+  min_free_bytes: 2147483648      # keep >= 2 GiB free on the target disk (checked before and during writes)
+  chunk_bytes: 1048576            # write / copy buffer (1 MiB)
+  disk_check_every_bytes: 268435456   # re-check free disk every 256 MiB written
+  local_roots: null               # POST /api/uploads/local: null = any local path, else list of allowed dirs
+
+# API browser guards (api_guard.py). Always allowed: hosts localhost, 127.0.0.1, [::1] (+ testserver for
+# Starlette's TestClient); origins http://localhost:5173, http://127.0.0.1:5173 and the API's own origin.
+# POST/PUT/DELETE/PATCH under /api with any other Origin header -> 403; requests without Origin (curl) pass.
+api:
+  trusted_hosts: []               # extra Host names, e.g. ["attacklens.lan"]
+  allowed_origins: []             # extra origins, e.g. ["http://attacklens.lan:8000"]

@@ -1,0 +1,12 @@
+# LocalStack community, S3 only (free in community; the CloudTrail API is not, so LookupEvents is not tested).
+# Started / stopped by backend/tests/live/test_live_aws_s3.py through tools/live/livectl.py. Loopback only.
+services:
+  localstack:
+    image: ${LOCALSTACK_IMAGE:-localstack/localstack:4.4}
+    container_name: al-live-localstack
+    environment:
+      SERVICES: s3
+      EAGER_SERVICE_LOADING: "1"
+    ports:
+      - "127.0.0.1:${AL_LS_PORT:-14566}:4566"
+    mem_limit: 1g

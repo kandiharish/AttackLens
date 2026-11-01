@@ -8,25 +8,50 @@ interface Props {
   onJump: (step: number) => void
 }
 
-/** All 15 ATT&CK v20 tactics in order: observed = filled, gap = dashed, others dim. */
+const SHORT: Record<string, string> = {
+  Reconnaissance: 'Recon',
+  'Resource Development': 'Res. Dev',
+  'Initial Access': 'Initial Access',
+  Execution: 'Exec',
+  Persistence: 'Persist',
+  'Privilege Escalation': 'Priv Esc',
+  Stealth: 'Stealth',
+  'Defense Impairment': 'Def Impair',
+  'Credential Access': 'Cred Access',
+  Discovery: 'Discov',
+  'Lateral Movement': 'Lateral',
+  Collection: 'Collect',
+  'Command and Control': 'C2',
+  Exfiltration: 'Exfil',
+  Impact: 'Impact',
+}
+
+/** 15-segment ATT&CK v20 strip: observed = accent fill, gap = dashed red border, other = grey. */
 export function KillChainBar({ tactics, gaps, steps, onJump }: Props) {
   return (
-    <section aria-label="Kill chain">
-      <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-slate-400">
-        Kill chain <span className="font-normal normal-case text-slate-500">(ATT&CK v20 · filled = observed · dashed = gap)</span>
-      </h3>
+    <section aria-label="Kill chain" className="@container rounded-2xl border border-line bg-subtle px-5 py-4">
+      <div className="mb-3 flex flex-wrap items-center gap-x-5 gap-y-1">
+        <h3 className="headline text-[15px]" title="The 15 stages of an attack in MITRE ATT&CK v20, in order. Filled = seen in this incident; dashed = an expected stage we did not see.">
+          Attack stages <span className="font-normal text-muted">· MITRE ATT&CK kill chain</span>
+        </h3>
+        <span className="flex items-center gap-4 text-[12px] text-muted">
+          <span className="flex items-center gap-1.5"><span className="h-3 w-4 rounded bg-brand" />seen</span>
+          <span className="flex items-center gap-1.5"><span className="h-3 w-4 rounded border border-dashed border-crit bg-white" />gap</span>
+          <span className="flex items-center gap-1.5"><span className="h-3 w-4 rounded border border-line bg-white" />not seen</span>
+        </span>
+      </div>
       <ol className="grid grid-cols-15 gap-1">
         {TACTICS_V20.map((t, i) => {
           const tSteps = steps.filter((s) => sameTactic(s.tactic, t))
           const observed = tSteps.length > 0 || tactics.some((x) => sameTactic(x, t))
           const gap = !observed && gaps.some((x) => sameTactic(x, t))
-          const cls = observed
-            ? 'border-rose-400 bg-rose-500/80 text-white'
-            : gap
-              ? 'border-dashed border-amber-400/80 bg-amber-400/5 text-amber-200'
-              : 'border-slate-800 bg-slate-900 text-slate-600'
           const state = observed ? 'observed' : gap ? 'gap (expected, not seen)' : 'not observed'
           const label = `${i + 1}. ${t}: ${state}${tSteps.length ? `, steps ${tSteps.map((s) => s.step + 1).join(', ')}` : ''}`
+          const seg = observed
+            ? 'bg-brand text-ink border-brand hover:bg-brand-600 hover:border-brand-600'
+            : gap
+              ? 'bg-white text-crit-ink border-dashed border-crit'
+              : 'bg-white text-muted border-line'
           return (
             <li key={t} className="min-w-0">
               <button
@@ -35,13 +60,16 @@ export function KillChainBar({ tactics, gaps, steps, onJump }: Props) {
                 onClick={() => tSteps.length && onJump(tSteps[0].step)}
                 title={label}
                 aria-label={label}
-                className={`flex h-12 w-full flex-col items-center justify-center rounded border-2 px-0.5 text-center text-[10px] leading-tight focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 ${cls} ${
-                  tSteps.length ? 'cursor-pointer hover:brightness-110' : 'cursor-default'
-                }`}
+                className={`focus-ring flex h-14 w-full flex-col items-center justify-center overflow-hidden rounded-lg border px-1 text-center ${seg} ${tSteps.length ? 'cursor-pointer' : 'cursor-default'}`}
               >
-                <span className="line-clamp-2 break-words">{t}</span>
-                {tSteps.length > 0 && <span className="mt-0.5 font-mono text-[9px] opacity-90">×{tSteps.length}</span>}
-                {gap && <span className="mt-0.5 text-[9px] uppercase">gap</span>}
+                <span className="hidden @4xl:block">
+                  <span className="line-clamp-2 text-[11px] leading-[13px] font-medium">{t}</span>
+                </span>
+                <span className="block @4xl:hidden">
+                  <span className="line-clamp-2 text-[11px] leading-[13px] font-medium">{SHORT[t] ?? t}</span>
+                </span>
+                {tSteps.length > 0 && <span className="mt-1 font-mono text-[10px] leading-none font-semibold tabular-nums">×{tSteps.length}</span>}
+                {gap && <span className="mt-1 text-[9px] leading-none font-semibold tracking-[0.08em] uppercase">gap</span>}
               </button>
             </li>
           )

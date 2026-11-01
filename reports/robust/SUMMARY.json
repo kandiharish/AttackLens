@@ -1,0 +1,791 @@
+{
+ "synthesis": {
+  "coverage": [
+   {
+    "family": "windows",
+    "tested": 27,
+    "passing": 2,
+    "gaps": 18
+   },
+   {
+    "family": "linux",
+    "tested": 25,
+    "passing": 5,
+    "gaps": 20
+   },
+   {
+    "family": "network",
+    "tested": 39,
+    "passing": 4,
+    "gaps": 21
+   },
+   {
+    "family": "cloud_saas",
+    "tested": 56,
+    "passing": 20,
+    "gaps": 9
+   },
+   {
+    "family": "edr_siem_exports",
+    "tested": 21,
+    "passing": 3,
+    "gaps": 17
+   },
+   {
+    "family": "encoding_transport",
+    "tested": 33,
+    "passing": 15,
+    "gaps": 12
+   },
+   {
+    "family": "identity_db_app",
+    "tested": 28,
+    "passing": 2,
+    "gaps": 19
+   }
+  ],
+  "work_items": [
+   {
+    "rank": 1,
+    "title": "csv_select correctness: rename the filename pseudo-column, read quote/escape from config, count field-count mismatches",
+    "covers_gap_ids": [
+     "edr-csv-filename-column-crash",
+     "cloud_saas-purview-auditdata-truncated"
+    ],
+    "severity": "crash",
+    "prevalence": "common",
+    "owner_files": [
+     "backend/attacklens/ingest_sql.py",
+     "backend/attacklens/ingest.py",
+     "backend/attacklens/db.py",
+     "config/sources.yaml"
+    ],
+    "collides_with": "cyberforge-6e claims ingest_sql.py (400 lines, at the module cap). cyberforge-0c has the unapplied patch reports/cloud/patches/identity-saas-ingest_sql.diff (quote/escape). db.py delimiter fixer owns db.py. Ranked first out of order: it breaks the no-silent-data-loss rule (a crash writes no ingest_accounting.json, and AuditData is cut off without any note), and the fix is a few lines.",
+    "design": "1) In csv_select and line_reader, read the source-file column as filename='__al_src_file', and have _rel() read that name. 2) Apply identity-saas-ingest_sql.diff so quote and escape come from the csv source config. 3) Add a config flag ingest_checks.csv_field_count: true. Rows whose field count differs from the header width are counted under a field_count_mismatch drop/flag reason. Remove the _truncated_csv skip of lines that contain a quote, so truncation always gets a note.",
+    "tests": "A CSV with a FileName header must ingest with ingest_accounting.json written and rows_ok = 3. The Purview CSV must give json_valid(AuditData) true on 4/4 rows and src_ip 203.0.113.57. A mismatched-width row must be counted with its reason.",
+    "regression_fixtures": [
+     "data/raw/robust_edr_siem_exports/csv_filename_column",
+     "data/raw/robust_edr_siem_exports/mde_ah_csv",
+     "data/raw/robust_cloud_saas/m365_purview_csv",
+     "data/raw/robust_edr_siem_exports/excel_csv_bom_crlf"
+    ]
+   },
+   {
+    "rank": 2,
+    "title": "Wire the Stage 0 unpacker in front of profile for every file, read lines with compression='none', and never sniff '[' or magic bytes as CSV",
+    "covers_gap_ids": [
+     "windows-gzip-zip",
+     "windows-ps7-json-array",
+     "linux-gzip-rotated",
+     "network-gzip-any-format",
+     "encoding_transport-compressed-not-unpacked",
+     "encoding_transport-archives-not-unpacked",
+     "encoding_transport-targz-misrouted-duckdb-autogunzip",
+     "encoding_transport-json-array-and-pretty-json",
+     "edr-gzip-not-sniffed",
+     "identity_db_app-gz-rotated-text"
+    ],
+    "severity": "data_loss",
+    "prevalence": "very_common",
+    "owner_files": [
+     "backend/attacklens/profile.py",
+     "backend/attacklens/cloud_unpack.py",
+     "backend/attacklens/db.py",
+     "config/pipeline.yaml"
+    ],
+    "collides_with": "cyberforge-0c owns cloud_unpack*.py, unwrap.yaml and the unapplied patch reports/cloud/patches/envelopes-profile.py.diff. The flat-Windows builder owns profile.py. The db.py delimiter fixer owns db.py. run.py (cyberforge-integrity) does NOT need to change, because the patch calls raw_files inside profile.run. This also unblocks the 21 cloud_saas variants that are INFLIGHT.",
+    "design": "1) Apply envelopes-profile.py.diff so profile.run iterates cloud_unpack.raw_files(...) and ingest folds unwrap_accounting into the accounting. 2) Pass compression='none' in db.line_reader, so profile and ingest always read the same bytes. 3) In profile.sniff: if the first character is '[', report 'json_array (unwrap failed)' and never fall through to the CSV sniff. gzip, bz2, xz, zstd, zip and tar magic bytes are never sniffed as text. 4) Add .gz .bz2 .xz .zip .tar .tgz .xml to pipeline.yaml upload.allowed_extensions. 5) rows_in is counted on decoded records.",
+    "tests": "For each of gz, bz2, zip with several members, tar, tar.gz, one-line array, pretty array, concatenated pretty objects and the 60k one-line array: rows_in = the true record count, rows_ok = truth, ts exact. tar.gz must not be routed to ecs_json. Run the whole robust_cloud_saas INFLIGHT set again and expect 21/26 exact.",
+    "regression_fixtures": [
+     "data/raw/robust_encoding_transport/gzip",
+     "data/raw/robust_encoding_transport/bzip2",
+     "data/raw/robust_encoding_transport/zip_multi",
+     "data/raw/robust_encoding_transport/tar",
+     "data/raw/robust_encoding_transport/tar_gz",
+     "data/raw/robust_encoding_transport/json_array_oneline",
+     "data/raw/robust_encoding_transport/json_array_pretty",
+     "data/raw/robust_encoding_transport/json_pretty_objects",
+     "data/raw/robust_encoding_transport/json_array_huge",
+     "data/raw/robust_windows/enc_gzip",
+     "data/raw/robust_windows/enc_zip",
+     "data/raw/robust_windows/ps7_getwinevent_json_array",
+     "data/raw/robust_linux/enc_gzip",
+     "data/raw/robust_network/zeek_conn_tsv_gz",
+     "data/raw/robust_edr_siem_exports/crowdstrike_fdr_gz",
+     "data/raw/robust_identity_db_app/apache_combined_gz",
+     "data/raw/robust_cloud_saas/ct_records_gz",
+     "data/raw/robust_cloud_saas/ct_tar",
+     "data/raw/robust_cloud_saas/ct_zip",
+     "data/raw/robust_cloud_saas/ct_records_pretty"
+    ]
+   },
+   {
+    "rank": 3,
+    "title": "Syslog header grammar as an ordered config list: RFC 5424, no tag, no host, BSD with year, ASA ' :', header-only fallback",
+    "covers_gap_ids": [
+     "linux-rfc5424-header",
+     "network-rfc5424-syslog-header",
+     "linux-rfc3164-nohost",
+     "network-syslog-no-tag",
+     "identity_db_app-syslog-no-tag-loses-ts",
+     "linux-rfc3164-with-year",
+     "identity_db_app-asa-year-ts-unrecognized"
+    ],
+    "severity": "wrong_time",
+    "prevalence": "very_common",
+    "owner_files": [
+     "config/sources.yaml",
+     "backend/attacklens/ingest_syslog.py (new)",
+     "backend/attacklens/ingest_sql.py",
+     "backend/attacklens/profile.py"
+    ],
+    "collides_with": "cyberforge-6e owns ingest_sql.py (at the cap), so put the code in a new ingest_syslog.py and leave only a 1-line call in syslog_select. The flat-Windows builder owns profile.py. Only the syslog section of sources.yaml changes, which no one has claimed.",
+    "design": "Replace syslog.line_regex with syslog.headers, an ordered list of RE2 regexes with named groups ts_bsd, ts_bsd_year, ts_iso, host, proc, pid, msgid, sd, msg. Entries: rfc5424 '^<\\d+>1 (ts_iso) (host) (app) (procid) (msgid) (-|(\\[...\\])+) ?(msg)'; bsd_year_colon (ASA 'Oct 31 2026 10:00:00 asa01 : %ASA-'); bsd; iso; bsd_nohost ('MMM dd HH:MM:SS prog[pid]:'); header_only (ts + host + rest), which keeps the ts and host when there is no tag. The new ingest_syslog.py builds a CASE WHEN regexp_matches over the list. profile.SYSLOG_RES is generated from the same list, so sniff and parse can never disagree. ts_bsd_year is parsed with '%b %d %Y %H:%M:%S' instead of the baseline_year prefix. NILVALUE '-' becomes NULL. A line that matches nothing is counted as unparseable_line, never as a silent NULL ts. Keep the SD text available as a column (item 15 needs it for Check Point).",
+    "tests": "Unit test the header list on one line each of: RFC 5424 sshd, pfSense 5424, PAN-OS ISO, Check Point SD, BSD with no host, BSD with year, ASA with ' :', BSD whose message has no tag (PAN-OS CSV, GlobalProtect), CRI. Fixture tests: ts exact, host correct (never '1'), process correct.",
+    "regression_fixtures": [
+     "data/raw/robust_linux/rfc5424",
+     "data/raw/robust_linux/rfc3164_nohost",
+     "data/raw/robust_linux/rfc3164_withyear",
+     "data/raw/robust_linux/rfc3164_authlog",
+     "data/raw/robust_linux/rfc3164_pri",
+     "data/raw/robust_linux/rsyslog_fileformat",
+     "data/raw/robust_network/pfsense_rfc5424",
+     "data/raw/robust_network/panos_syslog_iso",
+     "data/raw/robust_network/panos_syslog_bsd",
+     "data/raw/robust_network/pfsense_bsd_nohost",
+     "data/raw/robust_network/checkpoint_syslog",
+     "data/raw/robust_network/asa_device_ts_year",
+     "data/raw/robust_identity_db_app/globalprotect_syslog",
+     "data/raw/robust_identity_db_app/asa_anyconnect_ts_year"
+    ]
+   },
+   {
+    "rank": 4,
+    "title": "Stage 0 text decode: UTF-16 LE/BE (BOM or NUL pattern), cp1252 fallback, lone-CR normalisation, NUL-tail strip, whitespace-only lines",
+    "covers_gap_ids": [
+     "windows-utf16le-bom",
+     "network-utf16-encoding",
+     "cloud_saas-utf16-bom",
+     "edr-utf16-unrecognized-overcount",
+     "encoding_transport-utf16-bom",
+     "identity_db_app-utf16-not-decoded",
+     "linux-invalid-utf8-line",
+     "encoding_transport-latin1-line-dropped",
+     "encoding_transport-lone-cr-swallows-byte",
+     "encoding_transport-small-file-nul-tail-binary",
+     "encoding_transport-whitespace-tab-lines"
+    ],
+    "severity": "data_loss",
+    "prevalence": "very_common",
+    "owner_files": [
+     "backend/attacklens/cloud_unpack_io.py",
+     "config/unwrap.yaml",
+     "backend/attacklens/profile.py",
+     "backend/attacklens/ingest.py",
+     "backend/attacklens/ingest_sql.py"
+    ],
+    "collides_with": "cyberforge-0c owns cloud_unpack_io.py and unwrap.yaml. The flat-Windows builder owns profile.py. The NONEMPTY change is in cyberforge-6e's ingest_sql.py. Depends on item 2, which provides the staging path.",
+    "design": "Add a 'text:' block to unwrap.yaml: utf16_bom: transcode, utf16_nul_ratio: 0.3 (alternating NULs with no BOM), fallback_encoding: cp1252, normalise_lone_cr: true, strip_nul_tail: true. In cloud_unpack_io.classify, a file that needs any of these is stream-transcoded (codecs reader, bounded chunks) into a UTF-8 LF copy in staging. Accounting notes: transcoded_utf16, decoded_cp1252 (with a row count), lone_cr_normalised, nul_padding. A clean UTF-8 file is still passed through untouched. profile.first_lines skips the NUL>5% binary test when it sees a BOM, and strips a trailing NUL run before testing. NONEMPTY and ingest._BLANK use '\\s' (any whitespace). A file with no non-whitespace line goes to empty_files.",
+    "tests": "UTF-16LE CRLF, UTF-16BE and UTF-16 TSV give exactly the UTF-8 results, with rows_in equal to the decoded lines (6, not 14). A latin-1 'Jos\u00e9' line is kept with user 'jos\u00e9' and a decoded_cp1252 note. A mixed-endings file keeps every byte (ecs 4/4, raw_line starts with '{' and 'date='). A small file with a NUL tail gives 3/3. A whitespace-only file goes to empty_files.",
+    "regression_fixtures": [
+     "data/raw/robust_encoding_transport/utf16le_bom",
+     "data/raw/robust_encoding_transport/utf16be_bom",
+     "data/raw/robust_encoding_transport/latin1",
+     "data/raw/robust_encoding_transport/mixed_endings",
+     "data/raw/robust_encoding_transport/nul_bytes",
+     "data/raw/robust_encoding_transport/nul_bytes_big",
+     "data/raw/robust_encoding_transport/empty_files",
+     "data/raw/robust_encoding_transport/jsonl_blank_comments",
+     "data/raw/robust_windows/enc_utf16le_bom",
+     "data/raw/robust_network/cef_utf16le_bom",
+     "data/raw/robust_cloud_saas/ct_jsonl_utf16",
+     "data/raw/robust_cloud_saas/m365_ual_pwsh_utf16",
+     "data/raw/robust_edr_siem_exports/excel_utf16_tab",
+     "data/raw/robust_identity_db_app/mssql_audit_csv_utf16",
+     "data/raw/robust_identity_db_app/mssql_errorlog_utf16",
+     "data/raw/robust_linux/enc_latin1"
+    ]
+   },
+   {
+    "rank": 5,
+    "title": "Windows XML event reader: streaming <Event> splitter in Stage 0 that emits the win_json nested JSON shape",
+    "covers_gap_ids": [
+     "windows-xml-event-lines",
+     "windows-xml-multiline",
+     "edr-windows-xml-no-parser"
+    ],
+    "severity": "data_loss",
+    "prevalence": "very_common",
+    "owner_files": [
+     "backend/attacklens/cloud_unpack_xml.py (new)",
+     "backend/attacklens/cloud_unpack.py",
+     "config/unwrap.yaml",
+     "backend/attacklens/profile.py"
+    ],
+    "collides_with": "cyberforge-0c owns cloud_unpack.py and unwrap.yaml, so it needs a hand-off or a joint delegation. profile.py (flat-Windows builder) changes only to cap the unrecognized reason at 200 chars. The output relies on the Event.EventData aliases from item 12.",
+    "design": "Add a classify class xml_events: content matches ^\\s*(<\\?xml|<Events>|<Event[ >]), or the file has a .xml suffix with an <Event root. cloud_unpack_xml.py uses ElementTree.iterparse(events=('end',)) on '{*}Event' with elem.clear(). It rejects DOCTYPE and entities (defused behaviour) and caps each record at max_record_chars. Splitting is on </Event>, so one-per-line, pretty-printed, wevtutil-concatenated and WEF RenderingInfo files all work. Each record becomes {Event:{System:{EventID, Computer, Channel, Provider, TimeCreated:{SystemTime}}, EventData:{<Data Name>:value}, UserData:{...}, RenderingInfo:{Message}}}. The element-to-key mapping lives in unwrap.yaml xml_events, and per-event accounting is kept. win_json aliases, ts_policy (SystemTime is UTC) and the sigma win_security gate then apply unchanged. The XML that Splunk carries in result._raw reaches this reader through item 7's raw re-dispatch.",
+    "tests": "For each XML fixture: one row per <Event> (15, 10, 5, 9), ts exact from a 7-digit SystemTime, 4624/4688/Sysmon 1/3/4104 fields filled. A DOCTYPE or entity file is rejected with a reason. The reason for wevtutil_xml_concat is at most 200 chars. Time and memory are bounded on a 1 GB synthetic XML.",
+    "regression_fixtures": [
+     "data/raw/robust_windows/evtx_xml_lines",
+     "data/raw/robust_windows/splunk_xmlwineventlog_raw",
+     "data/raw/robust_windows/evtx_xml_pretty",
+     "data/raw/robust_windows/wef_rendered_xml",
+     "data/raw/robust_windows/wevtutil_xml_concat",
+     "data/raw/robust_edr_siem_exports/splunk_export_json_xmlwineventlog"
+    ]
+   },
+   {
+    "rank": 6,
+    "title": "Time policy: per-source and per-run naive_tz, NXLog zone inferred from Sysmon skew, syslog year inferred from mtime",
+    "covers_gap_ids": [
+     "windows-nxlog-naive-eventtime",
+     "linux-rfc3164-year-inference",
+     "linux-rfc3164-local-tz"
+    ],
+    "severity": "wrong_time",
+    "prevalence": "very_common",
+    "owner_files": [
+     "backend/attacklens/ingest_time.py (new)",
+     "config/pipeline.yaml",
+     "config/sources.yaml",
+     "backend/attacklens/ingest_maps.py",
+     "backend/attacklens/profile.py",
+     "backend/attacklens/ingest.py",
+     "backend/attacklens/run.py"
+    ],
+    "collides_with": "The flat-Windows builder owns win_json ts_policy, ingest_maps.py and profile.py. cyberforge-integrity owns run.py and api_upload.py; the --naive-tz CLI and upload field need their OK or a BLOCKED patch. cyberforge-6e owns ingest_sql.syslog_select.",
+    "design": "ingest_time.py is one resolver that takes the first value that is set: (1) the run override (CLI --naive-tz ZONE, --tz-map 'glob=zone', or the API upload field), (2) the source's ts_policy.naive_tz, (3) syslog.naive_tz, (4) inference: when a host has both Sysmon UtcTime and EventTime rows, take the median skew that profile_ts already measures, round it to 15 min, and apply it as a fixed offset. Without a zone, naive JSON stays ts_ok=false as today. Naive syslog is still read as UTC, but with a counted naive_assumed_utc note and a warning. Set baseline_year: auto: the reference is the file mtime (else the run time), year = ref.year, and year-1 when the parsed ts is more than ref + 1 day. The chosen zone and source, the inferred skew, the year and the shifted-row count go into source_profile.json and accounting. A naive ts is never re-parsed from text: use timezone(zone, ts).",
+    "tests": "nxlog_flat_security with --naive-tz Asia/Kolkata gives 9/9 exact. With no override but Sysmon rows present, the inferred +05:30 gives 9/9 exact. Rollover gives Dec 31 rows in 2025. rfc3164_localtz with syslog.naive_tz Asia/Kolkata gives 02:45:02Z. Unset gives the naive_assumed_utc note.",
+    "regression_fixtures": [
+     "data/raw/robust_windows/nxlog_flat_security",
+     "data/raw/robust_windows/nxlog_flat_sysmon_ps",
+     "data/raw/robust_windows/ts_win_json_shapes",
+     "data/raw/robust_linux/rfc3164_rollover",
+     "data/raw/robust_linux/rfc3164_localtz",
+     "data/raw/robust_identity_db_app/mssql_audit_evt33205_nxlog",
+     "data/raw/robust_encoding_transport/ts_dst"
+    ]
+   },
+   {
+    "rank": 7,
+    "title": "Generic envelopes in config: dotted array paths, record envelopes (_source, Splunk result/_raw, Docker), line envelopes (CRI), CSV _raw column",
+    "covers_gap_ids": [
+     "windows-splunk-json-result-envelope",
+     "edr-splunk-json-result-envelope",
+     "windows-es-hits-source-envelope",
+     "edr-es-ndjson-source-unrecognized",
+     "edr-es-search-hits-envelope",
+     "edr-mde-api-results-envelope",
+     "edr-splunk-csv-raw-unrecognized",
+     "identity_db_app-docker-jsonfile-unwrap",
+     "identity_db_app-cri-misrouted-syslog",
+     "identity_db_app-duo-api-envelope"
+    ],
+    "severity": "data_loss",
+    "prevalence": "very_common",
+    "owner_files": [
+     "config/unwrap.yaml",
+     "backend/attacklens/cloud_unpack_env.py",
+     "backend/attacklens/cloud_unpack_json.py",
+     "backend/attacklens/cloud_unpack.py"
+    ],
+    "collides_with": "Squarely in cyberforge-0c's in-flight area (cloud_unpack*, unwrap.yaml). Delegate to 0c or hand it off. Needs item 2.",
+    "design": "1) array_envelopes keys become dotted paths, with siblings checked at each level: 'hits.hits': [took, timed_out, _shards], 'response.authlogs': [metadata], Results: [Schema, Stats], results: [schema]. 2) New record_envelopes: entries of the form {field, siblings, raw_field?, carry:{ts, host}, skip_when}. Examples: {field: _source, siblings: [_index, _id, _type, _score]} replaces the document with its _source. {field: result, siblings: [preview, offset, lastrow], raw_field: _raw, carry: {_time: ts, host: host}, skip_when: {preview: true}}. {field: log, siblings: [stream, time], raw_text: true, carry: {time: ts}}. 3) New line_envelopes: a regex list, for example CRI '^(\\S+Z) (stdout|stderr) ([PF]) (.*)$', which joins P partials until F. 4) csv_raw_column: [_raw], so a Splunk CSV writes its _raw values one per line. 5) Emitted raw text is written into per-bucket files and re-sniffed. A carried ts is only a fallback, written as __al_ts_fallback. 6) Tolerate a top-level array with no closing ']' and add a note. Every record in, out and skipped is counted.",
+    "tests": "ES _source gives 8 and 5 ecs_json rows. hits.hits gives 5 records, not 1, and rows_in = 5, not 335. MDE Results gives 3. Splunk JSON _raw ECS gives 5 ecs_json rows. Splunk JSON _raw XML gives 15 win_json rows (with item 5). Splunk CSV _raw: header not counted, 4 records. Docker gives 3 inner lines re-sniffed. CRI keeps the ts, and the inner Apache line is parsed (with item 9). The Duo page gives 4 duo_auth_json rows.",
+    "regression_fixtures": [
+     "data/raw/robust_windows/splunk_json_export",
+     "data/raw/robust_windows/elasticdump_hits",
+     "data/raw/robust_edr_siem_exports/splunk_export_json_rawjson",
+     "data/raw/robust_edr_siem_exports/splunk_export_csv_raw",
+     "data/raw/robust_edr_siem_exports/es_ndjson_source",
+     "data/raw/robust_edr_siem_exports/es_search_hits_json",
+     "data/raw/robust_edr_siem_exports/mde_ah_api_json",
+     "data/raw/robust_identity_db_app/docker_jsonfile",
+     "data/raw/robust_identity_db_app/cri_containerd",
+     "data/raw/robust_identity_db_app/duo_api_envelope",
+     "data/raw/robust_identity_db_app/mysql_enterprise_audit_json"
+    ]
+   },
+   {
+    "rank": 8,
+    "title": "JSON source pack (config only): MDE, CrowdStrike FDR, SentinelOne, Suricata EVE, Zeek JSON, journald, rsyslog JSON, Vault, MySQL/Percona audit, plus epoch us/ns",
+    "covers_gap_ids": [
+     "edr-mde-streaming-unrecognized",
+     "edr-crowdstrike-fdr-unrecognized",
+     "edr-sentinelone-unrecognized",
+     "network-suricata-eve",
+     "network-zeek-json",
+     "linux-journald-json",
+     "linux-rsyslog-jsonmesg",
+     "linux-rsyslog-elk-template",
+     "identity_db_app-vault-audit-unsupported",
+     "identity_db_app-db-audit-json-unsupported",
+     "encoding_transport-json-epoch-us-ns"
+    ],
+    "severity": "data_loss",
+    "prevalence": "very_common",
+    "owner_files": [
+     "config/sources.yaml",
+     "backend/attacklens/ingest_sql.py",
+     "backend/attacklens/ingest_maps.py",
+     "config/sigma_map.yaml"
+    ],
+    "collides_with": "cyberforge-0c claims the cloud json_sources, but these are non-cloud, so add them as a new block before ecs_json and coordinate on order. ts_expr is in cyberforge-6e's ingest_sql.py. message_parser needs a small hook in ingest_maps.py (flat-Windows builder). The linux_syslog logsource in sigma_map.yaml is cyberforge-2d's.",
+    "design": "Port data/out/robust_edr_siem_exports/cfg_proposed (sandbox: 0 drops, exact ts) into json_sources, placed before ecs_json. Sources: mde_json (signatures [properties.ActionType, properties.DeviceName] and [ActionType, DeviceName]); crowdstrike_fdr_json (event_simpleName+aid, with 'timestamp' last because it is cloud receipt time); sentinelone_json (quoted dotted keys '$.\"tgt.process.cmdline\"'); suricata_eve_json ([event_type, flow_id]; per-event_type actions); zeek_json ([uid, '\"id.orig_h\"']; actions by presence or _path); journald_json ([__REALTIME_TIMESTAMP, MESSAGE]); rsyslog_json ([programname, timereported], [programname, message], [syslogtag, hostname]; string $.host alias guarded by json_type VARCHAR); vault_audit_json; mysql_audit_json. Add the vendor verbs to action_map.event_actions. Add a generic json source option message_parser: syslog with proc_field, so syslog.messages runs over $.MESSAGE or $.msg. ts_expr reads an epoch digit-width table from config: ingest.epoch_widths {9-10: s, 12-13: ms, 16: us, 19: ns}, numbers and strings, fractions allowed.",
+    "tests": "Each fixture routes to its source with 0 drops, ts exact, and the expected action (proc_start, conn_out, dns_query, ips_alert, web_access, login_failed). journald sshd gives login_failed root 203.0.113.57. ts_expr unit test over the 4 widths x (number, string). The probe tests and generator sets are unchanged (the ecs_json order does not steal generator rows).",
+    "regression_fixtures": [
+     "data/raw/robust_edr_siem_exports/mde_streaming_json",
+     "data/raw/robust_edr_siem_exports/crowdstrike_fdr_json",
+     "data/raw/robust_edr_siem_exports/s1_dv_json",
+     "data/raw/robust_edr_siem_exports/s1_cloud_funnel_json",
+     "data/raw/robust_edr_siem_exports/control_generator_json",
+     "data/raw/robust_network/suricata_eve_alert",
+     "data/raw/robust_network/suricata_eve_flow",
+     "data/raw/robust_network/suricata_eve_dns",
+     "data/raw/robust_network/suricata_eve_http",
+     "data/raw/robust_network/zeek_conn_json",
+     "data/raw/robust_network/zeek_dns_json",
+     "data/raw/robust_network/zeek_http_json_iso",
+     "data/raw/robust_linux/journald_json",
+     "data/raw/robust_linux/rsyslog_jsonmesg",
+     "data/raw/robust_linux/rsyslog_elk_template",
+     "data/raw/robust_identity_db_app/vault_audit",
+     "data/raw/robust_identity_db_app/percona_audit_json",
+     "data/raw/robust_identity_db_app/mysql_enterprise_audit_json",
+     "data/raw/robust_encoding_transport/ts_epoch_ecs"
+    ]
+   },
+   {
+    "rank": 9,
+    "title": "New source kinds: line_sources (named-group regex) and directive_sources (#fields / #Fields TSV) for Apache/nginx, IIS W3C, Zeek TSV, Squid, Windows DNS debug",
+    "covers_gap_ids": [
+     "identity_db_app-no-web-access-source",
+     "identity_db_app-iis-w3c-unrecognized",
+     "network-zeek-tsv",
+     "network-squid-access",
+     "network-windns-debug"
+    ],
+    "severity": "data_loss",
+    "prevalence": "very_common",
+    "owner_files": [
+     "backend/attacklens/ingest_lines.py (new)",
+     "backend/attacklens/profile.py",
+     "backend/attacklens/ingest.py",
+     "config/sources.yaml"
+    ],
+    "collides_with": "The flat-Windows builder owns profile.py, so only add a sniff hook that loads the new config sections. ingest_sql.py is at the cap (cyberforge-6e), so all SQL goes in the new ingest_lines.py. The Sigma webserver/proxy logsources in sigma_map.yaml need no change.",
+    "design": "1) A new top-level line_sources: map with entries of the form {detect_regex, line_regex (RE2, named groups), ts_format, naive_tz, fields, actions, outcome_rules}. Entries: apache_combined (CLF '%d/%b/%Y:%H:%M:%S %z', already in ts_formats), squid_native and squid_combined (the regex that matched 3/3), windns_debug ('(\\S+)\\s+(R\\s+)?Q\\s+\\[' corrected; naive_tz required; domain decoded with regexp_replace('\\(\\d+\\)', '.')). nginx JSON goes in json_sources [remote_addr, request|request_uri]. Status 400 or above means failure. Actions are web_access / web_blocked. 2) directive_sources: zeek ('^#separator ', columns from '#fields', log type from '#path', read_csv(delim '\\t', comment '#', nullstr ['-', '(empty)'])) and w3c ('^#(Software|Fields):', space-delimited columns from '#Fields'). Per-path field maps live in config. Directive lines count as header_line, not as rows. Lines in a line source that do not match count as non_matching_line with a reason.",
+    "tests": "apache_combined: 5/5 web_access, ts 10:00Z from -0700. iis_w3c: rows_in 4 (+4 header_line), cs-username CORP\\alice gives alice. zeek conn/dns TSV: 3 conn rows with src/dst/ports/bytes, dns gives dns_query with dst_domain. squid gives 3+2. windns gives 3 dns_query rows, header lines not counted as drops. Expect the sigma webserver logsource to fire on a ProxyShell-shaped IIS row.",
+    "regression_fixtures": [
+     "data/raw/robust_identity_db_app/apache_combined",
+     "data/raw/robust_identity_db_app/nginx_json_iso8601",
+     "data/raw/robust_identity_db_app/nginx_json_timelocal",
+     "data/raw/robust_identity_db_app/iis_w3c",
+     "data/raw/robust_network/zeek_conn_tsv",
+     "data/raw/robust_network/zeek_dns_tsv",
+     "data/raw/robust_network/squid_native",
+     "data/raw/robust_network/squid_combined",
+     "data/raw/robust_network/windns_debug"
+    ]
+   },
+   {
+    "rank": 10,
+    "title": "Syslog-wrapped payload dispatch: strip the <PRI> or relay header, then route the payload to kv, CEF or LEEF",
+    "covers_gap_ids": [
+     "network-fortigate-pri-prefix",
+     "network-fortigate-relayed-syslog"
+    ],
+    "severity": "data_loss",
+    "prevalence": "very_common",
+    "owner_files": [
+     "backend/attacklens/profile.py",
+     "config/sources.yaml",
+     "backend/attacklens/ingest_sql.py"
+    ],
+    "collides_with": "cyberforge-2d claims the FortiGate entries in sources.yaml, so it adds prefix_regex itself or approves a BLOCKED patch. cyberforge-6e owns kv_select in ingest_sql.py. The flat-Windows builder owns profile.py. Depends on item 3's header list.",
+    "design": "1) A per-source prefix_regex option for kv, cef and LEEF sources. The default is the syslog header list from item 3, plus a bare '<\\d+>'. kv_select applies regexp_replace(line, prefix, '') before the key regexes. Header ts and host are only fallbacks (FortiGate keeps eventtime/tz, because the device header is local time). 2) Payload dispatch in profile.sniff: after a syslog header match, test the payload (msg group) against the kv, CEF, LEEF and vendor-CSV detectors, in config order, and route to the first source that matches, recording dispatched_from: syslog. 3) The fortigate_kv detect_regex allows an optional '^(?:<\\d+>)?' prefix.",
+    "tests": "fortigate_pri_prefix and fortigate_relay_bsd give fortigate_kv 2/2 with the same fields and ts as fortigate_quoted_tzcolon. A plain FortiGate kv file is unchanged. A CEF line behind an RFC 5424 header keeps its host.",
+    "regression_fixtures": [
+     "data/raw/robust_network/fortigate_pri_prefix",
+     "data/raw/robust_network/fortigate_relay_bsd",
+     "data/raw/robust_network/fortigate_quoted_tzcolon",
+     "data/raw/robust_network/cef_rfc5424",
+     "data/raw/robust_network/cef_bsd_epoch"
+    ]
+   },
+   {
+    "rank": 11,
+    "title": "Timestamp grammar and plausibility window: 2-digit years, lower-case ISO, RFC 5322, space before the offset, CEF %z/%Z order, Excel minute precision",
+    "covers_gap_ids": [
+     "encoding_transport-two-digit-year",
+     "encoding_transport-iso-variants-unparsed",
+     "network-cef-rt-formats",
+     "edr-excel-resaved-dates-null-ts"
+    ],
+    "severity": "wrong_time",
+    "prevalence": "common",
+    "owner_files": [
+     "config/pipeline.yaml",
+     "backend/attacklens/ingest_sql.py",
+     "backend/attacklens/ingest.py"
+    ],
+    "collides_with": "cyberforge-6e owns ingest_sql.ts_expr. pipeline.yaml is unclaimed.",
+    "design": "1) ingest.ts_plausible: {min: '1990-01-01', max_future: 2d}. Any ts outside it gets ts_ok=false with drop reason ts_out_of_range (counted), so year 26 AD can never be accepted. 2) Add %y formats ('%m/%d/%y %H:%M:%S', '%d/%m/%y ...') to ts_formats, each gated by a regex that requires exactly 2 year digits, ordered before the %Y forms. The %Y cast path requires 4 digits. 3) Upper-case the value before the TIMESTAMPTZ cast when it matches ^\\d{4}-\\d\\d-\\d\\d[tT]. 4) Add '%a, %d %b %Y %H:%M:%S %z', '%Y-%m-%dT%H:%M:%S %z' and '%m/%d/%Y %H:%M' (with a ts_precision: minute note). 5) Add the CEF forms '%b %d %Y %H:%M:%S %z' and '.%g %z' BEFORE the '%Z' forms (measured with DuckDB 2.0). The no-year CEF rt gets the baseline_year/auto year from item 6.",
+    "tests": "ts_two_digit_year: no row has ts_ok=true before 1990, and '10/30/26' gives 2026-10-30. ts_iso_ecs: 11/11 exact. cef_ts_formats: 7/7, including +0530 and GMT. cef_paloalto ts exact. excel_resaved_dates: 3/3 at minute precision with a note. Unit test the format ordering.",
+    "regression_fixtures": [
+     "data/raw/robust_encoding_transport/ts_two_digit_year",
+     "data/raw/robust_encoding_transport/ts_iso_ecs",
+     "data/raw/robust_encoding_transport/ts_offset_fgt",
+     "data/raw/robust_encoding_transport/ts_epoch_fgt",
+     "data/raw/robust_network/cef_ts_formats",
+     "data/raw/robust_network/cef_paloalto",
+     "data/raw/robust_edr_siem_exports/excel_resaved_dates"
+    ]
+   },
+   {
+    "rank": 12,
+    "title": "Windows JSON alias completeness: EventData prefix expansion, evtx_dump #attributes, Velociraptor .Value, Get-WinEvent Id/MachineName/Properties, 4697/1102/5145, ::ffff:, 33205 message kv",
+    "covers_gap_ids": [
+     "windows-evtx-dump-attributes",
+     "windows-velociraptor-eventid-value",
+     "windows-ps-getwinevent-json",
+     "windows-ecs-4104-scriptblock",
+     "windows-4697-servicefilename",
+     "windows-1102-userdata",
+     "windows-5145-share-path",
+     "windows-ipv4-mapped-ipv6",
+     "identity_db_app-mssql-33205-message-unparsed"
+    ],
+    "severity": "wrong_time",
+    "prevalence": "common",
+    "owner_files": [
+     "config/sources.yaml",
+     "backend/attacklens/ingest_maps.py"
+    ],
+    "collides_with": "This is exactly the flat-Windows builder's in-flight area (sources.yaml win/ecs sections, ingest_maps.py). Hand it to that builder rather than an issue-fixer. win_json 4104 has already landed (test_ps_scriptblock.py is staged); ecs_json 4104 has not. A 5145 action share_access needs the Windows rules builder to agree before any rule uses it.",
+    "design": "1) win_json.eventdata_prefixes: ['$', '$.Event.EventData', '$.EventData'] (and '$.winlog.event_data' for ecs_json). ingest_maps expands each flat alias over the prefixes, so the missing twins (NewProcessName, ParentProcessName, User, SourceIp, DestinationHostname, ImagePath, ServiceFileName ...) are written once in config. 2) ts: '$.Event.System.TimeCreated.\"#attributes\".SystemTime' and '\"@SystemTime\"'. event_id: '$.Event.System.EventID.\"#text\"', '$.System.EventID.Value', '$.System.EventID.\"#text\"', and '$.Id' only under the signature [Id, ProviderName, MachineName]. host: '$.MachineName'. 3) win_json.properties_map: {4624: {5: target_user, 8: logon_type, 18: src_ip}, 4688: {5: process_path, 8: command_line, 13: parent_process}, ...} over $.Properties[n].Value. 4) process_path += ServiceFileName. subject_user += winlog.user_data.SubjectUserName and Event.UserData.LogFileCleared.SubjectUserName. file_path += RelativeTargetName (ShareName concatenated). Add 5145 -> share_access to action_map. 5) value_regex '^::ffff:(\\d{1,3}(?:\\.\\d{1,3}){3})$' on src_ip/dst_ip/host_ip (config, as at sources.yaml:711). 6) ecs_json command_line += powershell.file.script_block_text, winlog.event_data.ScriptBlockText and Payload, with max_len 32768. 7) message_kv extractor for EventID 33205: server_principal_name, client_ip, action_id (LGIF/LGIS), statement, and event_time as a UTC ts alias.",
+    "tests": "evtx_dump_jsonl: 16/16 ts exact, 7045 gives service_installed, 4688 has process_path/parent, 4769 src_ip without ::ffff:. velociraptor: 7/7 event_id, actions login/proc_start/conn_out. ps51 and ps7 Get-WinEvent: event_id, host, and 4624 user/ip from Properties. 4104 command_line filled on all 4 ECS shapes. 4697 process_path = %SystemRoot%\\PSEXESVC.exe. 1102 src_user alice. 33205: login_failed sa from 203.0.113.66. The wlb7/wlb8 passes stay unchanged.",
+    "regression_fixtures": [
+     "data/raw/robust_windows/evtx_dump_jsonl",
+     "data/raw/robust_windows/velociraptor_evtx_json",
+     "data/raw/robust_windows/ps51_getwinevent_json_compress",
+     "data/raw/robust_windows/ps7_getwinevent_json_array",
+     "data/raw/robust_windows/wlb8_sysmon_ps_ecs",
+     "data/raw/robust_windows/elastic_agent_flat",
+     "data/raw/robust_windows/wlb8_raw_wec_noecs",
+     "data/raw/robust_windows/wlb7_security_ecs",
+     "data/raw/robust_windows/wlb8_security_ecs",
+     "data/raw/robust_windows/nxlog_flat_security",
+     "data/raw/robust_windows/enc_utf8_bom_crlf",
+     "data/raw/robust_identity_db_app/mssql_audit_evt33205_nxlog"
+    ]
+   },
+   {
+    "rank": 13,
+    "title": "Profile sniff hygiene: CSV header wins, #TYPE preamble skipped, ISO-syslog whitespace guard, ecs_json detect tightened, honest unrecognized reasons",
+    "covers_gap_ids": [
+     "cloud_saas-csv-misrouted-syslog",
+     "edr-mde-csv-misrouted-syslog",
+     "cloud_saas-pwsh-type-preamble",
+     "identity_db_app-ecs-bare-timestamp-misroute",
+     "identity_db_app-misleading-csv-reason"
+    ],
+    "severity": "misrouted",
+    "prevalence": "very_common",
+    "owner_files": [
+     "backend/attacklens/profile.py",
+     "backend/attacklens/ingest_sql.py",
+     "config/sources.yaml"
+    ],
+    "collides_with": "The flat-Windows builder owns profile.py and the ecs_json section. Tightening the ecs_json detect affects the generator's ECS output, so run the eval probes and the g sets before merging. The skip=N for csv_select is in cyberforge-6e's ingest_sql.py.",
+    "design": "1) In sniff_lines: when line 1 is a delimited header with 3 or more fields and line 2 has the same delimiter count, the file stays format csv (mapped or 'unrecognized csv: <columns>'). Later lines never override it to syslog or CEF. 2) Leading '#TYPE ' or '#' comment lines are recorded as header_line in the profile and passed as skip=N to read_csv, so the header on line 2 is used. 3) SYSLOG_RES[1] (also generated by item 3) requires (?:\\.\\d+)?(?:Z|[+-]\\d\\d:?\\d\\d)?\\s after the ISO ts. 4) ecs_json detect_any '@timestamp' becomes detect_signatures pairs: [@timestamp, event.action], [@timestamp, source.ip], [@timestamp, host.name], [ecs.version]. 5) Warn in source_profile when a routed JSON source fills fewer than 2 entity columns on the sample. 6) A line counts as a CSV header candidate only if no field looks like a value (IP, ts, quoted request); otherwise the reason is 'first line matches no known format'.",
+    "tests": "The Entra portal CSV and the MDE CSV are never syslog: they become unrecognized csv with their columns, or mapped once item 14 lands. m365_ual_pwsh_exportcsv routes to m365_purview_csv 4/4. nginx_json_iso8601 is no longer ecs_json with empty fields, or it raises the warning. The nginx_error reason is not CSV-specific. The generator and eval probe sets are unchanged.",
+    "regression_fixtures": [
+     "data/raw/robust_cloud_saas/entra_signin_portal_csv",
+     "data/raw/robust_cloud_saas/gws_admin_console_csv",
+     "data/raw/robust_cloud_saas/m365_ual_pwsh_exportcsv",
+     "data/raw/robust_edr_siem_exports/mde_ah_csv",
+     "data/raw/robust_identity_db_app/nginx_json_iso8601",
+     "data/raw/robust_identity_db_app/nginx_error",
+     "data/raw/robust_identity_db_app/openvpn_logfile",
+     "data/raw/robust_windows/ps_getwinevent_export_csv",
+     "data/raw/robust_edr_siem_exports/control_generator_json"
+    ]
+   },
+   {
+    "rank": 14,
+    "title": "CSV source pack: composite ts and actions in csv_select, ' [UTC]' header suffix stripping, fixed-column headerless CSV, and the vendor export entries",
+    "covers_gap_ids": [
+     "windows-csv-exports",
+     "edr-sentinel-la-csv-unrecognized",
+     "edr-qradar-csv-unrecognized",
+     "cloud_saas-export-csv-unknown",
+     "cloud_saas-lake-csv",
+     "cloud_saas-vpcflow-text",
+     "network-vendor-csv-exports",
+     "identity_db_app-mssql-audit-csv-unsupported",
+     "identity_db_app-postgres-csvlog-unsupported"
+    ],
+    "severity": "data_loss",
+    "prevalence": "common",
+    "owner_files": [
+     "config/sources.yaml",
+     "backend/attacklens/ingest_csv.py (new)",
+     "config/pipeline.yaml",
+     "backend/attacklens/profile.py"
+    ],
+    "collides_with": "cyberforge-0c owns the unapplied reports/cloud/patches/aws-profile.diff, aws-ingest.diff and aws-ingest_sql.diff (aws_vpcflow_txt): land those first. csv_select lives in cyberforge-6e's ingest_sql.py, so move the CSV logic into a new ingest_csv.py. profile.py belongs to the flat-Windows builder. Needs items 1 and 13.",
+    "design": "Generic csv_source options: (a) ts as a list or a kv-style composite {date, time, tz} with naive_tz; (b) an actions block like kv actions; (c) header_suffix_strip: [' [UTC]'], which marks the column UTC; (d) columns: plus detect_regex for headerless files (postgres csvlog with a 22-26 column schema; VPC CloudWatch '^\\d+ \\d{12} eni-'); (e) emit_source_type, so each CSV source reuses the matching JSON source's rules (m365_ual_json, cloudtrail_json, azure_activity_json, azure_signin_json, mde_json, fortigate_kv). Entries: windows_ecs_csv (dotted ECS names, Kibana format 'MMM d, yyyy @ HH:mm:ss.SSS' with naive_tz), getwinevent_csv, mde_csv, sentinel_la_csv, qradar_csv (naive_tz required; when unset, ts_ok=false with a reason), la_activity_csv, entra_signin_csv, cloudtrail_csv (dotted and bare names), fortigate_csv, panos_csv, mssql_audit_csv, postgres_csvlog. Add the ts_formats '%m/%d/%Y, %I:%M:%S.%g %p' and '%b %d, %Y, %-I:%M:%S %p'. Do not take a time-only column as the ts.",
+    "tests": "Each fixture routes to its CSV source: rows equal truth, the header is not counted as a row, ts exact (or ts_ok=false with a reason when naive_tz is unset), and the action is mapped (proc_start for MDE/Sentinel, login_failed for Entra, LGIF, 28P01). VPC v2/v5/headerless/gz give rows with ACCEPT/REJECT.",
+    "regression_fixtures": [
+     "data/raw/robust_windows/kibana_csv",
+     "data/raw/robust_windows/ps_getwinevent_export_csv",
+     "data/raw/robust_edr_siem_exports/mde_ah_csv",
+     "data/raw/robust_edr_siem_exports/sentinel_la_csv",
+     "data/raw/robust_edr_siem_exports/qradar_csv",
+     "data/raw/robust_cloud_saas/azure_activity_la_csv",
+     "data/raw/robust_cloud_saas/entra_signin_portal_csv",
+     "data/raw/robust_cloud_saas/ct_lake_csv",
+     "data/raw/robust_cloud_saas/vpcflow_v2_s3_header",
+     "data/raw/robust_cloud_saas/vpcflow_v2_s3_gz",
+     "data/raw/robust_cloud_saas/vpcflow_v2_cwl_headerless",
+     "data/raw/robust_cloud_saas/vpcflow_v5_custom_header",
+     "data/raw/robust_network/fortianalyzer_csv",
+     "data/raw/robust_network/panos_csv_export",
+     "data/raw/robust_network/firewall_csv_control",
+     "data/raw/robust_identity_db_app/mssql_audit_csv",
+     "data/raw/robust_identity_db_app/postgres_csvlog"
+    ]
+   },
+   {
+    "rank": 15,
+    "title": "Vendor firewall payload parsers: PAN-OS positional CSV, Cisco ASA message ids, pfSense filterlog, Check Point Log Exporter, LEEF 1/2",
+    "covers_gap_ids": [
+     "network-panos-csv",
+     "network-cisco-asa",
+     "identity_db_app-asa-vpn-fields-empty",
+     "network-pfsense-filterlog",
+     "network-checkpoint-logexporter",
+     "network-leef"
+    ],
+    "severity": "data_loss",
+    "prevalence": "very_common",
+    "owner_files": [
+     "config/sources.yaml",
+     "backend/attacklens/ingest_payload.py (new)",
+     "backend/attacklens/ingest_syslog.py (new, item 3)",
+     "backend/attacklens/profile.py"
+    ],
+    "collides_with": "cyberforge-6e owns ingest_sql.py, so the code goes in new modules. cyberforge-2d owns the FortiGate and CEF Sigma work. The flat-Windows builder owns profile.py (LEEF_RE sniff). Depends on item 3 (the header list and SD text) and item 10 (payload dispatch).",
+    "design": "1) syslog.messages entries gain process_regex (for example '^%(asa|ftd)-\\d-(302013|302015)$') and split: csv with 1-based column maps keyed on a type column. PAN-OS uses field 4 in {TRAFFIC, THREAT, SYSTEM, GLOBALPROTECT}: 7 generated time, 8/9 src/dst, 13 user, 15 app, 17/18 zones, 25/26 ports, 31 action, 33/34 bytes, THREAT 33 name and 35 severity; the High Res Timestamp carries the offset. pfSense filterlog uses the corrected {6} regex; add an IPv6 variant. 2) ASA patterns for 302013/14/15/16, 106001/106006/106015/106023/106100, 113004/113005/113015/113039, 605004/605005, 611101/611102, 716001, 722022/722051 (assigned IP to dst_ip for the handoff). Header-less '%ASA-' lines are kept, with ts NULL accounted. 3) Check Point: a kv source variant with pair_regex '(\\w+):\"((?:[^\"\\\\]|\\\\.)*)\"' run over the SD text or msg; time is epoch seconds. 4) LEEF: sniff LEEF_RE '^(?:<\\d+>)?(?:.*?\\s)?LEEF:(1\\.0|2\\.0)\\|'. Reuse the CEF extractor with the delimiter tab (1.0) or from header field 6, including 'xHH'. devTime with devTimeFormat.",
+    "tests": "PAN-OS bsd/iso/export: traffic rows give conn_allowed/conn_denied, THREAT gives ips_alert with signature and severity, ts exact. ASA: 5/5 for each header variant with Built/Teardown/Deny/AAA actions. AnyConnect relay: login_failed mallory/admin from 203.0.113.66. pfSense: block gives conn_denied 203.0.113.66:51515 -> 192.0.2.20:22. Check Point: Accept/Drop with ports. LEEF 1/2: 2/2 with src/dst/user and ts.",
+    "regression_fixtures": [
+     "data/raw/robust_network/panos_syslog_bsd",
+     "data/raw/robust_network/panos_syslog_iso",
+     "data/raw/robust_network/panos_csv_export",
+     "data/raw/robust_network/asa_bsd_host",
+     "data/raw/robust_network/asa_device_ts_year",
+     "data/raw/robust_network/asa_no_header",
+     "data/raw/robust_identity_db_app/asa_anyconnect_relay",
+     "data/raw/robust_identity_db_app/asa_anyconnect_ts_year",
+     "data/raw/robust_identity_db_app/globalprotect_syslog",
+     "data/raw/robust_network/pfsense_bsd",
+     "data/raw/robust_network/pfsense_bsd_nohost",
+     "data/raw/robust_network/pfsense_rfc5424",
+     "data/raw/robust_network/checkpoint_syslog",
+     "data/raw/robust_network/leef1_tab",
+     "data/raw/robust_network/leef2_caret"
+    ]
+   },
+   {
+    "rank": 16,
+    "title": "CEF fidelity: escaped header pipe, label-keyed csN (stop the rule name going into command_line), header and FTNTFGTeventtime ts fallback, missing aliases",
+    "covers_gap_ids": [
+     "network-cef-ts-fallbacks",
+     "network-cef-csN-label-and-aliases",
+     "network-cef-escaped-header-pipe"
+    ],
+    "severity": "wrong_time",
+    "prevalence": "common",
+    "owner_files": [
+     "backend/attacklens/ingest_sql.py",
+     "config/sources.yaml"
+    ],
+    "collides_with": "cyberforge-6e owns cef_select in ingest_sql.py. cyberforge-2d does FortiGate/Sigma work. Generator rule: the cs2 'mitre' label must stay unread (label_keys). Re-run the eval probes, because the generator emits CEF.",
+    "design": "1) ext regex 'CEF:\\d+\\|(?:(?:\\\\.|[^\\\\|])*\\|){6}(.*)$', also used for raw_line header blanking. 2) cef.fields accepts {label: ['Command Line', 'commandLine', 'Process Command Line']}, resolved by finding the N where csNLabel matches and reading csN (N = 1..6). command_line comes ONLY from labels, and the raw cs1 alias is removed. src_zone and dst_zone come from {label: 'Source Zone'} or FTNTFGTsrcintfrole. 3) Aliases: bytes_in [in], app [app, FTNTFGTapp], file_path [fname, request], signature [cat]; event_actions close/timeout/server-rst/client-rst -> conn_allowed. 4) ts aliases deviceReceiptTime and FTNTFGTeventtime (digit-width epoch, from item 8's table), with the FortiGate tz logic. Fall back to the syslog-header ts only when the header carries a zone or is ISO with an offset; otherwise apply item 6's naive policy.",
+    "tests": "cef_escapes row 1: ts 10:00Z. cef_paloalto: command_line NULL, app ssl, bytes_in 3920, zones filled. cef_syslog_ts_only: 3/3 ts from the header. cef_fortigate: ts from FTNTFGTeventtime and act=close gives conn_allowed. control_generator_cef stays 12/12 and the eval probes pass.",
+    "regression_fixtures": [
+     "data/raw/robust_network/cef_escapes",
+     "data/raw/robust_network/cef_paloalto",
+     "data/raw/robust_network/cef_syslog_ts_only",
+     "data/raw/robust_network/cef_fortigate",
+     "data/raw/robust_network/cef_bsd_epoch",
+     "data/raw/robust_network/cef_crlf",
+     "data/raw/robust_edr_siem_exports/control_generator_cef"
+    ]
+   },
+   {
+    "rank": 17,
+    "title": "Cloud alias fixes: Microsoft Graph camelCase sign-ins, and an IP filter applied per alias inside the coalesce",
+    "covers_gap_ids": [
+     "cloud_saas-graph-signins-camelcase",
+     "cloud_saas-entra-audit-null-callerip"
+    ],
+    "severity": "data_loss",
+    "prevalence": "common",
+    "owner_files": [
+     "config/sources.yaml",
+     "backend/attacklens/ingest_maps.py",
+     "config/cloud.yaml"
+    ],
+    "collides_with": "cyberforge-0c claims the cloud json_sources and cloud.yaml, so delegate to 0c. ingest_maps.py belongs to the flat-Windows builder (the ip_fields change is a few lines, send it as a BLOCKED patch).",
+    "design": "1) azure_signin_json: detect_any += conditionalAccessStatus and authenticationRequirement. Aliases ts $.createdDateTime, user $.userPrincipalName, src_ip $.ipAddress, outcome $.status.errorCode, app $.appDisplayName. Add a default action rule that uses outcome (errorCode 0 -> login_success, otherwise login_failed), because Graph items have no operationName. Add the camelCase si_* paths in cloud.yaml. 2) ingest_maps.ip_fields: apply the IP_RX CASE to each alias inside the coalesce, and treat '<null>' as NULL, so a later valid alias wins.",
+    "tests": "Graph JSONL: 2/2. The Graph page (after item 2): 2/2 login_failed/login_success, src_ip 203.0.113.57. entra_audit_diag_storage: src_ip 203.0.113.57. Every cloud_saas PASS variant stays exact.",
+    "regression_fixtures": [
+     "data/raw/robust_cloud_saas/entra_signin_graph_jsonl",
+     "data/raw/robust_cloud_saas/entra_signin_graph_page",
+     "data/raw/robust_cloud_saas/entra_audit_diag_storage",
+     "data/raw/robust_cloud_saas/entra_signin_diag_storage",
+     "data/raw/robust_cloud_saas/entra_signin_la_jsonl"
+    ]
+   },
+   {
+    "rank": 18,
+    "title": "Splunk classic WinEventLog: multi-line record splitter (12-hour date line + LogName=) with Message 'Label: value' extraction",
+    "covers_gap_ids": [
+     "windows-splunk-classic-wineventlog"
+    ],
+    "severity": "data_loss",
+    "prevalence": "common",
+    "owner_files": [
+     "backend/attacklens/cloud_unpack_env.py",
+     "config/unwrap.yaml",
+     "config/sources.yaml"
+    ],
+    "collides_with": "cyberforge-0c owns cloud_unpack* and unwrap.yaml. The flat-Windows builder owns the win_json aliases the output feeds. Needs item 6 for the local clock.",
+    "design": "unwrap.yaml record_envelopes entry of type multiline: record_start_regex '^\\d\\d/\\d\\d/\\d{4} \\d\\d?:\\d\\d:\\d\\d [AP]M$' followed by '^LogName='. Each key=value line becomes a JSON field. Message continuation lines matching '^\\s*([A-Za-z ]+):\\t+(.*)$' become Message.<Label>. Mapping config: Account Name, Source Network Address, Logon Type, New Process Name, Process Command Line. The output is flat win_json shape (EventCode -> EventID, ComputerName -> Computer). The time is a local 12-hour clock, so it is resolved with naive_tz (item 6), and without one it stays ts_ok=false with a reason. Each record is counted.",
+    "tests": "splunk_wineventlog_classic gives 3 rows, not 54 drops: event_id, host, and for 4624 target_user, src_ip and logon_type filled. ts exact with naive_tz Asia/Kolkata, and ts_ok=false with a reason without it.",
+    "regression_fixtures": [
+     "data/raw/robust_windows/splunk_wineventlog_classic"
+    ]
+   },
+   {
+    "rank": 19,
+    "title": "auditd kv source (raw, ENRICHED, via audisp-syslog) placed before FortiGate, and audit lines excluded from fortigate_kv",
+    "covers_gap_ids": [
+     "linux-auditd-misrouted-fortigate",
+     "linux-auditd-enriched",
+     "linux-auditd-via-syslog"
+    ],
+    "severity": "misrouted",
+    "prevalence": "very_common",
+    "owner_files": [
+     "config/sources.yaml",
+     "backend/attacklens/ingest_sql.py"
+    ],
+    "collides_with": "cyberforge-2d owns the FortiGate entries (the exclude_regex on fortigate_kv needs their OK). cyberforge-6e owns kv_select. The generic kv options (ts_regex, separators, join_keys) are small additions; if ingest_sql.py stays at the cap, move kv_select helpers to a new ingest_kv.py.",
+    "design": "kv_sources.auditd_kv before fortigate_kv: detect_regex '^(?:node=\\S+ )?type=[A-Z_]+ msg=audit\\(\\d+\\.\\d+:\\d+\\):'. New generic kv options: ts_regex 'audit\\((\\d+\\.\\d+):' (epoch); kv_separator_chars [' ', '\\x1d']; join_keys '^a\\d+$' (EXECVE argv -> command_line); hex_fields [proctitle] (unhex, NUL -> space); null_values ['?', '(null)']. Fields: host node, process_name comm, process_path exe, user acct/UID/AUID (enriched upper-case names first), subject auid, src_ip addr. Actions by type plus res/success: USER_LOGIN/USER_AUTH -> login_success/login_failed, ADD_USER -> user_created, ADD_GROUP, USER_CMD, SYSCALL execve 59/322 + EXECVE -> proc_start. fortigate_kv gets exclude_regex for audit lines. syslog.messages entry: process in (audisp-syslog, audispd, auditd), or msg starts with 'type=\\w+ msg=audit(', reuses auditd_kv extraction on msg.",
+    "tests": "auditd_raw: 8/8 auditd_kv, ts exact from audit(...), cat /etc/shadow gives proc_start with command_line, USER_AUTH failed gives login_failed root 203.0.113.57, ADD_USER gives user_created. auditd_enriched: 3/3 with AUID alice. auditd_via_syslog: same fields. FortiGate fixtures and generator kv stay unchanged.",
+    "regression_fixtures": [
+     "data/raw/robust_linux/auditd_raw",
+     "data/raw/robust_linux/auditd_enriched",
+     "data/raw/robust_linux/auditd_via_syslog",
+     "data/raw/robust_network/fortigate_quoted_tzcolon",
+     "data/raw/robust_encoding_transport/control_plain"
+    ]
+   },
+   {
+    "rank": 20,
+    "title": "Syslog message pack: process_regex and name normalisation, rsyslog repeat unwrap, sudo failure first, sshd failure shapes, su, cron, UFW, OpenVPN, Postgres",
+    "covers_gap_ids": [
+     "linux-sudo-failure-as-success",
+     "linux-sshd-failure-shapes",
+     "linux-sshd-session-98",
+     "linux-cron-unparsed",
+     "linux-kernel-ufw-iptables",
+     "identity_db_app-openvpn-fields-empty",
+     "identity_db_app-postgres-syslog-fields-empty"
+    ],
+    "severity": "misrouted",
+    "prevalence": "very_common",
+    "owner_files": [
+     "config/sources.yaml",
+     "backend/attacklens/ingest_syslog.py (new, item 3)",
+     "backend/attacklens/detect_templates2.py"
+    ],
+    "collides_with": "cyberforge-6e owns ingest_sql.syslog_select (move it to ingest_syslog.py with item 3). The Windows rules builder owns detect_templates2/3.py: sudo_escalation needs an outcome filter (outcome != 'failure'). Raise that with them; do not edit it.",
+    "design": "1) syslog.messages entries accept process_regex. syslog.normalise_process: {'^sshd(-session|-auth)?$': sshd, '^crond?$': cron}, applied at ingest so the detect_templates comparisons with 'sshd' keep working. 2) syslog.pre_unwrap: '^message repeated (\\d+) times: \\[ ?(.*)\\]$' strips the wrapper, matches the inner message and stores repeat_count. 3) A sudo failure entry FIRST: '^\\s*(\\S+) : (\\d+ incorrect password attempts|user NOT in sudoers|command not allowed|a password is required|user NOT authorized on host) ; .*USER=(\\S+) ; (?:.*? ; )?COMMAND=(.*)$' with outcome failure and action priv_denied. The success regex allows ENV=/GROUP=/TSID= before COMMAND. 4) sshd: 'maximum authentication attempts exceeded', 'Connection closed by (authenticating|invalid) user', 'Disconnected from (invalid|authenticating) user', and pam_unix 'authentication failure;.*rhost= user=' (tagged so it is not double-counted). 5) su: session opened and FAILED SU. cron CMD -> proc_start with const parent_process cron. crontab REPLACE -> scheduled_task. kernel '[UFW BLOCK|AUDIT|ALLOW]' and generic 'IN= OUT= SRC= DST=' -> conn_denied/conn_allowed. OpenVPN auth succeeded/failed and MULTI_sva pool IP. Postgres 'password authentication failed' and 'connection authorized'.",
+    "tests": "sudo_su: the bob and eve failures are outcome failure and NOT proc_start success; the ENV=LD_PRELOAD line gives proc_start alice->root; su gives login_success/login_failed. sshd_edge: the repeated line counts 3 failures, every failure shape gives login_failed. sshd_session_98: 3/3 parsed, process sshd. cron: curl|bash gives proc_start with command_line, so unix_reverse_shell fires. kernel_ufw: 2/2 with IPs and ports. openvpn and postgres: login_* with user and src_ip. Keep rfc3164_authlog and useradd_family exact.",
+    "regression_fixtures": [
+     "data/raw/robust_linux/sudo_su",
+     "data/raw/robust_linux/sshd_edge",
+     "data/raw/robust_linux/sshd_session_98",
+     "data/raw/robust_linux/cron",
+     "data/raw/robust_linux/kernel_ufw",
+     "data/raw/robust_linux/rfc3164_authlog",
+     "data/raw/robust_linux/useradd_family",
+     "data/raw/robust_identity_db_app/openvpn_syslog",
+     "data/raw/robust_identity_db_app/postgres_syslog"
+    ]
+   },
+   {
+    "rank": 21,
+    "title": "ECS action vocabulary: event.category/event.type map, outcome-split event_actions, process.args fallback for command_line",
+    "covers_gap_ids": [
+     "edr-elastic-defend-action-other",
+     "linux-auditbeat-actions",
+     "linux-auditbeat-system-module"
+    ],
+    "severity": "fields_empty",
+    "prevalence": "very_common",
+    "owner_files": [
+     "config/sources.yaml",
+     "backend/attacklens/ingest_sql.py",
+     "backend/attacklens/ingest_maps.py"
+    ],
+    "collides_with": "The flat-Windows builder owns the ecs_json section and ingest_maps.py. cyberforge-6e owns ingest_sql.py, where action derivation runs. event.category and event.type are not label keys (event.kind and event.severity are), so the ground-truth rule holds. Re-run the eval probes, because the generator emits ECS.",
+    "design": "1) action_map.event_actions values may be a map {success: login_success, failure: login_failed, default: other}, keyed by normalised outcome, for logged-in, authenticated and user_login. Add executed, process_started -> proc_start. 2) ecs_json.category_type_map: {process/start: proc_start, network/start: conn_out, network/connection: conn_out, network/protocol+dns.question.name: dns_query, file/creation: file_write, registry/change: reg_set, authentication/start: by outcome}. It is used only when event.action is unmapped. Never map a bare 'start' globally. 3) command_line fallback: array_to_string($.process.args, ' '), then $.process.title. subject_user += $.user.audit.name.",
+    "tests": "elastic_endpoint_ecs: proc_start x3, conn_out, dns_query. auditbeat_ecs: executed gives proc_start 'cat /etc/shadow', and logged-in+failure gives login_failed (never login_success with outcome failure). auditbeat_system: user_login failure gives login_failed, process_started gives proc_start. The generator ECS sets (g1, f1) keep the same action counts and the eval scorecard does not change.",
+    "regression_fixtures": [
+     "data/raw/robust_edr_siem_exports/elastic_endpoint_ecs",
+     "data/raw/robust_linux/auditbeat_ecs",
+     "data/raw/robust_linux/auditbeat_system",
+     "data/raw/robust_edr_siem_exports/control_generator_json",
+     "data/raw/robust_windows/wlb8_sysmon_ps_ecs"
+    ]
+   }
+  ],
+  "not_covered": [
+   "NOTE: the harness blocked writing reports/robust/SUMMARY.md ('subagents return findings as text'). The full summary is in this structured output; the orchestrator should write it to SUMMARY.md.",
+   "ANSWER TO THE USER: yes, it fails on real data. In the live tree 51 of 229 real-world shapes pass, with 116 independently confirmed gaps. Most rows are counted as unrecognized_format, so they never reach detection. Root causes: the Stage 0 unpacker is not wired in; there is no XML or UTF-16 handling; the syslog header regex is too narrow; there is no reader for Zeek, Suricata, web logs, auditd or vendor EDR and SIEM exports.",
+   "RULE BREACHES FOUND (fix first): CSV FileName-column crash that writes no accounting; silent Purview AuditData truncation; lone CR silently eating a byte; 2-digit years accepted as year 26 with ts_ok=true; failed sudo stored as successful proc_start; PAN-OS CEF rule name in command_line; auditd routed as FortiGate; compressed and UTF-16 rows_in counted from raw bytes.",
+   "FOLLOW-UP untested: native binary .evtx, the most common Windows IR artifact. It is not readable and not an allowed upload, and needs a disclosed evtx library feeding item 5's shape.",
+   "FOLLOW-UP untested: OCSF / AWS Security Lake Parquet, and Parquet/Avro/ORC data-lake exports in general.",
+   "FOLLOW-UP untested transport shapes: RFC 6587 octet-counted syslog framing, Fluentd/Fluent Bit forward JSON, Logstash 'message' wrappers, Vector output.",
+   "FOLLOW-UP untested Windows channels: Defender/Operational, AppLocker, TaskScheduler, WMI-Activity, pfirewall.log, DHCP server log, Sysmon for Linux (XML in syslog).",
+   "FOLLOW-UP untested OS: macOS unified log (log show --style ndjson) and ESF.",
+   "FOLLOW-UP untested network: NetFlow/IPFIX (nfdump CSV), Juniper SRX structured SD, Cisco IOS/NX-OS, F5, Meraki, Sophos, Infoblox, BIND query log, dnsmasq, Zscaler NSS, Cloudflare, AWS ALB/ELB/CloudFront/S3 access logs, AWS WAF, Azure NSG flow and Azure Firewall.",
+   "FOLLOW-UP untested identity, email and HIDS: Exchange message tracking, Postfix maillog, krb5kdc, RADIUS/NPS/ISE, Keycloak, Ping, Carbon Black, Cortex XDR, Wazuh/OSSEC alerts.json, osquery results.",
+   "FOLLOW-UP untested compression and mixing: zstd, xz-in-tar, 7z, rar, password-protected zip, .evtx inside zip; a directory mixing many formats; one Splunk export holding several sourcetypes.",
+   "FOLLOW-UP scale: every fixture is 1-16 rows (only the 60k array is larger). XML iterparse, UTF-16 transcode and staging disk use (about 1x the decompressed size) are untested at 10/30/50 GB.",
+   "FOLLOW-UP end-to-end: the sweep stops at ingest. Add a backend/eval set that re-renders the g1 attack as Winlogbeat, NXLog, XML, Splunk-export and CSV and requires detection and linking parity with the generator shape. Do not tune the harness.",
+   "EVIDENCE CAVEAT: every fixture was hand-written from vendor docs from memory; no page was fetched and no real vendor sample was used. The PAN-OS column map and pfSense regex were checked only against the authors' own fixtures, which is circular. Get 1-2 real public samples per top-10 format before claiming support.",
+   "SINGLE-FIXTURE CLAIMS: NXLog naive EventTime (IST only; the Sysmon-skew inference is untested), Splunk classic WinEventLog (3 events), Velociraptor, evtx_dump, sshd-session 9.8, cron, UFW (2 lines), auditd enriched (3 lines), Check Point (2 lines), LEEF 1/2, Windows DNS debug, Suricata DNS v3, CrowdStrike FDR, both SentinelOne shapes, MDE streaming, QRadar, Excel re-saved dates, Entra portal CSV, CloudTrail Lake CSV (plain .csv; real delivery is .gz), lone CR, two-digit year.",
+   "UNVERIFIED IN-PIPELINE: 'cloud_unpack fixes 21/26 cloud envelopes and 60000/60000 records' comes from one manual CLI run per variant. Re-measure after item 2. The tar.gz misroute depends on a random '{' byte and must be fixed by the magic-bytes rule. The EDR sandbox config (data/out/robust_edr_siem_exports/cfg_proposed) is not a regression test until item 8 lands.",
+   "REFUTED, kept as enhancements: windows-ecs-naive-timestamp (could add a skew warning of @timestamp against event.created/UtcTime); cloud_saas-gd-findings-envelope (needs a realistic PascalCase GuardDuty CLI fixture before it can be judged; niche, context-only rows).",
+   "PROCESS: ingest_sql.py is at the 400-line cap and claimed by cyberforge-6e, so items 3, 9, 14 and 15 put their code in new modules (ingest_syslog.py, ingest_lines.py, ingest_csv.py, ingest_payload.py). Items 2, 4, 5, 7 and 18 are in cyberforge-0c's cloud_unpack area and should be delegated to 0c or handed off. Item 12 belongs to the flat-Windows builder. test-engineer should promote the regression fixtures into backend/tests/fixtures/robust/ with a strict-xfail manifest (test_robust_shapes.py) so each item flips its variants to pass."
+  ]
+ },
+ "confirmed_count": 116,
+ "refuted": [
+  {
+   "id": "windows-ecs-naive-timestamp",
+   "note": "No documented ECS producer emits a zone-less local @timestamp. The fixture is a buggy custom shipper, and the 5.5 h offset is built in. AttackLens agrees with ES and Kibana here. At most this is an enhancement: a skew warning of @timestamp against event.created/UtcTime. It is not a data-handling gap."
+  },
+  {
+   "id": "cloud_saas-gd-findings-envelope",
+   "note": "Refuted as stated (unrealistic hybrid fixture; the expected outcome depends on camelCase members that CLI output does not have). A real underlying gap exists and needs a realistic PascalCase CLI fixture. Niche (findings are context-only rows)."
+  }
+ ],
+ "failed_families": []
+}

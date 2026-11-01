@@ -1,0 +1,88 @@
+{
+ "attack_version": "v20",
+ "anchor_ms": 1793404800000,
+ "anchor": "2026-10-31T00:00:00Z",
+ "attacks": [
+  {
+   "id": "C1",
+   "name": "cloud console login from a new IP -> IAM change -> data access",
+   "steps": [
+    {
+     "step": 1,
+     "ts_ms": 1793415600000,
+     "technique_id": "T1078.004",
+     "tactic": "Initial Access",
+     "host": null,
+     "user": "vreddy",
+     "src_ip": "203.0.113.77",
+     "dst_ip": null,
+     "source": "azure_monitor:SigninLogs"
+    },
+    {
+     "step": 2,
+     "ts_ms": 1793415900000,
+     "technique_id": "T1078.004",
+     "tactic": "Initial Access",
+     "host": null,
+     "user": "vreddy",
+     "src_ip": "203.0.113.77",
+     "dst_ip": null,
+     "source": "aws_cloudtrail:ConsoleLogin"
+    },
+    {
+     "step": 3,
+     "ts_ms": 1793416320000,
+     "technique_id": "T1098.001",
+     "tactic": "Persistence",
+     "host": null,
+     "user": "vreddy",
+     "src_ip": "203.0.113.77",
+     "dst_ip": null,
+     "source": "aws_cloudtrail:CreateAccessKey"
+    },
+    {
+     "step": 4,
+     "ts_ms": 1793416440000,
+     "technique_id": "T1098.003",
+     "tactic": "Privilege Escalation",
+     "host": null,
+     "user": "vreddy",
+     "src_ip": "203.0.113.77",
+     "dst_ip": null,
+     "source": "aws_cloudtrail:AttachUserPolicy"
+    },
+    {
+     "step": 5,
+     "ts_ms": 1793417400000,
+     "technique_id": "T1530",
+     "tactic": "Collection",
+     "host": null,
+     "user": "vreddy",
+     "src_ip": "203.0.113.77",
+     "dst_ip": null,
+     "source": "gcp_logging:storage.objects.get"
+    }
+   ]
+  }
+ ],
+ "decoys": [
+  {
+   "ts_ms": 1793412000000,
+   "source": "aws_cloudtrail:CreateAccessKey",
+   "user": "asharma",
+   "why": "admin creates a key for svc-backup from the corp IP in business hours"
+  },
+  {
+   "ts_ms": 1793411100000,
+   "source": "azure_monitor:AuditLogs",
+   "user": "asharma",
+   "why": "helpdesk password reset for pmehta"
+  },
+  {
+   "ts_ms": 1793407800000,
+   "source": "gcp_logging:storage.objects.get",
+   "user": "svc-backup",
+   "why": "nightly backup job reads 30 objects from an internal IP"
+  }
+ ]
+}

@@ -33,10 +33,11 @@ REPO = Path(__file__).resolve().parents[1]
 DEFAULT_GENERATOR = REPO / "reports" / "edr_log_generator.py"
 LABEL_KEYS = ("threat", "rule", "labels", "labels_extra")
 BUF_BYTES = 1 << 20          # 1 MB write buffer
-INITIAL_AVG_BYTES = 800.0    # first guess of bytes/event, re-estimated every RECAL events
-RECAL = 64
+INITIAL_AVG_BYTES = 800.0    # prior guess of bytes/event, weighted as PRIOR_EVENTS observations
+PRIOR_EVENTS = 64            # keeps the early bytes/event estimate (and so the step) from swinging
 JITTER = 0.30
-TAIL_MARGIN = 8.0         # aim this many events short of the slice end so jitter never hits the clamp
+TAIL_MARGIN = 3.0            # aim this many mean steps short of the slice end (absorbs event-count error)
+STEP_BOUND = 0.08            # re-aimed step stays within +/-8 % of the whole-run mean step
 ALL_SCENARIOS = ("S1", "S2", "S3", "S4", "S5")
 
 
@@ -145,6 +146,21 @@ def slice_bounds(start_ms: int, span_ms: int, workers: int, k: int) -> tuple[int
     return start_ms + span_ms * k // workers, start_ms + span_ms * (k + 1) // workers
 
 
+def next_step(ms: int, lo: int, hi: int, events: int, written: int, target: int,
+              prior_avg: float = INITIAL_AVG_BYTES) -> float:
+    """Un-jittered gap before the next event. Re-aimed at the slice end on every event (time left /
+    events left, events left estimated from bytes left with a prior), so jitter drift and estimate error
+    are cancelled before they accumulate. Bounded to +/-STEP_BOUND of the whole-run mean step so a bad
+    tail estimate cannot spike or collapse gaps, and capped so ms + step * (1 + JITTER) < hi: the clock
+    never hits the hi-1 clamp, which used to pin the tail and produce 0 ms gaps."""
+    avg = (written + prior_avg * PRIOR_EVENTS) / (events + PRIOR_EVENTS)
+    left = max(0.0, (target - written) / avg)
+    mean = (hi - lo) / (events + left + TAIL_MARGIN)
+    aim = (hi - ms) / (left + TAIL_MARGIN)
+    step = min(max(aim, mean * (1 - STEP_BOUND)), mean * (1 + STEP_BOUND))
+    return max(0.0, min(step, (hi - 1 - ms) / (1 + JITTER)))
+
+
 def run_worker(job: dict) -> dict:
     """Generate one part file. job keys: k, workers, seed, start_ms, span_ms, target_bytes,
     alert_ratio, fmt, generator, out."""
@@ -167,7 +183,6 @@ def run_worker(job: dict) -> dict:
     uni = aux.uniform
 
     written = events = alerts = 0
-    step = (hi - lo) / max(1.0, target / INITIAL_AVG_BYTES)
     first_ms = last_ms = None
     buf = bytearray()
     h = hashlib.sha256()
@@ -175,7 +190,7 @@ def run_worker(job: dict) -> dict:
     with open(part, "wb", buffering=0) as f, open(noise_tmp, "wb") as nf:
         while written < target:
             if events:
-                clock.advance(step * uni(1 - JITTER, 1 + JITTER))
+                clock.advance(next_step(clock.ms, lo, hi, events, written, target) * uni(1 - JITTER, 1 + JITTER))
             ev = gen_alert() if rnd() < ratio else gen_benign()
             ts = clock.ms
             rec = strip_labels(ev, ts)
@@ -193,10 +208,6 @@ def run_worker(job: dict) -> dict:
                 f.write(buf)
                 h.update(buf)
                 buf.clear()
-            if events % RECAL == 0:                        # re-aim the clock at the slice end
-                remaining = (target - written) / (written / events)
-                if remaining >= RECAL:                     # keep the step steady near the end
-                    step = max(0.0, (hi - clock.ms) / (remaining + TAIL_MARGIN))
         if buf:
             f.write(buf)
             h.update(buf)

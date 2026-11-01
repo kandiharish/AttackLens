@@ -1,0 +1,55 @@
+# Authenticity heuristics (attacklens.integrity_authenticity): do these logs look machine-generated / synthetic?
+# Loaded as cfg["authenticity"]. Result = the optional "authenticity" block of integrity_report.json.
+# It NEVER changes the integrity verdict or trust_score (separate yellow "looks generated" warning in the UI).
+#
+# Every signal is computed in DuckDB on small aggregates of the `events` view (per host x hour counts, a bounded
+# per-host time slice, a hash sample of canonical columns). Generator label fields are never read.
+#
+# label: likely_generated when >= label_min_strong distinct strong-signal GROUPS fire (signals in one group
+#        measure the same property and count once) and score >= label_min_score;
+#        unknown when rows < min_rows or fewer than label_min_strong strong groups could be computed;
+#        natural otherwise.
+# score: 100 x (weight of fired signals) / (weight of computable signals), 0..100, higher = more machine-like.
+#
+# Measured 1 Nov 2026 (analyze() on data/parquet/<set>; thresholds NOT tuned to these, set from first principles):
+#   set                          dispersion  hour-of-day CV  host-rate CV  periodic share  templates/1000  label
+#   demo (synthetic ECS)         0.956       0.0055          0.0096 (28)   0.019           0.44            likely_generated 78
+#   cloud_small (synthetic cloud) 116        1.35            n/a (3 hosts) n/a             5.59            unknown
+#   b2_n10 (real FortiGate)      1.0e4       0.65            n/a (1 host)  0.000           120.7           natural 0
+#   n30 (real FortiGate)         2.9e4       3.34            n/a (1 host)  0.000           127.2           natural 0
+#   n50 (real FortiGate)         4.6e4       3.36            n/a (1 host)  0.000           127.9           natural 0
+#   apt29 day 1 (real lab, 0.5 h, mis-mapped JSON: 1 tuple)  all strong n/a                  unknown
+enabled: true
+min_rows: 5000                 # fewer ts_ok rows -> unknown
+min_hours: 24                  # volume signals need a host span (and the dataset span) of at least this many hours
+min_host_rows: 500             # hosts with fewer rows are not compared
+max_hosts: 2000                # busiest hosts kept in the per-host hourly table (bounds the dense hour grid)
+label_min_strong: 2
+label_min_score: 50
+
+signals:
+  # Median over hosts of the dispersion index var/mean of hourly counts (interior hours of each host's span,
+  # 0-filled; the partial first/last hour are left out).
+  # Poisson-like (memoryless, constant-rate) emitters give ~1 (demo: 0.96);
+  # real logs are bursty and diurnal (>> 1). Scale-free, unlike the raw coefficient of variation (also reported).
+  # Bounded grid: each host's span is trimmed to its [span_trim_share, 1 - span_trim_share] event-weighted quantile
+  # hours (stray 1970/2099 timestamps drop out), then clipped to its last max_grid_hours interior hours
+  # (grid rows <= max_hosts x max_grid_hours = 4.3 M).
+  flat_hourly_volume: {strong: true, group: volume, weight: 30, max_dispersion: 3.0, span_trim_share: 0.01,
+                       max_grid_hours: 2160}
+  # Coefficient of variation of the hour-of-day profile (all eligible hosts, UTC hours 0..23). Needs >= min_hours.
+  no_diurnal_cycle: {strong: true, group: volume, weight: 20, max_cv: 0.05}
+  # CV across hosts of each host's mean events per active hour. Every host emitting at the same rate is a
+  # generator trait (real fleets mix domain controllers, servers and idle workstations). Needs >= min_hosts.
+  uniform_host_rate: {strong: true, group: cadence, weight: 30, max_cv: 0.10, min_hosts: 5}
+  # A fixed timer: share of consecutive inter-arrival deltas (per host, inside one contiguous slice of its
+  # median-volume hour) equal to the host's modal delta, counting only modal deltas >= min_delta_ms (so the
+  # 1 s quantisation of second-resolution logs never counts). Median over sampled hosts.
+  periodic_timer: {strong: true, group: timer, weight: 25, min_share: 0.5, min_delta_ms: 2000, min_deltas: 50,
+                   slice_rows: 20000, sample_hosts: 10}
+  # Template diversity: distinct tuples of canonical columns in a hash sample of sample_rows rows, per 1000
+  # sampled rows. Weak (real Windows logs are also dominated by few event IDs): reported, never decisive alone.
+  low_template_diversity: {strong: false, group: templates, weight: 10, max_distinct_per_1000: 1.0,
+                           sample_rows: 200000,
+                           columns: [source_type, action, outcome, event_id, logon_type, process_name,
+                                     parent_process, app, signature, dst_port, file_ext, service_name]}

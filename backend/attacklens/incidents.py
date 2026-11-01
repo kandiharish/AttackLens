@@ -14,8 +14,8 @@ import networkx as nx
 
 from attacklens import reach
 from attacklens.context import RunContext
-from attacklens.incident_gate import (_params, _round, allowlist_entities, burst, entities, gate,  # noqa: F401
-                                      risk_score, tactic_idx)
+from attacklens.incident_gate import (_params, _round, allowlist_entities, burst, chain, counted_tactics,  # noqa: F401
+                                      entities, gate, risk_score, single_step, tactic_idx)
 from attacklens.link import episode_select, sql_path
 from attacklens.models import (EntryPoint, Graph, GraphEdge, GraphNode, Incident, Narrative, PathEdge, Step,
                                dump)
@@ -35,7 +35,15 @@ class Comp:
     backbone: list[str]
     branches: list[list[str]]
     back: dict[str, str | None]
-    burst: bool = False  # kept only via the hands-on-keyboard burst gate path
+    burst: bool = False  # kept only via the hands-on-keyboard burst / shared-destination chain gate path
+    single_step: bool = False  # kept only via the single-step critical allow-list (gate.single_step_critical)
+    lead_in: tuple[str, ...] = ()  # lead-in seed branches: shown, but the gate is re-checked without them
+
+    @property
+    def shown(self) -> list[str]:
+        """Backbone + branch episodes: the members the user sees. Gate, tactics and gaps all use this set;
+        the hidden direct neighbours in `ids` are kept for accounting only."""
+        return self.backbone + [x for b in self.branches for x in b]
 
 
 def iso(ms: int | None) -> str:
@@ -62,7 +70,7 @@ def _evidence(ctx: RunContext, ids: set[str], p: dict[str, Any]) -> dict[str, li
     if not ids:
         return {}
     ctx.con.execute("CREATE OR REPLACE TEMP TABLE _ev_ids (id VARCHAR)")
-    ctx.con.executemany("INSERT INTO _ev_ids VALUES (?)", [(i,) for i in sorted(ids)])
+    ctx.con.execute("INSERT INTO _ev_ids SELECT unnest(?::VARCHAR[])", [sorted(ids)])  # columnar
     src = episode_select(ctx.con, ctx.work_dir / "episodes.parquet")
     rows = ctx.con.execute(f"SELECT e.episode_id, e.evidence_lines FROM ({src}) e "
                            "JOIN _ev_ids x ON e.episode_id = x.id").fetchall()
@@ -96,10 +104,15 @@ def _step(k: int, e: dict[str, Any], ev: list[str], cfg: dict[str, Any]) -> Step
 
 
 def entry_summary(s: Step) -> str:
+    """e.g. "Brute Force on user:svc_backup from ip:203.0.113.57 against host:srv-dc-01". When the source IS the
+    subject (FortiGate endpoint rows: src_ip = subject IP) there is no "from"; an outbound step says "towards"."""
     out = s.technique_name or s.technique_id
     out += f" on user:{s.user}" if s.user else ""
-    out += f" from ip:{s.src_ip}" if s.src_ip else ""
-    return out + (f" against host:{s.host}" if s.host else "")
+    src_is_host = bool(s.src_ip and s.host and s.src_ip.lower() == s.host.lower())
+    if s.src_ip and not src_is_host:
+        out += f" from ip:{s.src_ip}"
+    out += f" {'by' if src_is_host else 'against'} host:{s.host}" if s.host else ""
+    return out + (f" towards ip:{s.dst_ip}" if s.dst_ip and (src_is_host or not s.src_ip) else "")
 
 
 def build_graph(steps: list[Step], eps: dict[str, dict[str, Any]], compromised: set[str],
@@ -167,44 +180,57 @@ def build_incident(ctx: RunContext, c: Comp, eps: dict[str, dict[str, Any]], edg
         # A branch hangs off the DP predecessor of its first node (on the backbone or an earlier branch).
         first_pred = c.back.get(b[0])
         back += ([(first_pred, b[0])] if first_pred else []) + list(zip(b, b[1:]))
+    # DP links into a shown step from another shown step not covered above (a weak head run trimmed off the
+    # backbone leads into backbone[0]).
+    have = set(back)
+    shown_ids = set(c.backbone) | {x for b in c.branches for x in b}
+    back += [(c.back[x], x) for x in c.backbone + [y for b in c.branches for y in b]
+             if c.back.get(x) in shown_ids and (c.back[x], x) not in have]
+    # A shown step still on no link (a lead-in seed: it links INTO the shown path only) gets its strongest link
+    # to a later shown step, so no step floats unconnected.
+    touched = {x for pair in back for x in pair}
+    for x in sorted(shown_ids - touched):
+        out = [(float(edge_map[(x, y)][3]), y) for y in shown_ids if (x, y) in edge_map]
+        back += [(x, max(out)[1])] if out else []
     pedges = [pe for i, j in back if (pe := _path_edge(edge_map, i, j, label)) is not None]
     risk, raw = risk_score(path_eps, p)
     if c.burst:  # a confirmed burst never sorts below single-tactic noise (gate.burst_risk_floor, 0 = literal §6.4)
         risk = max(risk, p["burst_risk_floor"])
     path_tactics = sorted({e.get("tactic") for e in path_eps if e.get("tactic")}, key=lambda t: TACTIC_IDX.get(t, 99))
-    comp_tactics = {e.get("tactic") for e in comp_eps}
+    # Gaps against the same set as `tactics` (backbone + branches): tactics + gaps cover the backbone's span.
     idxs = [tactic_idx(e) for e in bb if tactic_idx(e) > 0]
-    gaps = [t for t in TACTICS_V20 if idxs and min(idxs) < TACTIC_IDX[t] < max(idxs) and t not in comp_tactics]
+    gaps = [t for t in TACTICS_V20 if idxs and min(idxs) < TACTIC_IDX[t] < max(idxs) and t not in path_tactics]
     reach_next = reach.compute(ctx, _frontier(bb, comp_eps, p), rg)
-    compromised = {f"host:{str(s.host).lower()}" for s in steps if s.host} | \
-                  {f"user:{str(s.user).lower()}" for s in steps if s.user}
-    graph = build_graph(steps + [s for b in branches for s in b], eps, compromised, [r.host for r in reach_next])
+    shown = steps + [s for b in branches for s in b]  # backbone and branch steps both mark entities compromised
+    compromised = ({f"host:{str(s.host).lower()}" for s in shown if s.host}
+                   | {f"user:{str(s.user).lower()}" for s in shown if s.user})
+    graph = build_graph(shown, eps, compromised, [r.host for r in reach_next])
+    entry = (f"{p['ss_label']}: " if c.single_step else "") + entry_summary(steps[0])  # flags the 1-step gate path
     inc = Incident(
         id="inc-" + hashlib.sha1(",".join(sorted(c.ids)).encode("utf-8")).hexdigest()[:8], risk=risk,
         first_ts=iso(min(e["ts_ms"] for e in path_eps)),
         last_ts=iso(max(int(e.get("last_ts_ms") or e["ts_ms"]) for e in path_eps)),
         merged_alert_count=sum(int(e.get("merged_alert_count") or 0) for e in comp_eps), episode_count=len(c.ids),
-        entry_point=EntryPoint(step=0, summary=entry_summary(steps[0])), tactics=path_tactics, gaps=gaps,
-        backbone=steps, branches=branches, edges=pedges, graph=graph, reach_next=reach_next,
+        entry_point=EntryPoint(step=0, summary=entry), tactics=path_tactics, gaps=gaps, backbone=steps,
+        branches=branches, edges=pedges, graph=graph, reach_next=reach_next,
         narrative=Narrative(text="", source="template"))
     return Incident.model_validate(dump(inc)), raw
 
 
 def _write_json(path: Path, obj: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w", encoding="utf-8", newline="\n") as f:
-        f.write(json.dumps(obj, ensure_ascii=False, indent=1))
+    path.write_text(json.dumps(obj, ensure_ascii=False, indent=1), encoding="utf-8", newline="\n")
 
 
 def _gate_ids(ids: list[str], eps: dict[str, dict[str, Any]], allow: set[str],
               p: dict[str, Any]) -> tuple[str | None, set[str], float]:
     ce = [eps[x] for x in ids]
-    # Tactic diversity counts only episodes with at least min_tactic_confidence (0 = literal §6.3 gate).
-    tactics = {e["tactic"] for e in ce if e.get("tactic") and float(e.get("confidence") or 0) >= p["tactic_conf"]}
+    tactics = counted_tactics(ce, p)  # >= min_tactic_confidence, context-only rules excluded
     top = max(ce, key=lambda e: (float(e.get("confidence") or 0), int(e.get("merged_alert_count") or 0)))
     max_conf = float(top.get("confidence") or 0)
     allowlisted = bool(allow) and all(entities(e) <= allow for e in ce)
-    reason = gate(tactics, max_conf, allowlisted, p, int(top.get("merged_alert_count") or 0), burst(ce, p))
+    reason = gate(tactics, max_conf, allowlisted, p, int(top.get("merged_alert_count") or 0),
+                  burst(ce, p) or chain(ce, p), single_step(ce, p))
     return reason, tactics, max_conf
 
 
@@ -223,10 +249,13 @@ def _extract(ids: list[str], eps: dict[str, dict[str, Any]], by_j: dict[str, lis
         def standalone(tail: list[str]) -> bool:  # multi-tactic tail that passes the gate by itself
             reason, tactics, _ = _gate_ids(tail, eps, set(), p)
             return reason is None and len(tactics) >= p["min_tactics"]
-    res = best_path(nodes, cedges, p["exempt"], p["branch_ratio"], p["max_branches"], standalone, seeds)
+    weak = {x for x in ids if float(eps[x].get("confidence") or 0) < p["weak_conf"]}
+    res = best_path(nodes, cedges, p["exempt"], p["branch_ratio"], p["max_branches"], standalone, seeds, weak,
+                    p["lead_in_rules"])
     path = set(res.backbone) | {x for b in res.branches for x in b}
     members = path | {n for x in path for n in g.neighbors(x) if n in sid and n not in seeds}
-    return Comp(ids=sorted(members), backbone=res.backbone, branches=res.branches, back=res.back), sid - members
+    return Comp(ids=sorted(members), backbone=res.backbone, branches=res.branches, back=res.back,
+                lead_in=tuple(res.lead_in)), sid - members
 
 
 def episode_accounting(eps: dict[str, Any], kept: list[list[str]], suppressed: list[list[str]]) -> dict[str, Any]:
@@ -239,6 +268,43 @@ def episode_accounting(eps: dict[str, Any], kept: list[list[str]], suppressed: l
     if not out["ok"]:
         log.error("incidents: episode accounting invariant violated: %s", out)
     return out
+
+
+def _write_suppressed(ctx: RunContext, suppressed: list[dict[str, Any]], sup_all: list[list[str]]) -> dict[str, int]:
+    """Every suppressed entry (suppressed.json lists only the top suppressed_max_entries): one row per episode in
+    work/suppressed.parquet (entry, episode_id, episode_count, tactics, max_confidence, reason), written by
+    DuckDB. Returns the count per full reason string (all entries)."""
+    detail: dict[str, int] = {}
+    for s in suppressed:
+        detail[s["reason"]] = detail.get(s["reason"], 0) + 1
+    rows = [(k, x) for k, ids in enumerate(sup_all) for x in ids]
+    con, out = ctx.con, ctx.work_dir / "suppressed.parquet"
+    con.execute("CREATE OR REPLACE TEMP TABLE _sup_e (entry INTEGER, episode_count INTEGER, tactics VARCHAR[], "
+                "max_confidence DOUBLE, reason VARCHAR)")
+    con.execute("CREATE OR REPLACE TEMP TABLE _sup_m (entry INTEGER, episode_id VARCHAR)")
+    if suppressed:  # columnar inserts (unnest of lists), not executemany
+        con.execute("INSERT INTO _sup_e SELECT unnest(?::INTEGER[]), unnest(?::INTEGER[]), unnest(?::VARCHAR[][]), "
+                    "unnest(?::DOUBLE[]), unnest(?::VARCHAR[])",
+                    [list(range(len(suppressed))), [s["episode_count"] for s in suppressed],
+                     [s["tactics"] for s in suppressed], [float(s["max_confidence"]) for s in suppressed],
+                     [s["reason"] for s in suppressed]])
+        con.execute("INSERT INTO _sup_m SELECT unnest(?::INTEGER[]), unnest(?::VARCHAR[])",
+                    [[r[0] for r in rows], [r[1] for r in rows]])
+    con.execute(f"COPY (SELECT m.entry, m.episode_id, e.episode_count, e.tactics, e.max_confidence, e.reason "
+                f"FROM _sup_m m JOIN _sup_e e USING (entry) ORDER BY m.entry, m.episode_id) "
+                f"TO '{sql_path(out)}' (FORMAT PARQUET)")
+    con.execute("DROP TABLE IF EXISTS _sup_e")
+    con.execute("DROP TABLE IF EXISTS _sup_m")
+    return dict(sorted(detail.items(), key=lambda kv: (-kv[1], kv[0])))
+
+
+def _spilled_count(ctx: RunContext) -> int:
+    """Episodes Stage 2.5 spilled above episode_cap (never in Python): episodes_total = in_incidents + in_suppressed
+    + spilled."""
+    path = ctx.work_dir / "episodes_spilled.parquet"
+    if not path.exists():
+        return 0
+    return int(ctx.con.execute(f"SELECT count(*) FROM read_parquet('{sql_path(path)}')").fetchone()[0])
 
 
 def run(ctx: RunContext) -> dict[str, Any]:
@@ -276,8 +342,9 @@ def run(ctx: RunContext) -> dict[str, Any]:
                                    "max_confidence": round(max_conf, 1), "reason": reason})
                 continue
             c, rest = _extract(ids, eps, by_j, g, p)
-            # Re-gate the extracted incident (path + direct neighbours): it can fail even when its component passed.
-            c_reason, c_tactics, c_conf = _gate_ids(c.ids, eps, allow, p)
+            # Re-gate the extracted incident on what is SHOWN (backbone + branches): a hidden neighbour must not
+            # donate the second tactic, nor may a lead-in seed. It can fail even when its component passed.
+            c_reason, c_tactics, c_conf = _gate_ids([x for x in c.shown if x not in c.lead_in], eps, allow, p)
             if c_reason is None:
                 kept.append(c)
                 n_out += 1
@@ -294,10 +361,13 @@ def run(ctx: RunContext) -> dict[str, Any]:
                 peeled += len(subs)
                 queue.extend(subs)
     accounting = episode_accounting(eps, [c.ids for c in kept], sup_all)
-    no_burst = {**p, "burst_techniques": 0}
-    for c in kept:
-        c.burst = p["burst_techniques"] > 0 and _gate_ids(c.ids, eps, allow, no_burst)[0] is not None
-    via_burst = sum(c.burst for c in kept)
+    n_spilled = _spilled_count(ctx)
+    no_ss = {**p, "ss_techniques": [], "ss_tactics": set()}
+    off = {**no_ss, "burst_techniques": 0, "chain_techniques": 0}
+    for c in kept:  # fails the literal gate: kept via burst / chain if those alone pass, else via single-step
+        if _gate_ids(c.shown, eps, allow, off)[0] is not None:
+            c.burst = _gate_ids(c.shown, eps, allow, no_ss)[0] is None
+            c.single_step = not c.burst
     ev = _evidence(ctx, {x for c in kept for x in c.backbone + [y for b in c.branches for y in b]}, p)
     reach_stats = reach.prepare(ctx)
     rg = reach.load_graph(ctx)
@@ -308,12 +378,20 @@ def run(ctx: RunContext) -> dict[str, Any]:
         raws[inc.id] = round(raw, 3)
     incidents.sort(key=lambda x: (-x.risk, x.first_ts, x.id))
     _write_json(ctx.work_dir / "incidents.json", [dump(i) for i in incidents])
-    suppressed.sort(key=lambda s: (-s["max_confidence"], s["episode_ids"][0]))
+    order = sorted(range(len(suppressed)), key=lambda k: (-suppressed[k]["max_confidence"],
+                                                         suppressed[k]["episode_ids"][0]))
+    suppressed, sup_all = [suppressed[k] for k in order], [sup_all[k] for k in order]
+    detail = _write_suppressed(ctx, suppressed, sup_all)
     _write_json(ctx.out_dir / "suppressed.json", {"total": len(suppressed), "by_reason": dict(sorted(reasons.items())),
+                                                  "by_reason_detail": detail,
+                                                  "listed": min(len(suppressed), p["sup_max"]),
+                                                  "full_list": "work/suppressed.parquet",
                                                   "components": suppressed[: p["sup_max"]]})
-    stats = {"episode_accounting": accounting, "kept_via_burst": via_burst, "components": len(comps),
-             "peeled_subcomponents": peeled, "kept": len(kept), "suppressed": len(suppressed),
+    stats = {"episode_accounting": accounting, "episodes_spilled": n_spilled, "episodes_total": len(eps) + n_spilled,
+             "kept_via_burst": sum(c.burst for c in kept), "kept_via_single_step": sum(c.single_step for c in kept),
+             "components": len(comps), "peeled_subcomponents": peeled, "kept": len(kept), "suppressed": len(suppressed),
              "incidents": len(incidents), "suppressed_by_reason": dict(sorted(reasons.items())),
+             "suppressed_listed": min(len(suppressed), p["sup_max"]),
              "largest_component": max(map(len, comps), default=0), "raw_risk": raws, "reach": reach_stats,
              "seconds": round(time.perf_counter() - t0, 3)}
     log.info("incidents: %s", {k: v for k, v in stats.items() if k != "raw_risk"})

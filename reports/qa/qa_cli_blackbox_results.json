@@ -1,0 +1,1851 @@
+{
+ "repo_config": [
+  {
+   "case": "empty_file",
+   "result": "fail",
+   "why": [
+    "unusable input but rc 0"
+   ],
+   "rc": 0,
+   "wall_s": 28.5,
+   "rows_in": 0,
+   "rows_ok": 0,
+   "dropped": 0,
+   "lines_in": 0,
+   "unaccounted": 0,
+   "files": {
+    "run_metrics.json": true,
+    "ingest_accounting.json": true,
+    "source_profile.json": true,
+    "incidents_index.json": true
+   },
+   "drop_reasons": {},
+   "stderr_error": [],
+   "traceback": false,
+   "stderr_empty": false,
+   "peak_rss_mb": 93.6
+  },
+  {
+   "case": "empty_dir",
+   "result": "fail",
+   "why": [
+    "unusable input but rc 0"
+   ],
+   "rc": 0,
+   "wall_s": 28.6,
+   "rows_in": 0,
+   "rows_ok": 0,
+   "dropped": 0,
+   "lines_in": 0,
+   "unaccounted": 0,
+   "files": {
+    "run_metrics.json": true,
+    "ingest_accounting.json": true,
+    "source_profile.json": true,
+    "incidents_index.json": true
+   },
+   "drop_reasons": {},
+   "stderr_error": [],
+   "traceback": false,
+   "stderr_empty": false,
+   "peak_rss_mb": 93.0
+  },
+  {
+   "case": "binary_only",
+   "result": "fail",
+   "why": [
+    "unusable input but rc 0"
+   ],
+   "rc": 0,
+   "wall_s": 18.8,
+   "rows_in": 533,
+   "rows_ok": 0,
+   "dropped": 533,
+   "lines_in": null,
+   "unaccounted": null,
+   "files": {
+    "run_metrics.json": true,
+    "ingest_accounting.json": true,
+    "source_profile.json": true,
+    "incidents_index.json": true
+   },
+   "drop_reasons": {
+    "unrecognized": {
+     "unrecognized_format": 533
+    }
+   },
+   "stderr_error": [],
+   "traceback": false,
+   "stderr_empty": false,
+   "peak_rss_mb": 92.7
+  },
+  {
+   "case": "nul_padding_small",
+   "result": "fail",
+   "why": [
+    "rows_ok 0 != expected 10",
+    "fortigate_kv rows_ok None != 10"
+   ],
+   "rc": 0,
+   "wall_s": 15.1,
+   "rows_in": 11,
+   "rows_ok": 0,
+   "dropped": 11,
+   "lines_in": 11,
+   "unaccounted": 0,
+   "files": {
+    "run_metrics.json": true,
+    "ingest_accounting.json": true,
+    "source_profile.json": true,
+    "incidents_index.json": true
+   },
+   "drop_reasons": {
+    "unrecognized": {
+     "unrecognized_format": 11
+    }
+   },
+   "stderr_error": [],
+   "traceback": false,
+   "stderr_empty": false,
+   "peak_rss_mb": 93.0
+  },
+  {
+   "case": "nul_padding_large",
+   "result": "pass",
+   "why": [],
+   "rc": 0,
+   "wall_s": 39.4,
+   "rows_in": 401,
+   "rows_ok": 400,
+   "dropped": 1,
+   "lines_in": 401,
+   "unaccounted": 0,
+   "files": {
+    "run_metrics.json": true,
+    "ingest_accounting.json": true,
+    "source_profile.json": true,
+    "incidents_index.json": true
+   },
+   "drop_reasons": {
+    "fortigate_kv": {
+     "unparseable_line (kept in ts_ok=false, action=malformed)": 1
+    }
+   },
+   "stderr_error": [],
+   "traceback": false,
+   "stderr_empty": false,
+   "peak_rss_mb": 116.0
+  },
+  {
+   "case": "crlf",
+   "result": "pass",
+   "why": [],
+   "rc": 0,
+   "wall_s": 37.3,
+   "rows_in": 20,
+   "rows_ok": 20,
+   "dropped": 0,
+   "lines_in": 20,
+   "unaccounted": 0,
+   "files": {
+    "run_metrics.json": true,
+    "ingest_accounting.json": true,
+    "source_profile.json": true,
+    "incidents_index.json": true
+   },
+   "drop_reasons": {
+    "fortigate_kv": {}
+   },
+   "stderr_error": [],
+   "traceback": false,
+   "stderr_empty": false,
+   "peak_rss_mb": 99.9
+  },
+  {
+   "case": "utf16le_bom",
+   "result": "fail",
+   "why": [
+    "accounting rows_in off by +21 vs 20 input lines"
+   ],
+   "rc": 0,
+   "wall_s": 33.4,
+   "rows_in": 41,
+   "rows_ok": 0,
+   "dropped": 41,
+   "lines_in": 20,
+   "unaccounted": -21,
+   "files": {
+    "run_metrics.json": true,
+    "ingest_accounting.json": true,
+    "source_profile.json": true,
+    "incidents_index.json": true
+   },
+   "drop_reasons": {
+    "unrecognized": {
+     "unrecognized_format": 41
+    }
+   },
+   "stderr_error": [],
+   "traceback": false,
+   "stderr_empty": false,
+   "peak_rss_mb": 93.4
+  },
+  {
+   "case": "utf16le_bom_lf",
+   "result": "fail",
+   "why": [
+    "accounting rows_in off by +1 vs 20 input lines"
+   ],
+   "rc": 0,
+   "wall_s": 31.5,
+   "rows_in": 21,
+   "rows_ok": 0,
+   "dropped": 21,
+   "lines_in": 20,
+   "unaccounted": -1,
+   "files": {
+    "run_metrics.json": true,
+    "ingest_accounting.json": true,
+    "source_profile.json": true,
+    "incidents_index.json": true
+   },
+   "drop_reasons": {
+    "unrecognized": {
+     "unrecognized_format": 21
+    }
+   },
+   "stderr_error": [],
+   "traceback": false,
+   "stderr_empty": false,
+   "peak_rss_mb": 93.8
+  },
+  {
+   "case": "utf8_bom",
+   "result": "pass",
+   "why": [],
+   "rc": 0,
+   "wall_s": 23.8,
+   "rows_in": 20,
+   "rows_ok": 20,
+   "dropped": 0,
+   "lines_in": 20,
+   "unaccounted": 0,
+   "files": {
+    "run_metrics.json": true,
+    "ingest_accounting.json": true,
+    "source_profile.json": true,
+    "incidents_index.json": true
+   },
+   "drop_reasons": {
+    "fortigate_kv": {}
+   },
+   "stderr_error": [],
+   "traceback": false,
+   "stderr_empty": false,
+   "peak_rss_mb": 99.7
+  },
+  {
+   "case": "huge_line",
+   "result": "pass",
+   "why": [],
+   "rc": 0,
+   "wall_s": 25.4,
+   "rows_in": 11,
+   "rows_ok": 11,
+   "dropped": 0,
+   "lines_in": 11,
+   "unaccounted": 0,
+   "files": {
+    "run_metrics.json": true,
+    "ingest_accounting.json": true,
+    "source_profile.json": true,
+    "incidents_index.json": true
+   },
+   "drop_reasons": {
+    "fortigate_kv": {}
+   },
+   "stderr_error": [],
+   "traceback": false,
+   "stderr_empty": false,
+   "peak_rss_mb": 127.5
+  },
+  {
+   "case": "same_ts",
+   "result": "pass",
+   "why": [],
+   "rc": 0,
+   "wall_s": 31.1,
+   "rows_in": 50,
+   "rows_ok": 50,
+   "dropped": 0,
+   "lines_in": 50,
+   "unaccounted": 0,
+   "files": {
+    "run_metrics.json": true,
+    "ingest_accounting.json": true,
+    "source_profile.json": true,
+    "incidents_index.json": true
+   },
+   "drop_reasons": {
+    "fortigate_kv": {}
+   },
+   "stderr_error": [],
+   "traceback": false,
+   "stderr_empty": false,
+   "peak_rss_mb": 110.6
+  },
+  {
+   "case": "future_ts",
+   "result": "pass",
+   "why": [],
+   "rc": 0,
+   "wall_s": 35.4,
+   "rows_in": 20,
+   "rows_ok": 20,
+   "dropped": 0,
+   "lines_in": 20,
+   "unaccounted": 0,
+   "files": {
+    "run_metrics.json": true,
+    "ingest_accounting.json": true,
+    "source_profile.json": true,
+    "incidents_index.json": true
+   },
+   "drop_reasons": {
+    "fortigate_kv": {}
+   },
+   "stderr_error": [],
+   "traceback": false,
+   "stderr_empty": false,
+   "peak_rss_mb": 121.6
+  },
+  {
+   "case": "mixed_formats",
+   "result": "pass",
+   "why": [],
+   "rc": 0,
+   "wall_s": 29.9,
+   "rows_in": 40,
+   "rows_ok": 40,
+   "dropped": 0,
+   "lines_in": 40,
+   "unaccounted": 0,
+   "files": {
+    "run_metrics.json": true,
+    "ingest_accounting.json": true,
+    "source_profile.json": true,
+    "incidents_index.json": true
+   },
+   "drop_reasons": {
+    "cef": {},
+    "ecs_json": {},
+    "fortigate_kv": {},
+    "syslog": {}
+   },
+   "stderr_error": [],
+   "traceback": false,
+   "stderr_empty": false,
+   "peak_rss_mb": 225.7
+  },
+  {
+   "case": "unknown_format",
+   "result": "fail",
+   "why": [
+    "unusable input but rc 0"
+   ],
+   "rc": 0,
+   "wall_s": 30.4,
+   "rows_in": 15,
+   "rows_ok": 0,
+   "dropped": 15,
+   "lines_in": 15,
+   "unaccounted": 0,
+   "files": {
+    "run_metrics.json": true,
+    "ingest_accounting.json": true,
+    "source_profile.json": true,
+    "incidents_index.json": true
+   },
+   "drop_reasons": {
+    "unrecognized": {
+     "unrecognized_format": 15
+    }
+   },
+   "stderr_error": [],
+   "traceback": false,
+   "stderr_empty": false,
+   "peak_rss_mb": 92.9
+  },
+  {
+   "case": "gzip",
+   "result": "fail",
+   "why": [
+    "unusable input but rc 0",
+    "accounting rows_in off by -13 vs 20 input lines"
+   ],
+   "rc": 0,
+   "wall_s": 23.0,
+   "rows_in": 7,
+   "rows_ok": 0,
+   "dropped": 7,
+   "lines_in": 20,
+   "unaccounted": 13,
+   "files": {
+    "run_metrics.json": true,
+    "ingest_accounting.json": true,
+    "source_profile.json": true,
+    "incidents_index.json": true
+   },
+   "drop_reasons": {
+    "unrecognized": {
+     "unrecognized_format": 7
+    }
+   },
+   "stderr_error": [],
+   "traceback": false,
+   "stderr_empty": false,
+   "peak_rss_mb": 94.0
+  },
+  {
+   "case": "hardlink",
+   "result": "pass",
+   "why": [],
+   "rc": 0,
+   "wall_s": 26.1,
+   "rows_in": 40,
+   "rows_ok": 40,
+   "dropped": 0,
+   "lines_in": 40,
+   "unaccounted": 0,
+   "files": {
+    "run_metrics.json": true,
+    "ingest_accounting.json": true,
+    "source_profile.json": true,
+    "incidents_index.json": true
+   },
+   "drop_reasons": {
+    "fortigate_kv": {}
+   },
+   "stderr_error": [],
+   "traceback": false,
+   "stderr_empty": false,
+   "peak_rss_mb": 133.8
+  },
+  {
+   "case": "symlink",
+   "result": "not_run",
+   "why": [
+    "symlink not permitted: [WinError 1314] A required privilege is not held by the client: 'C:\\\\cyberforge\\\\data\\\\tmp\\\\qa_cli_full\\\\symlink\\\\outside\\\\fw.log' -> 'C:\\\\cyberforge\\\\data\\\\tmp\\\\qa_cli_full\\\\symlink\\\\raw\\\\fw.log'"
+   ],
+   "rc": null,
+   "wall_s": null,
+   "rows_in": null,
+   "rows_ok": null,
+   "dropped": null,
+   "lines_in": null,
+   "unaccounted": null,
+   "files": null,
+   "drop_reasons": {},
+   "stderr_error": [],
+   "traceback": null,
+   "stderr_empty": null,
+   "peak_rss_mb": null
+  },
+  {
+   "case": "readonly_out",
+   "result": "pass",
+   "why": [],
+   "rc": 1,
+   "wall_s": 6.0,
+   "rows_in": null,
+   "rows_ok": null,
+   "dropped": null,
+   "lines_in": 20,
+   "unaccounted": 20,
+   "files": {
+    "run_metrics.json": false,
+    "ingest_accounting.json": false,
+    "source_profile.json": false,
+    "incidents_index.json": false
+   },
+   "drop_reasons": {},
+   "stderr_error": [
+    "ERROR pipeline failed: PermissionError: [Errno 13] Permission denied: 'C:\\\\cyberforge\\\\data\\\\tmp\\\\qa_cli_full\\\\readonly_out\\\\out_ro\\\\source_profile.json'"
+   ],
+   "traceback": true,
+   "stderr_empty": false,
+   "peak_rss_mb": null
+  },
+  {
+   "case": "out_is_file",
+   "result": "fail",
+   "why": [
+    "rc 1 without an ERROR message"
+   ],
+   "rc": 1,
+   "wall_s": 4.5,
+   "rows_in": null,
+   "rows_ok": null,
+   "dropped": null,
+   "lines_in": 20,
+   "unaccounted": 20,
+   "files": {
+    "run_metrics.json": false,
+    "ingest_accounting.json": false,
+    "source_profile.json": false,
+    "incidents_index.json": false
+   },
+   "drop_reasons": {},
+   "stderr_error": [],
+   "traceback": false,
+   "stderr_empty": true,
+   "peak_rss_mb": null
+  },
+  {
+   "case": "missing_raw",
+   "result": "pass",
+   "why": [],
+   "rc": 1,
+   "wall_s": 5.1,
+   "rows_in": null,
+   "rows_ok": null,
+   "dropped": null,
+   "lines_in": 0,
+   "unaccounted": 0,
+   "files": {
+    "run_metrics.json": true,
+    "ingest_accounting.json": false,
+    "source_profile.json": false,
+    "incidents_index.json": false
+   },
+   "drop_reasons": {},
+   "stderr_error": [
+    "ERROR pipeline failed: FileNotFoundError: raw dir not found: C:\\cyberforge\\data\\tmp\\qa_cli_full\\missing_raw\\does_not_exist"
+   ],
+   "traceback": true,
+   "stderr_empty": false,
+   "peak_rss_mb": 48.4
+  },
+  {
+   "case": "raw_is_file",
+   "result": "fail",
+   "why": [
+    "rc 0 but rows_ok 0 != 20 (file given as --raw ignored)",
+    "accounting rows_in off by -20 vs 20 input lines"
+   ],
+   "rc": 0,
+   "wall_s": 34.0,
+   "rows_in": 0,
+   "rows_ok": 0,
+   "dropped": 0,
+   "lines_in": 20,
+   "unaccounted": 20,
+   "files": {
+    "run_metrics.json": true,
+    "ingest_accounting.json": true,
+    "source_profile.json": true,
+    "incidents_index.json": true
+   },
+   "drop_reasons": {},
+   "stderr_error": [],
+   "traceback": false,
+   "stderr_empty": false,
+   "peak_rss_mb": 93.4
+  },
+  {
+   "case": "spaces_quotes",
+   "result": "pass",
+   "why": [],
+   "rc": 0,
+   "wall_s": 36.7,
+   "rows_in": 20,
+   "rows_ok": 20,
+   "dropped": 0,
+   "lines_in": 20,
+   "unaccounted": 0,
+   "files": {
+    "run_metrics.json": true,
+    "ingest_accounting.json": true,
+    "source_profile.json": true,
+    "incidents_index.json": true
+   },
+   "drop_reasons": {
+    "fortigate_kv": {}
+   },
+   "stderr_error": [],
+   "traceback": false,
+   "stderr_empty": false,
+   "peak_rss_mb": 104.6
+  },
+  {
+   "case": "invalid_utf8_kv",
+   "result": "pass",
+   "why": [],
+   "rc": 0,
+   "wall_s": 19.8,
+   "rows_in": 10,
+   "rows_ok": 9,
+   "dropped": 1,
+   "lines_in": 10,
+   "unaccounted": 0,
+   "files": {
+    "run_metrics.json": true,
+    "ingest_accounting.json": true,
+    "source_profile.json": true,
+    "incidents_index.json": true
+   },
+   "drop_reasons": {
+    "fortigate_kv": {
+     "decode_error (invalid UTF-8, line not readable)": 1
+    }
+   },
+   "stderr_error": [],
+   "traceback": false,
+   "stderr_empty": false,
+   "peak_rss_mb": 120.2
+  },
+  {
+   "case": "from_stage_no_prior",
+   "result": "fail",
+   "why": [
+    "unusable input but rc 0"
+   ],
+   "rc": 0,
+   "wall_s": 22.5,
+   "rows_in": null,
+   "rows_ok": null,
+   "dropped": null,
+   "lines_in": null,
+   "unaccounted": null,
+   "files": {
+    "run_metrics.json": true,
+    "ingest_accounting.json": false,
+    "source_profile.json": false,
+    "incidents_index.json": true
+   },
+   "drop_reasons": {},
+   "stderr_error": [],
+   "traceback": false,
+   "stderr_empty": false,
+   "peak_rss_mb": 92.4
+  }
+ ],
+ "sigma_off_copy": [
+  {
+   "case": "empty_file",
+   "result": "fail",
+   "why": [
+    "unusable input but rc 0"
+   ],
+   "rc": 0,
+   "wall_s": 17.8,
+   "rows_in": 0,
+   "rows_ok": 0,
+   "dropped": 0,
+   "lines_in": 0,
+   "unaccounted": 0,
+   "files": {
+    "run_metrics.json": true,
+    "ingest_accounting.json": true,
+    "source_profile.json": true,
+    "incidents_index.json": true
+   },
+   "drop_reasons": {},
+   "stderr_error": [],
+   "traceback": false,
+   "stderr_empty": false
+  },
+  {
+   "case": "empty_dir",
+   "result": "fail",
+   "why": [
+    "unusable input but rc 0"
+   ],
+   "rc": 0,
+   "wall_s": 15.1,
+   "rows_in": 0,
+   "rows_ok": 0,
+   "dropped": 0,
+   "lines_in": 0,
+   "unaccounted": 0,
+   "files": {
+    "run_metrics.json": true,
+    "ingest_accounting.json": true,
+    "source_profile.json": true,
+    "incidents_index.json": true
+   },
+   "drop_reasons": {},
+   "stderr_error": [],
+   "traceback": false,
+   "stderr_empty": false
+  },
+  {
+   "case": "binary_only",
+   "result": "fail",
+   "why": [
+    "unusable input but rc 0"
+   ],
+   "rc": 0,
+   "wall_s": 17.7,
+   "rows_in": 533,
+   "rows_ok": 0,
+   "dropped": 533,
+   "lines_in": null,
+   "unaccounted": null,
+   "files": {
+    "run_metrics.json": true,
+    "ingest_accounting.json": true,
+    "source_profile.json": true,
+    "incidents_index.json": true
+   },
+   "drop_reasons": {
+    "unrecognized": {
+     "unrecognized_format": 533
+    }
+   },
+   "stderr_error": [],
+   "traceback": false,
+   "stderr_empty": false
+  },
+  {
+   "case": "nul_padding_small",
+   "result": "fail",
+   "why": [
+    "rows_ok 0 != expected 10",
+    "fortigate_kv rows_ok None != 10",
+    "accounting rows_in off by +1 vs 10 input lines"
+   ],
+   "rc": 0,
+   "wall_s": 16.5,
+   "rows_in": 11,
+   "rows_ok": 0,
+   "dropped": 11,
+   "lines_in": 10,
+   "unaccounted": -1,
+   "files": {
+    "run_metrics.json": true,
+    "ingest_accounting.json": true,
+    "source_profile.json": true,
+    "incidents_index.json": true
+   },
+   "drop_reasons": {
+    "unrecognized": {
+     "unrecognized_format": 11
+    }
+   },
+   "stderr_error": [],
+   "traceback": false,
+   "stderr_empty": false
+  },
+  {
+   "case": "nul_padding_large",
+   "result": "fail",
+   "why": [
+    "accounting rows_in off by +1 vs 400 input lines"
+   ],
+   "rc": 0,
+   "wall_s": 15.1,
+   "rows_in": 401,
+   "rows_ok": 400,
+   "dropped": 1,
+   "lines_in": 400,
+   "unaccounted": -1,
+   "files": {
+    "run_metrics.json": true,
+    "ingest_accounting.json": true,
+    "source_profile.json": true,
+    "incidents_index.json": true
+   },
+   "drop_reasons": {
+    "fortigate_kv": {
+     "unparseable_line (kept in ts_ok=false, action=malformed)": 1
+    }
+   },
+   "stderr_error": [],
+   "traceback": false,
+   "stderr_empty": false
+  },
+  {
+   "case": "crlf",
+   "result": "pass",
+   "why": [],
+   "rc": 0,
+   "wall_s": 14.8,
+   "rows_in": 20,
+   "rows_ok": 20,
+   "dropped": 0,
+   "lines_in": 20,
+   "unaccounted": 0,
+   "files": {
+    "run_metrics.json": true,
+    "ingest_accounting.json": true,
+    "source_profile.json": true,
+    "incidents_index.json": true
+   },
+   "drop_reasons": {
+    "fortigate_kv": {}
+   },
+   "stderr_error": [],
+   "traceback": false,
+   "stderr_empty": false
+  },
+  {
+   "case": "utf16le_bom",
+   "result": "fail",
+   "why": [
+    "accounting rows_in off by +21 vs 20 input lines"
+   ],
+   "rc": 0,
+   "wall_s": 9.4,
+   "rows_in": 41,
+   "rows_ok": 0,
+   "dropped": 41,
+   "lines_in": 20,
+   "unaccounted": -21,
+   "files": {
+    "run_metrics.json": true,
+    "ingest_accounting.json": true,
+    "source_profile.json": true,
+    "incidents_index.json": true
+   },
+   "drop_reasons": {
+    "unrecognized": {
+     "unrecognized_format": 41
+    }
+   },
+   "stderr_error": [],
+   "traceback": false,
+   "stderr_empty": false
+  },
+  {
+   "case": "utf16le_bom_lf",
+   "result": "fail",
+   "why": [
+    "accounting rows_in off by +1 vs 20 input lines"
+   ],
+   "rc": 0,
+   "wall_s": 9.0,
+   "rows_in": 21,
+   "rows_ok": 0,
+   "dropped": 21,
+   "lines_in": 20,
+   "unaccounted": -1,
+   "files": {
+    "run_metrics.json": true,
+    "ingest_accounting.json": true,
+    "source_profile.json": true,
+    "incidents_index.json": true
+   },
+   "drop_reasons": {
+    "unrecognized": {
+     "unrecognized_format": 21
+    }
+   },
+   "stderr_error": [],
+   "traceback": false,
+   "stderr_empty": false
+  },
+  {
+   "case": "utf8_bom",
+   "result": "pass",
+   "why": [],
+   "rc": 0,
+   "wall_s": 10.7,
+   "rows_in": 20,
+   "rows_ok": 20,
+   "dropped": 0,
+   "lines_in": 20,
+   "unaccounted": 0,
+   "files": {
+    "run_metrics.json": true,
+    "ingest_accounting.json": true,
+    "source_profile.json": true,
+    "incidents_index.json": true
+   },
+   "drop_reasons": {
+    "fortigate_kv": {}
+   },
+   "stderr_error": [],
+   "traceback": false,
+   "stderr_empty": false
+  },
+  {
+   "case": "huge_line",
+   "result": "pass",
+   "why": [],
+   "rc": 0,
+   "wall_s": 14.7,
+   "rows_in": 11,
+   "rows_ok": 11,
+   "dropped": 0,
+   "lines_in": 11,
+   "unaccounted": 0,
+   "files": {
+    "run_metrics.json": true,
+    "ingest_accounting.json": true,
+    "source_profile.json": true,
+    "incidents_index.json": true
+   },
+   "drop_reasons": {
+    "fortigate_kv": {}
+   },
+   "stderr_error": [],
+   "traceback": false,
+   "stderr_empty": false
+  },
+  {
+   "case": "same_ts",
+   "result": "pass",
+   "why": [],
+   "rc": 0,
+   "wall_s": 19.5,
+   "rows_in": 50,
+   "rows_ok": 50,
+   "dropped": 0,
+   "lines_in": 50,
+   "unaccounted": 0,
+   "files": {
+    "run_metrics.json": true,
+    "ingest_accounting.json": true,
+    "source_profile.json": true,
+    "incidents_index.json": true
+   },
+   "drop_reasons": {
+    "fortigate_kv": {}
+   },
+   "stderr_error": [],
+   "traceback": false,
+   "stderr_empty": false
+  },
+  {
+   "case": "future_ts",
+   "result": "pass",
+   "why": [],
+   "rc": 0,
+   "wall_s": 19.4,
+   "rows_in": 20,
+   "rows_ok": 20,
+   "dropped": 0,
+   "lines_in": 20,
+   "unaccounted": 0,
+   "files": {
+    "run_metrics.json": true,
+    "ingest_accounting.json": true,
+    "source_profile.json": true,
+    "incidents_index.json": true
+   },
+   "drop_reasons": {
+    "fortigate_kv": {}
+   },
+   "stderr_error": [],
+   "traceback": false,
+   "stderr_empty": false
+  },
+  {
+   "case": "mixed_formats",
+   "result": "pass",
+   "why": [],
+   "rc": 0,
+   "wall_s": 18.2,
+   "rows_in": 40,
+   "rows_ok": 40,
+   "dropped": 0,
+   "lines_in": 40,
+   "unaccounted": 0,
+   "files": {
+    "run_metrics.json": true,
+    "ingest_accounting.json": true,
+    "source_profile.json": true,
+    "incidents_index.json": true
+   },
+   "drop_reasons": {
+    "cef": {},
+    "ecs_json": {},
+    "fortigate_kv": {},
+    "syslog": {}
+   },
+   "stderr_error": [],
+   "traceback": false,
+   "stderr_empty": false
+  },
+  {
+   "case": "unknown_format",
+   "result": "fail",
+   "why": [
+    "unusable input but rc 0"
+   ],
+   "rc": 0,
+   "wall_s": 16.4,
+   "rows_in": 15,
+   "rows_ok": 0,
+   "dropped": 15,
+   "lines_in": 15,
+   "unaccounted": 0,
+   "files": {
+    "run_metrics.json": true,
+    "ingest_accounting.json": true,
+    "source_profile.json": true,
+    "incidents_index.json": true
+   },
+   "drop_reasons": {
+    "unrecognized": {
+     "unrecognized_format": 15
+    }
+   },
+   "stderr_error": [],
+   "traceback": false,
+   "stderr_empty": false
+  },
+  {
+   "case": "gzip",
+   "result": "fail",
+   "why": [
+    "unusable input but rc 0",
+    "accounting rows_in off by -13 vs 20 input lines"
+   ],
+   "rc": 0,
+   "wall_s": 16.9,
+   "rows_in": 7,
+   "rows_ok": 0,
+   "dropped": 7,
+   "lines_in": 20,
+   "unaccounted": 13,
+   "files": {
+    "run_metrics.json": true,
+    "ingest_accounting.json": true,
+    "source_profile.json": true,
+    "incidents_index.json": true
+   },
+   "drop_reasons": {
+    "unrecognized": {
+     "unrecognized_format": 7
+    }
+   },
+   "stderr_error": [],
+   "traceback": false,
+   "stderr_empty": false
+  },
+  {
+   "case": "hardlink",
+   "result": "pass",
+   "why": [],
+   "rc": 0,
+   "wall_s": 18.0,
+   "rows_in": 40,
+   "rows_ok": 40,
+   "dropped": 0,
+   "lines_in": 40,
+   "unaccounted": 0,
+   "files": {
+    "run_metrics.json": true,
+    "ingest_accounting.json": true,
+    "source_profile.json": true,
+    "incidents_index.json": true
+   },
+   "drop_reasons": {
+    "fortigate_kv": {}
+   },
+   "stderr_error": [],
+   "traceback": false,
+   "stderr_empty": false
+  },
+  {
+   "case": "symlink",
+   "result": "not_run",
+   "why": [
+    "symlink not permitted: [WinError 1314] A required privilege is not held by the client: 'C:\\\\cyberforge\\\\data\\\\tmp\\\\qa_cli\\\\symlink\\\\outside\\\\fw.log' -> 'C:\\\\cyberforge\\\\data\\\\tmp\\\\qa_cli\\\\symlink\\\\raw\\\\fw.log'"
+   ],
+   "rc": null,
+   "wall_s": null,
+   "rows_in": null,
+   "rows_ok": null,
+   "dropped": null,
+   "lines_in": null,
+   "unaccounted": null,
+   "files": {},
+   "drop_reasons": {},
+   "stderr_error": [],
+   "traceback": null,
+   "stderr_empty": null
+  },
+  {
+   "case": "readonly_out",
+   "result": "pass",
+   "why": [],
+   "rc": 1,
+   "wall_s": 3.1,
+   "rows_in": null,
+   "rows_ok": null,
+   "dropped": null,
+   "lines_in": 20,
+   "unaccounted": 20,
+   "files": {
+    "run_metrics.json": false,
+    "ingest_accounting.json": false,
+    "source_profile.json": false,
+    "incidents_index.json": false
+   },
+   "drop_reasons": {},
+   "stderr_error": [
+    "ERROR pipeline failed: PermissionError: [Errno 13] Permission denied: 'C:\\\\cyberforge\\\\data\\\\tmp\\\\qa_cli\\\\readonly_out\\\\out_ro\\\\source_profile.json'"
+   ],
+   "traceback": true,
+   "stderr_empty": false
+  },
+  {
+   "case": "out_is_file",
+   "result": "fail",
+   "why": [
+    "rc 1 without an ERROR message"
+   ],
+   "rc": 1,
+   "wall_s": 3.0,
+   "rows_in": null,
+   "rows_ok": null,
+   "dropped": null,
+   "lines_in": 20,
+   "unaccounted": 20,
+   "files": {
+    "run_metrics.json": false,
+    "ingest_accounting.json": false,
+    "source_profile.json": false,
+    "incidents_index.json": false
+   },
+   "drop_reasons": {},
+   "stderr_error": [],
+   "traceback": false,
+   "stderr_empty": true
+  },
+  {
+   "case": "missing_raw",
+   "result": "pass",
+   "why": [],
+   "rc": 1,
+   "wall_s": 3.3,
+   "rows_in": null,
+   "rows_ok": null,
+   "dropped": null,
+   "lines_in": 0,
+   "unaccounted": 0,
+   "files": {
+    "run_metrics.json": true,
+    "ingest_accounting.json": false,
+    "source_profile.json": false,
+    "incidents_index.json": false
+   },
+   "drop_reasons": {},
+   "stderr_error": [
+    "ERROR pipeline failed: FileNotFoundError: raw dir not found: C:\\cyberforge\\data\\tmp\\qa_cli\\missing_raw\\does_not_exist"
+   ],
+   "traceback": true,
+   "stderr_empty": false
+  },
+  {
+   "case": "raw_is_file",
+   "result": "fail",
+   "why": [
+    "rc 0 but rows_ok 0 != 20 (file given as --raw ignored)",
+    "accounting rows_in off by -20 vs 20 input lines"
+   ],
+   "rc": 0,
+   "wall_s": 13.6,
+   "rows_in": 0,
+   "rows_ok": 0,
+   "dropped": 0,
+   "lines_in": 20,
+   "unaccounted": 20,
+   "files": {
+    "run_metrics.json": true,
+    "ingest_accounting.json": true,
+    "source_profile.json": true,
+    "incidents_index.json": true
+   },
+   "drop_reasons": {},
+   "stderr_error": [],
+   "traceback": false,
+   "stderr_empty": false
+  },
+  {
+   "case": "spaces_quotes",
+   "result": "pass",
+   "why": [],
+   "rc": 0,
+   "wall_s": 15.3,
+   "rows_in": 20,
+   "rows_ok": 20,
+   "dropped": 0,
+   "lines_in": 20,
+   "unaccounted": 0,
+   "files": {
+    "run_metrics.json": true,
+    "ingest_accounting.json": true,
+    "source_profile.json": true,
+    "incidents_index.json": true
+   },
+   "drop_reasons": {
+    "fortigate_kv": {}
+   },
+   "stderr_error": [],
+   "traceback": false,
+   "stderr_empty": false
+  },
+  {
+   "case": "invalid_utf8_kv",
+   "result": "pass",
+   "why": [],
+   "rc": 0,
+   "wall_s": 10.7,
+   "rows_in": 10,
+   "rows_ok": 9,
+   "dropped": 1,
+   "lines_in": 10,
+   "unaccounted": 0,
+   "files": {
+    "run_metrics.json": true,
+    "ingest_accounting.json": true,
+    "source_profile.json": true,
+    "incidents_index.json": true
+   },
+   "drop_reasons": {
+    "fortigate_kv": {
+     "decode_error (invalid UTF-8, line not readable)": 1
+    }
+   },
+   "stderr_error": [],
+   "traceback": false,
+   "stderr_empty": false
+  },
+  {
+   "case": "from_stage_no_prior",
+   "result": "fail",
+   "why": [
+    "unusable input but rc 0"
+   ],
+   "rc": 0,
+   "wall_s": 8.5,
+   "rows_in": null,
+   "rows_ok": null,
+   "dropped": null,
+   "lines_in": null,
+   "unaccounted": null,
+   "files": {
+    "run_metrics.json": true,
+    "ingest_accounting.json": false,
+    "source_profile.json": false,
+    "incidents_index.json": true
+   },
+   "drop_reasons": {},
+   "stderr_error": [],
+   "traceback": false,
+   "stderr_empty": false
+  }
+ ],
+ "note": "repo_config = re-run 1 Nov 2026 01:48-01:53 IST against working tree (ingest_sql.py/ingest_maps.py/sources.yaml changed after the first run); repo_config_prev_0035 = first run; sigma_off_copy = fast-config run. All synthetic QA inputs; wall times contended (CPU 100 %, ~1.1 GB free, shared n30 pipeline).",
+ "repo_config_prev_0035": [
+  {
+   "case": "empty_file",
+   "result": "fail",
+   "why": [
+    "unusable input but rc 0"
+   ],
+   "rc": 0,
+   "wall_s": 6.7,
+   "rows_in": 0,
+   "rows_ok": 0,
+   "dropped": 0,
+   "lines_in": 0,
+   "unaccounted": 0,
+   "files": {
+    "run_metrics.json": true,
+    "ingest_accounting.json": true,
+    "source_profile.json": true,
+    "incidents_index.json": true
+   },
+   "drop_reasons": {},
+   "stderr_error": [],
+   "traceback": false,
+   "stderr_empty": false
+  },
+  {
+   "case": "empty_dir",
+   "result": "fail",
+   "why": [
+    "unusable input but rc 0"
+   ],
+   "rc": 0,
+   "wall_s": 6.7,
+   "rows_in": 0,
+   "rows_ok": 0,
+   "dropped": 0,
+   "lines_in": 0,
+   "unaccounted": 0,
+   "files": {
+    "run_metrics.json": true,
+    "ingest_accounting.json": true,
+    "source_profile.json": true,
+    "incidents_index.json": true
+   },
+   "drop_reasons": {},
+   "stderr_error": [],
+   "traceback": false,
+   "stderr_empty": false
+  },
+  {
+   "case": "binary_only",
+   "result": "fail",
+   "why": [
+    "unusable input but rc 0"
+   ],
+   "rc": 0,
+   "wall_s": 6.1,
+   "rows_in": 533,
+   "rows_ok": 0,
+   "dropped": 533,
+   "lines_in": null,
+   "unaccounted": null,
+   "files": {
+    "run_metrics.json": true,
+    "ingest_accounting.json": true,
+    "source_profile.json": true,
+    "incidents_index.json": true
+   },
+   "drop_reasons": {
+    "unrecognized": {
+     "unrecognized_format": 533
+    }
+   },
+   "stderr_error": [],
+   "traceback": false,
+   "stderr_empty": false
+  },
+  {
+   "case": "nul_padding_small",
+   "result": "fail",
+   "why": [
+    "rows_ok 0 != expected 10",
+    "fortigate_kv rows_ok None != 10"
+   ],
+   "rc": 0,
+   "wall_s": 6.1,
+   "rows_in": 11,
+   "rows_ok": 0,
+   "dropped": 11,
+   "lines_in": 11,
+   "unaccounted": 0,
+   "files": {
+    "run_metrics.json": true,
+    "ingest_accounting.json": true,
+    "source_profile.json": true,
+    "incidents_index.json": true
+   },
+   "drop_reasons": {
+    "unrecognized": {
+     "unrecognized_format": 11
+    }
+   },
+   "stderr_error": [],
+   "traceback": false,
+   "stderr_empty": false
+  },
+  {
+   "case": "nul_padding_large",
+   "result": "pass",
+   "why": [],
+   "rc": 0,
+   "wall_s": 13.3,
+   "rows_in": 401,
+   "rows_ok": 400,
+   "dropped": 1,
+   "lines_in": 401,
+   "unaccounted": 0,
+   "files": {
+    "run_metrics.json": true,
+    "ingest_accounting.json": true,
+    "source_profile.json": true,
+    "incidents_index.json": true
+   },
+   "drop_reasons": {
+    "fortigate_kv": {
+     "unparseable_line (kept in ts_ok=false, action=malformed)": 1
+    }
+   },
+   "stderr_error": [],
+   "traceback": false,
+   "stderr_empty": false
+  },
+  {
+   "case": "crlf",
+   "result": "pass",
+   "why": [],
+   "rc": 0,
+   "wall_s": 12.9,
+   "rows_in": 20,
+   "rows_ok": 20,
+   "dropped": 0,
+   "lines_in": 20,
+   "unaccounted": 0,
+   "files": {
+    "run_metrics.json": true,
+    "ingest_accounting.json": true,
+    "source_profile.json": true,
+    "incidents_index.json": true
+   },
+   "drop_reasons": {
+    "fortigate_kv": {}
+   },
+   "stderr_error": [],
+   "traceback": false,
+   "stderr_empty": false
+  },
+  {
+   "case": "utf16le_bom",
+   "result": "fail",
+   "why": [
+    "accounting rows_in off by +21 vs 20 input lines"
+   ],
+   "rc": 0,
+   "wall_s": 13.3,
+   "rows_in": 41,
+   "rows_ok": 0,
+   "dropped": 41,
+   "lines_in": 20,
+   "unaccounted": -21,
+   "files": {
+    "run_metrics.json": true,
+    "ingest_accounting.json": true,
+    "source_profile.json": true,
+    "incidents_index.json": true
+   },
+   "drop_reasons": {
+    "unrecognized": {
+     "unrecognized_format": 41
+    }
+   },
+   "stderr_error": [],
+   "traceback": false,
+   "stderr_empty": false
+  },
+  {
+   "case": "utf16le_bom_lf",
+   "result": "fail",
+   "why": [
+    "accounting rows_in off by +1 vs 20 input lines"
+   ],
+   "rc": 0,
+   "wall_s": 13.3,
+   "rows_in": 21,
+   "rows_ok": 0,
+   "dropped": 21,
+   "lines_in": 20,
+   "unaccounted": -1,
+   "files": {
+    "run_metrics.json": true,
+    "ingest_accounting.json": true,
+    "source_profile.json": true,
+    "incidents_index.json": true
+   },
+   "drop_reasons": {
+    "unrecognized": {
+     "unrecognized_format": 21
+    }
+   },
+   "stderr_error": [],
+   "traceback": false,
+   "stderr_empty": false
+  },
+  {
+   "case": "utf8_bom",
+   "result": "pass",
+   "why": [],
+   "rc": 0,
+   "wall_s": 9.7,
+   "rows_in": 20,
+   "rows_ok": 20,
+   "dropped": 0,
+   "lines_in": 20,
+   "unaccounted": 0,
+   "files": {
+    "run_metrics.json": true,
+    "ingest_accounting.json": true,
+    "source_profile.json": true,
+    "incidents_index.json": true
+   },
+   "drop_reasons": {
+    "fortigate_kv": {}
+   },
+   "stderr_error": [],
+   "traceback": false,
+   "stderr_empty": false
+  },
+  {
+   "case": "huge_line",
+   "result": "pass",
+   "why": [],
+   "rc": 0,
+   "wall_s": 9.9,
+   "rows_in": 11,
+   "rows_ok": 11,
+   "dropped": 0,
+   "lines_in": 11,
+   "unaccounted": 0,
+   "files": {
+    "run_metrics.json": true,
+    "ingest_accounting.json": true,
+    "source_profile.json": true,
+    "incidents_index.json": true
+   },
+   "drop_reasons": {
+    "fortigate_kv": {}
+   },
+   "stderr_error": [],
+   "traceback": false,
+   "stderr_empty": false
+  },
+  {
+   "case": "same_ts",
+   "result": "pass",
+   "why": [],
+   "rc": 0,
+   "wall_s": 9.1,
+   "rows_in": 50,
+   "rows_ok": 50,
+   "dropped": 0,
+   "lines_in": 50,
+   "unaccounted": 0,
+   "files": {
+    "run_metrics.json": true,
+    "ingest_accounting.json": true,
+    "source_profile.json": true,
+    "incidents_index.json": true
+   },
+   "drop_reasons": {
+    "fortigate_kv": {}
+   },
+   "stderr_error": [],
+   "traceback": false,
+   "stderr_empty": false
+  },
+  {
+   "case": "future_ts",
+   "result": "pass",
+   "why": [],
+   "rc": 0,
+   "wall_s": 8.9,
+   "rows_in": 20,
+   "rows_ok": 20,
+   "dropped": 0,
+   "lines_in": 20,
+   "unaccounted": 0,
+   "files": {
+    "run_metrics.json": true,
+    "ingest_accounting.json": true,
+    "source_profile.json": true,
+    "incidents_index.json": true
+   },
+   "drop_reasons": {
+    "fortigate_kv": {}
+   },
+   "stderr_error": [],
+   "traceback": false,
+   "stderr_empty": false
+  },
+  {
+   "case": "mixed_formats",
+   "result": "pass",
+   "why": [],
+   "rc": 0,
+   "wall_s": 15.9,
+   "rows_in": 40,
+   "rows_ok": 40,
+   "dropped": 0,
+   "lines_in": 40,
+   "unaccounted": 0,
+   "files": {
+    "run_metrics.json": true,
+    "ingest_accounting.json": true,
+    "source_profile.json": true,
+    "incidents_index.json": true
+   },
+   "drop_reasons": {
+    "cef": {},
+    "ecs_json": {},
+    "fortigate_kv": {},
+    "syslog": {}
+   },
+   "stderr_error": [],
+   "traceback": false,
+   "stderr_empty": false
+  },
+  {
+   "case": "unknown_format",
+   "result": "fail",
+   "why": [
+    "unusable input but rc 0"
+   ],
+   "rc": 0,
+   "wall_s": 7.8,
+   "rows_in": 15,
+   "rows_ok": 0,
+   "dropped": 15,
+   "lines_in": 15,
+   "unaccounted": 0,
+   "files": {
+    "run_metrics.json": true,
+    "ingest_accounting.json": true,
+    "source_profile.json": true,
+    "incidents_index.json": true
+   },
+   "drop_reasons": {
+    "unrecognized": {
+     "unrecognized_format": 15
+    }
+   },
+   "stderr_error": [],
+   "traceback": false,
+   "stderr_empty": false
+  },
+  {
+   "case": "gzip",
+   "result": "fail",
+   "why": [
+    "unusable input but rc 0",
+    "accounting rows_in off by -13 vs 20 input lines"
+   ],
+   "rc": 0,
+   "wall_s": 7.8,
+   "rows_in": 7,
+   "rows_ok": 0,
+   "dropped": 7,
+   "lines_in": 20,
+   "unaccounted": 13,
+   "files": {
+    "run_metrics.json": true,
+    "ingest_accounting.json": true,
+    "source_profile.json": true,
+    "incidents_index.json": true
+   },
+   "drop_reasons": {
+    "unrecognized": {
+     "unrecognized_format": 7
+    }
+   },
+   "stderr_error": [],
+   "traceback": false,
+   "stderr_empty": false
+  },
+  {
+   "case": "hardlink",
+   "result": "pass",
+   "why": [],
+   "rc": 0,
+   "wall_s": 10.4,
+   "rows_in": 40,
+   "rows_ok": 40,
+   "dropped": 0,
+   "lines_in": 40,
+   "unaccounted": 0,
+   "files": {
+    "run_metrics.json": true,
+    "ingest_accounting.json": true,
+    "source_profile.json": true,
+    "incidents_index.json": true
+   },
+   "drop_reasons": {
+    "fortigate_kv": {}
+   },
+   "stderr_error": [],
+   "traceback": false,
+   "stderr_empty": false
+  },
+  {
+   "case": "symlink",
+   "result": "not_run",
+   "why": [
+    "symlink not permitted: [WinError 1314] A required privilege is not held by the client: 'C:\\\\cyberforge\\\\data\\\\tmp\\\\qa_cli_full\\\\symlink\\\\outside\\\\fw.log' -> 'C:\\\\cyberforge\\\\data\\\\tmp\\\\qa_cli_full\\\\symlink\\\\raw\\\\fw.log'"
+   ],
+   "rc": null,
+   "wall_s": null,
+   "rows_in": null,
+   "rows_ok": null,
+   "dropped": null,
+   "lines_in": null,
+   "unaccounted": null,
+   "files": {},
+   "drop_reasons": {},
+   "stderr_error": [],
+   "traceback": null,
+   "stderr_empty": null
+  },
+  {
+   "case": "readonly_out",
+   "result": "pass",
+   "why": [],
+   "rc": 1,
+   "wall_s": 1.2,
+   "rows_in": null,
+   "rows_ok": null,
+   "dropped": null,
+   "lines_in": 20,
+   "unaccounted": 20,
+   "files": {
+    "run_metrics.json": false,
+    "ingest_accounting.json": false,
+    "source_profile.json": false,
+    "incidents_index.json": false
+   },
+   "drop_reasons": {},
+   "stderr_error": [
+    "ERROR pipeline failed: PermissionError: [Errno 13] Permission denied: 'C:\\\\cyberforge\\\\data\\\\tmp\\\\qa_cli_full\\\\readonly_out\\\\out_ro\\\\source_profile.json'"
+   ],
+   "traceback": true,
+   "stderr_empty": false
+  },
+  {
+   "case": "out_is_file",
+   "result": "fail",
+   "why": [
+    "rc 1 without an ERROR message"
+   ],
+   "rc": 1,
+   "wall_s": 1.1,
+   "rows_in": null,
+   "rows_ok": null,
+   "dropped": null,
+   "lines_in": 20,
+   "unaccounted": 20,
+   "files": {
+    "run_metrics.json": false,
+    "ingest_accounting.json": false,
+    "source_profile.json": false,
+    "incidents_index.json": false
+   },
+   "drop_reasons": {},
+   "stderr_error": [],
+   "traceback": false,
+   "stderr_empty": true
+  },
+  {
+   "case": "missing_raw",
+   "result": "pass",
+   "why": [],
+   "rc": 1,
+   "wall_s": 1.1,
+   "rows_in": null,
+   "rows_ok": null,
+   "dropped": null,
+   "lines_in": 0,
+   "unaccounted": 0,
+   "files": {
+    "run_metrics.json": true,
+    "ingest_accounting.json": false,
+    "source_profile.json": false,
+    "incidents_index.json": false
+   },
+   "drop_reasons": {},
+   "stderr_error": [
+    "ERROR pipeline failed: FileNotFoundError: raw dir not found: C:\\cyberforge\\data\\tmp\\qa_cli_full\\missing_raw\\does_not_exist"
+   ],
+   "traceback": true,
+   "stderr_empty": false
+  },
+  {
+   "case": "raw_is_file",
+   "result": "fail",
+   "why": [
+    "rc 0 but rows_ok 0 != 20 (file given as --raw ignored)",
+    "accounting rows_in off by -20 vs 20 input lines"
+   ],
+   "rc": 0,
+   "wall_s": 8.0,
+   "rows_in": 0,
+   "rows_ok": 0,
+   "dropped": 0,
+   "lines_in": 20,
+   "unaccounted": 20,
+   "files": {
+    "run_metrics.json": true,
+    "ingest_accounting.json": true,
+    "source_profile.json": true,
+    "incidents_index.json": true
+   },
+   "drop_reasons": {},
+   "stderr_error": [],
+   "traceback": false,
+   "stderr_empty": false
+  },
+  {
+   "case": "spaces_quotes",
+   "result": "pass",
+   "why": [],
+   "rc": 0,
+   "wall_s": 10.2,
+   "rows_in": 20,
+   "rows_ok": 20,
+   "dropped": 0,
+   "lines_in": 20,
+   "unaccounted": 0,
+   "files": {
+    "run_metrics.json": true,
+    "ingest_accounting.json": true,
+    "source_profile.json": true,
+    "incidents_index.json": true
+   },
+   "drop_reasons": {
+    "fortigate_kv": {}
+   },
+   "stderr_error": [],
+   "traceback": false,
+   "stderr_empty": false
+  },
+  {
+   "case": "invalid_utf8_kv",
+   "result": "pass",
+   "why": [],
+   "rc": 0,
+   "wall_s": 10.4,
+   "rows_in": 10,
+   "rows_ok": 9,
+   "dropped": 1,
+   "lines_in": 10,
+   "unaccounted": 0,
+   "files": {
+    "run_metrics.json": true,
+    "ingest_accounting.json": true,
+    "source_profile.json": true,
+    "incidents_index.json": true
+   },
+   "drop_reasons": {
+    "fortigate_kv": {
+     "decode_error (invalid UTF-8, line not readable)": 1
+    }
+   },
+   "stderr_error": [],
+   "traceback": false,
+   "stderr_empty": false
+  },
+  {
+   "case": "from_stage_no_prior",
+   "result": "fail",
+   "why": [
+    "unusable input but rc 0"
+   ],
+   "rc": 0,
+   "wall_s": 16.3,
+   "rows_in": null,
+   "rows_ok": null,
+   "dropped": null,
+   "lines_in": null,
+   "unaccounted": null,
+   "files": {
+    "run_metrics.json": true,
+    "ingest_accounting.json": false,
+    "source_profile.json": false,
+    "incidents_index.json": true
+   },
+   "drop_reasons": {},
+   "stderr_error": [],
+   "traceback": false,
+   "stderr_empty": false
+  }
+ ]
+}

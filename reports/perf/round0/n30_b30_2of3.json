@@ -1,0 +1,7180 @@
+{
+ "slice": "n30_b30_2of3",
+ "events_root": "C:/cyberforge/data/tmp/perf/slices/n30_b30_2of3",
+ "rules": {
+  "brute_force_then_success": {
+   "template": "brute_force_then_success",
+   "wall_s": 0.322,
+   "page_faults": 15908,
+   "proc_cpu_s": 0.328,
+   "n_samples": 2,
+   "cpu_total_mean": 98.7,
+   "cpu_own_mean": 2.6,
+   "cpu_others_mean": 96.1,
+   "cpu_others_max": 96.3,
+   "free_ram_min_mb": 2779,
+   "peak_rss_mb": 125.7,
+   "spill_dir_peak_mb": 0.0,
+   "profile": {
+    "latency_s": 0.297,
+    "cpu_s": 0.004,
+    "plan_s": 0.5384,
+    "op_cpu_s": 0.004,
+    "peak_buffer_mb": 21.3,
+    "peak_temp_dir_mb": 0.0,
+    "blocked_thread_s": 0.013,
+    "io_read_mb": 5.5,
+    "io_written_mb": 0.0,
+    "rows_scanned": 1420,
+    "scan_out_rows": 1422,
+    "n_scans": 23,
+    "window_rows": 0,
+    "intermediate_rows": 1423,
+    "top_ops": [
+     {
+      "op": "HASH_JOIN",
+      "depth": 5,
+      "rows": 0,
+      "cpu_s": 0.002,
+      "share": 0.602,
+      "detail": "Join Type=LEFT | Conditions=technique_id = technique_id"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 7,
+      "rows": 0,
+      "cpu_s": 0.001,
+      "share": 0.187,
+      "detail": "Join Type=INNER | Conditions=label = label"
+     },
+     {
+      "op": "RESULT_COLLECTOR",
+      "depth": 0,
+      "rows": 0,
+      "cpu_s": 0.0,
+      "share": 0.08,
+      "detail": ""
+     },
+     {
+      "op": "TABLE_SCAN",
+      "depth": 6,
+      "rows": 710,
+      "cpu_s": 0.0,
+      "share": 0.043,
+      "detail": ""
+     },
+     {
+      "op": "TABLE_SCAN",
+      "depth": 9,
+      "rows": 0,
+      "cpu_s": 0.0,
+      "share": 0.023,
+      "detail": ""
+     },
+     {
+      "op": "TABLE_SCAN",
+      "depth": 15,
+      "rows": 0,
+      "cpu_s": 0.0,
+      "share": 0.021,
+      "detail": ""
+     },
+     {
+      "op": "TABLE_SCAN",
+      "depth": 7,
+      "rows": 710,
+      "cpu_s": 0.0,
+      "share": 0.016,
+      "detail": ""
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 6,
+      "rows": 0,
+      "cpu_s": 0.0,
+      "share": 0.003,
+      "detail": "Join Type=RIGHT | Conditions=technique_id = COALESCE(CAST(sub_technique_id AS VARCHAR), sub_technique_id)"
+     }
+    ]
+   },
+   "attempt": 0,
+   "sql_build_s": 0.0001,
+   "pre_cpu_idle_load": 98.3,
+   "pre_free_ram_mb": 2672,
+   "alerts": 0,
+   "attempts": [
+    {
+     "wall_s": 0.322,
+     "proc_cpu_s": 0.328,
+     "cpu_others_mean": 96.1,
+     "pre_cpu_idle_load": 98.3,
+     "free_ram_min_mb": 2779,
+     "peak_rss_mb": 125.7
+    }
+   ]
+  },
+  "password_spray": {
+   "template": "password_spray",
+   "wall_s": 0.282,
+   "page_faults": 14999,
+   "proc_cpu_s": 0.25,
+   "n_samples": 1,
+   "cpu_total_mean": 98.8,
+   "cpu_own_mean": 4.0,
+   "cpu_others_mean": 94.8,
+   "cpu_others_max": 94.8,
+   "free_ram_min_mb": 3076,
+   "peak_rss_mb": 79.6,
+   "spill_dir_peak_mb": 0.0,
+   "profile": {
+    "latency_s": 0.262,
+    "cpu_s": 0.003,
+    "plan_s": 0.4761,
+    "op_cpu_s": 0.003,
+    "peak_buffer_mb": 17.5,
+    "peak_temp_dir_mb": 0.0,
+    "blocked_thread_s": 0.011,
+    "io_read_mb": 5.5,
+    "io_written_mb": 0.0,
+    "rows_scanned": 1420,
+    "scan_out_rows": 1422,
+    "n_scans": 22,
+    "window_rows": 0,
+    "intermediate_rows": 1423,
+    "top_ops": [
+     {
+      "op": "HASH_JOIN",
+      "depth": 5,
+      "rows": 0,
+      "cpu_s": 0.002,
+      "share": 0.686,
+      "detail": "Join Type=LEFT | Conditions=technique_id = technique_id"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 7,
+      "rows": 0,
+      "cpu_s": 0.001,
+      "share": 0.183,
+      "detail": "Join Type=INNER | Conditions=label = label"
+     },
+     {
+      "op": "TABLE_SCAN",
+      "depth": 7,
+      "rows": 710,
+      "cpu_s": 0.0,
+      "share": 0.025,
+      "detail": ""
+     },
+     {
+      "op": "TABLE_SCAN",
+      "depth": 20,
+      "rows": 0,
+      "cpu_s": 0.0,
+      "share": 0.024,
+      "detail": ""
+     },
+     {
+      "op": "TABLE_SCAN",
+      "depth": 9,
+      "rows": 0,
+      "cpu_s": 0.0,
+      "share": 0.022,
+      "detail": ""
+     },
+     {
+      "op": "TABLE_SCAN",
+      "depth": 6,
+      "rows": 710,
+      "cpu_s": 0.0,
+      "share": 0.021,
+      "detail": ""
+     },
+     {
+      "op": "RESULT_COLLECTOR",
+      "depth": 0,
+      "rows": 0,
+      "cpu_s": 0.0,
+      "share": 0.008,
+      "detail": ""
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 6,
+      "rows": 0,
+      "cpu_s": 0.0,
+      "share": 0.004,
+      "detail": "Join Type=RIGHT | Conditions=technique_id = COALESCE(CAST(sub_technique_id AS VARCHAR), sub_technique_id)"
+     }
+    ]
+   },
+   "attempt": 0,
+   "sql_build_s": 0.0001,
+   "pre_cpu_idle_load": 98.8,
+   "pre_free_ram_mb": 3034,
+   "alerts": 0,
+   "attempts": [
+    {
+     "wall_s": 0.282,
+     "proc_cpu_s": 0.25,
+     "cpu_others_mean": 94.8,
+     "pre_cpu_idle_load": 98.8,
+     "free_ram_min_mb": 3076,
+     "peak_rss_mb": 79.6
+    }
+   ]
+  },
+  "account_created_then_elevated": {
+   "template": "account_created_then_elevated",
+   "wall_s": 0.486,
+   "page_faults": 16473,
+   "proc_cpu_s": 0.438,
+   "n_samples": 2,
+   "cpu_total_mean": 95.7,
+   "cpu_own_mean": 3.6,
+   "cpu_others_mean": 92.1,
+   "cpu_others_max": 96.8,
+   "free_ram_min_mb": 3120,
+   "peak_rss_mb": 116.4,
+   "spill_dir_peak_mb": 0.0,
+   "profile": {
+    "latency_s": 0.477,
+    "cpu_s": 1.451,
+    "plan_s": 0.6061,
+    "op_cpu_s": 1.451,
+    "peak_buffer_mb": 27.4,
+    "peak_temp_dir_mb": 0.0,
+    "blocked_thread_s": 0.017,
+    "io_read_mb": 5.6,
+    "io_written_mb": 0.0,
+    "rows_scanned": 1420,
+    "scan_out_rows": 1422,
+    "n_scans": 11,
+    "window_rows": 0,
+    "intermediate_rows": 1423,
+    "top_ops": [
+     {
+      "op": "TABLE_SCAN",
+      "depth": 9,
+      "rows": 0,
+      "cpu_s": 1.123,
+      "share": 0.774,
+      "detail": ""
+     },
+     {
+      "op": "TABLE_SCAN",
+      "depth": 12,
+      "rows": 0,
+      "cpu_s": 0.322,
+      "share": 0.222,
+      "detail": ""
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 5,
+      "rows": 0,
+      "cpu_s": 0.003,
+      "share": 0.002,
+      "detail": "Join Type=LEFT | Conditions=technique_id = technique_id"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 6,
+      "rows": 0,
+      "cpu_s": 0.002,
+      "share": 0.001,
+      "detail": "Join Type=LEFT | Conditions=COALESCE(CAST(sub_technique_id AS VARCHAR), sub_technique_id) = technique_id"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 7,
+      "rows": 0,
+      "cpu_s": 0.001,
+      "share": 0.001,
+      "detail": "Join Type=INNER | Conditions=label = label"
+     },
+     {
+      "op": "TABLE_SCAN",
+      "depth": 6,
+      "rows": 710,
+      "cpu_s": 0.0,
+      "share": 0.0,
+      "detail": ""
+     },
+     {
+      "op": "TABLE_SCAN",
+      "depth": 7,
+      "rows": 710,
+      "cpu_s": 0.0,
+      "share": 0.0,
+      "detail": ""
+     },
+     {
+      "op": "RESULT_COLLECTOR",
+      "depth": 0,
+      "rows": 0,
+      "cpu_s": 0.0,
+      "share": 0.0,
+      "detail": ""
+     }
+    ]
+   },
+   "attempt": 0,
+   "sql_build_s": 0.0001,
+   "pre_cpu_idle_load": 99.1,
+   "pre_free_ram_mb": 3186,
+   "alerts": 0,
+   "attempts": [
+    {
+     "wall_s": 0.486,
+     "proc_cpu_s": 0.438,
+     "cpu_others_mean": 92.1,
+     "pre_cpu_idle_load": 99.1,
+     "free_ram_min_mb": 3120,
+     "peak_rss_mb": 116.4
+    }
+   ]
+  },
+  "beaconing": {
+   "template": "beaconing",
+   "wall_s": 6.512,
+   "page_faults": 829776,
+   "proc_cpu_s": 25.438,
+   "n_samples": 12,
+   "cpu_total_mean": 98.9,
+   "cpu_own_mean": 24.6,
+   "cpu_others_mean": 74.2,
+   "cpu_others_max": 97.3,
+   "free_ram_min_mb": 587,
+   "peak_rss_mb": 2699.4,
+   "spill_dir_peak_mb": 0.0,
+   "profile": {
+    "latency_s": 6.495,
+    "cpu_s": 60.032,
+    "plan_s": 0.4563,
+    "op_cpu_s": 60.032,
+    "peak_buffer_mb": 2996.4,
+    "peak_temp_dir_mb": 0.0,
+    "blocked_thread_s": 0.169,
+    "io_read_mb": 466.5,
+    "io_written_mb": 0.0,
+    "rows_scanned": 17026041,
+    "scan_out_rows": 25631670,
+    "n_scans": 17,
+    "window_rows": 0,
+    "intermediate_rows": 70420684,
+    "top_ops": [
+     {
+      "op": "HASH_GROUP_BY",
+      "depth": 17,
+      "rows": 8581038,
+      "cpu_s": 26.014,
+      "share": 0.433,
+      "detail": "Aggregates=count_star() | Groups=#0; #1; #2"
+     },
+     {
+      "op": "CTE",
+      "depth": 12,
+      "rows": 0,
+      "cpu_s": 10.373,
+      "share": 0.173,
+      "detail": ""
+     },
+     {
+      "op": "FILTER",
+      "depth": 14,
+      "rows": 8581043,
+      "cpu_s": 8.512,
+      "share": 0.142,
+      "detail": ""
+     },
+     {
+      "op": "TABLE_SCAN",
+      "depth": 16,
+      "rows": 17000045,
+      "cpu_s": 8.281,
+      "share": 0.138,
+      "detail": ""
+     },
+     {
+      "op": "FILTER",
+      "depth": 15,
+      "rows": 10464846,
+      "cpu_s": 3.097,
+      "share": 0.052,
+      "detail": ""
+     },
+     {
+      "op": "PROJECTION",
+      "depth": 13,
+      "rows": 8581043,
+      "cpu_s": 2.719,
+      "share": 0.045,
+      "detail": ""
+     },
+     {
+      "op": "TABLE_SCAN",
+      "depth": 18,
+      "rows": 24576,
+      "cpu_s": 0.942,
+      "share": 0.016,
+      "detail": ""
+     },
+     {
+      "op": "FILTER",
+      "depth": 16,
+      "rows": 0,
+      "cpu_s": 0.053,
+      "share": 0.001,
+      "detail": ""
+     }
+    ]
+   },
+   "attempt": 0,
+   "sql_build_s": 0.0001,
+   "pre_cpu_idle_load": 89.8,
+   "pre_free_ram_mb": 3210,
+   "alerts": 0,
+   "attempts": [
+    {
+     "wall_s": 6.512,
+     "proc_cpu_s": 25.438,
+     "cpu_others_mean": 74.2,
+     "pre_cpu_idle_load": 89.8,
+     "free_ram_min_mb": 587,
+     "peak_rss_mb": 2699.4
+    }
+   ]
+  },
+  "ransom_rename": {
+   "template": "ransom_rename",
+   "wall_s": 0.365,
+   "page_faults": 7495,
+   "proc_cpu_s": 0.266,
+   "n_samples": 1,
+   "cpu_total_mean": 85.0,
+   "cpu_own_mean": 4.5,
+   "cpu_others_mean": 80.5,
+   "cpu_others_max": 80.5,
+   "free_ram_min_mb": 2183,
+   "peak_rss_mb": 126.2,
+   "spill_dir_peak_mb": 0.0,
+   "profile": {
+    "latency_s": 0.357,
+    "cpu_s": 2.772,
+    "plan_s": 0.2018,
+    "op_cpu_s": 2.772,
+    "peak_buffer_mb": 28.4,
+    "peak_temp_dir_mb": 0.0,
+    "blocked_thread_s": 0.005,
+    "io_read_mb": 2.8,
+    "io_written_mb": 0.0,
+    "rows_scanned": 1420,
+    "scan_out_rows": 1421,
+    "n_scans": 8,
+    "window_rows": 0,
+    "intermediate_rows": 1422,
+    "top_ops": [
+     {
+      "op": "TABLE_SCAN",
+      "depth": 9,
+      "rows": 0,
+      "cpu_s": 2.767,
+      "share": 0.998,
+      "detail": ""
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 6,
+      "rows": 0,
+      "cpu_s": 0.002,
+      "share": 0.001,
+      "detail": "Join Type=LEFT | Conditions=COALESCE(CAST(sub_technique_id AS VARCHAR), sub_technique_id) = technique_id"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 5,
+      "rows": 0,
+      "cpu_s": 0.002,
+      "share": 0.001,
+      "detail": "Join Type=LEFT | Conditions=technique_id = technique_id"
+     },
+     {
+      "op": "TABLE_SCAN",
+      "depth": 7,
+      "rows": 710,
+      "cpu_s": 0.0,
+      "share": 0.0,
+      "detail": ""
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 7,
+      "rows": 0,
+      "cpu_s": 0.0,
+      "share": 0.0,
+      "detail": "Join Type=INNER | Conditions=label = label"
+     },
+     {
+      "op": "TABLE_SCAN",
+      "depth": 6,
+      "rows": 710,
+      "cpu_s": 0.0,
+      "share": 0.0,
+      "detail": ""
+     },
+     {
+      "op": "RESULT_COLLECTOR",
+      "depth": 0,
+      "rows": 0,
+      "cpu_s": 0.0,
+      "share": 0.0,
+      "detail": ""
+     },
+     {
+      "op": "COLUMN_DATA_SCAN",
+      "depth": 8,
+      "rows": 1,
+      "cpu_s": 0.0,
+      "share": 0.0,
+      "detail": ""
+     }
+    ]
+   },
+   "attempt": 0,
+   "sql_build_s": 0.0001,
+   "pre_cpu_idle_load": 90.2,
+   "pre_free_ram_mb": 2111,
+   "alerts": 0,
+   "attempts": [
+    {
+     "wall_s": 0.365,
+     "proc_cpu_s": 0.266,
+     "cpu_others_mean": 80.5,
+     "pre_cpu_idle_load": 90.2,
+     "free_ram_min_mb": 2183,
+     "peak_rss_mb": 126.2
+    }
+   ]
+  },
+  "exfil_volume": {
+   "template": "exfil_volume",
+   "wall_s": 11.024,
+   "page_faults": 814466,
+   "proc_cpu_s": 28.266,
+   "n_samples": 22,
+   "cpu_total_mean": 94.9,
+   "cpu_own_mean": 19.4,
+   "cpu_others_mean": 75.5,
+   "cpu_others_max": 95.5,
+   "free_ram_min_mb": 1292,
+   "peak_rss_mb": 2711.5,
+   "spill_dir_peak_mb": 0.0,
+   "profile": {
+    "latency_s": 10.994,
+    "cpu_s": 69.985,
+    "plan_s": 0.6073,
+    "op_cpu_s": 69.985,
+    "peak_buffer_mb": 2863.8,
+    "peak_temp_dir_mb": 0.0,
+    "blocked_thread_s": 3.818,
+    "io_read_mb": 480.7,
+    "io_written_mb": 0.0,
+    "rows_scanned": 11277961,
+    "scan_out_rows": 19908166,
+    "n_scans": 30,
+    "window_rows": 0,
+    "intermediate_rows": 64697180,
+    "top_ops": [
+     {
+      "op": "TABLE_SCAN",
+      "depth": 16,
+      "rows": 11251965,
+      "cpu_s": 24.837,
+      "share": 0.355,
+      "detail": ""
+     },
+     {
+      "op": "PROJECTION",
+      "depth": 13,
+      "rows": 8581043,
+      "cpu_s": 13.466,
+      "share": 0.192,
+      "detail": ""
+     },
+     {
+      "op": "CTE",
+      "depth": 12,
+      "rows": 0,
+      "cpu_s": 13.209,
+      "share": 0.189,
+      "detail": ""
+     },
+     {
+      "op": "HASH_GROUP_BY",
+      "depth": 17,
+      "rows": 8581038,
+      "cpu_s": 10.694,
+      "share": 0.153,
+      "detail": "Aggregates=sum(#3) | Groups=#0; #1; #2"
+     },
+     {
+      "op": "FILTER",
+      "depth": 14,
+      "rows": 8581043,
+      "cpu_s": 5.943,
+      "share": 0.085,
+      "detail": ""
+     },
+     {
+      "op": "TABLE_SCAN",
+      "depth": 18,
+      "rows": 24576,
+      "cpu_s": 0.89,
+      "share": 0.013,
+      "detail": ""
+     },
+     {
+      "op": "FILTER",
+      "depth": 15,
+      "rows": 10464846,
+      "cpu_s": 0.866,
+      "share": 0.012,
+      "detail": ""
+     },
+     {
+      "op": "FILTER",
+      "depth": 16,
+      "rows": 0,
+      "cpu_s": 0.037,
+      "share": 0.001,
+      "detail": ""
+     }
+    ]
+   },
+   "attempt": 0,
+   "sql_build_s": 0.0001,
+   "pre_cpu_idle_load": 74.9,
+   "pre_free_ram_mb": 2518,
+   "alerts": 0,
+   "attempts": [
+    {
+     "wall_s": 11.024,
+     "proc_cpu_s": 28.266,
+     "cpu_others_mean": 75.5,
+     "pre_cpu_idle_load": 74.9,
+     "free_ram_min_mb": 1292,
+     "peak_rss_mb": 2711.5
+    }
+   ]
+  },
+  "new_admin_logon": {
+   "template": "new_admin_logon",
+   "wall_s": 0.62,
+   "page_faults": 21115,
+   "proc_cpu_s": 0.625,
+   "n_samples": 2,
+   "cpu_total_mean": 98.9,
+   "cpu_own_mean": 5.3,
+   "cpu_others_mean": 93.6,
+   "cpu_others_max": 95.8,
+   "free_ram_min_mb": 3655,
+   "peak_rss_mb": 181.8,
+   "spill_dir_peak_mb": 0.0,
+   "profile": {
+    "latency_s": 0.606,
+    "cpu_s": 0.55,
+    "plan_s": 0.9466,
+    "op_cpu_s": 0.55,
+    "peak_buffer_mb": 35.9,
+    "peak_temp_dir_mb": 0.0,
+    "blocked_thread_s": 0.032,
+    "io_read_mb": 8.3,
+    "io_written_mb": 0.0,
+    "rows_scanned": 1420,
+    "scan_out_rows": 1422,
+    "n_scans": 16,
+    "window_rows": 0,
+    "intermediate_rows": 1423,
+    "top_ops": [
+     {
+      "op": "TABLE_SCAN",
+      "depth": 13,
+      "rows": 0,
+      "cpu_s": 0.373,
+      "share": 0.677,
+      "detail": ""
+     },
+     {
+      "op": "TABLE_SCAN",
+      "depth": 25,
+      "rows": 0,
+      "cpu_s": 0.161,
+      "share": 0.292,
+      "detail": ""
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 6,
+      "rows": 0,
+      "cpu_s": 0.009,
+      "share": 0.017,
+      "detail": "Join Type=LEFT | Conditions=COALESCE(sub_technique_id, sub_technique_id) = technique_id"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 5,
+      "rows": 0,
+      "cpu_s": 0.006,
+      "share": 0.011,
+      "detail": "Join Type=LEFT | Conditions=technique_id = technique_id"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 7,
+      "rows": 0,
+      "cpu_s": 0.001,
+      "share": 0.001,
+      "detail": "Join Type=INNER | Conditions=label = label"
+     },
+     {
+      "op": "TABLE_SCAN",
+      "depth": 7,
+      "rows": 710,
+      "cpu_s": 0.0,
+      "share": 0.0,
+      "detail": ""
+     },
+     {
+      "op": "TABLE_SCAN",
+      "depth": 6,
+      "rows": 710,
+      "cpu_s": 0.0,
+      "share": 0.0,
+      "detail": ""
+     },
+     {
+      "op": "RESULT_COLLECTOR",
+      "depth": 0,
+      "rows": 0,
+      "cpu_s": 0.0,
+      "share": 0.0,
+      "detail": ""
+     }
+    ]
+   },
+   "attempt": 0,
+   "sql_build_s": 0.0001,
+   "pre_cpu_idle_load": 96.2,
+   "pre_free_ram_mb": 3848,
+   "alerts": 0,
+   "attempts": [
+    {
+     "wall_s": 0.62,
+     "proc_cpu_s": 0.625,
+     "cpu_others_mean": 93.6,
+     "pre_cpu_idle_load": 96.2,
+     "free_ram_min_mb": 3655,
+     "peak_rss_mb": 181.8
+    }
+   ]
+  },
+  "office_spawns_script": {
+   "template": "match",
+   "wall_s": 0.038,
+   "page_faults": 78,
+   "proc_cpu_s": 0.062,
+   "n_samples": 1,
+   "cpu_total_mean": 93.0,
+   "cpu_own_mean": 1.3,
+   "cpu_others_mean": 91.7,
+   "cpu_others_max": 91.7,
+   "free_ram_min_mb": 3739,
+   "peak_rss_mb": 182.2,
+   "spill_dir_peak_mb": 0.0,
+   "profile": {
+    "latency_s": 0.031,
+    "cpu_s": 0.004,
+    "plan_s": 0.0187,
+    "op_cpu_s": 0.004,
+    "peak_buffer_mb": 18.7,
+    "peak_temp_dir_mb": 0.0,
+    "blocked_thread_s": 0.018,
+    "io_read_mb": 0.0,
+    "io_written_mb": 0.0,
+    "rows_scanned": 1420,
+    "scan_out_rows": 721,
+    "n_scans": 8,
+    "window_rows": 0,
+    "intermediate_rows": 723,
+    "top_ops": [
+     {
+      "op": "HASH_JOIN",
+      "depth": 3,
+      "rows": 0,
+      "cpu_s": 0.003,
+      "share": 0.681,
+      "detail": "Join Type=LEFT | Conditions=COALESCE(CAST(sub_technique_id AS VARCHAR), sub_technique_id) = technique_id"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 8,
+      "rows": 0,
+      "cpu_s": 0.0,
+      "share": 0.11,
+      "detail": "Join Type=MARK | Conditions=action = #0"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 5,
+      "rows": 1,
+      "cpu_s": 0.0,
+      "share": 0.082,
+      "detail": "Join Type=RIGHT | Conditions=technique_id = technique_id"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 4,
+      "rows": 0,
+      "cpu_s": 0.0,
+      "share": 0.055,
+      "detail": "Join Type=INNER | Conditions=label = label"
+     },
+     {
+      "op": "TABLE_SCAN",
+      "depth": 6,
+      "rows": 1,
+      "cpu_s": 0.0,
+      "share": 0.02,
+      "detail": ""
+     },
+     {
+      "op": "TABLE_SCAN",
+      "depth": 4,
+      "rows": 710,
+      "cpu_s": 0.0,
+      "share": 0.016,
+      "detail": ""
+     },
+     {
+      "op": "RESULT_COLLECTOR",
+      "depth": 0,
+      "rows": 0,
+      "cpu_s": 0.0,
+      "share": 0.012,
+      "detail": ""
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 5,
+      "rows": 0,
+      "cpu_s": 0.0,
+      "share": 0.008,
+      "detail": "Join Type=LEFT | Conditions=dst_ip = ip"
+     }
+    ]
+   },
+   "attempt": 0,
+   "sql_build_s": 0.0001,
+   "pre_cpu_idle_load": 96.7,
+   "pre_free_ram_mb": 3749,
+   "alerts": 0,
+   "attempts": [
+    {
+     "wall_s": 0.038,
+     "proc_cpu_s": 0.062,
+     "cpu_others_mean": 91.7,
+     "pre_cpu_idle_load": 96.7,
+     "free_ram_min_mb": 3739,
+     "peak_rss_mb": 182.2
+    }
+   ]
+  },
+  "encoded_powershell": {
+   "template": "match",
+   "wall_s": 0.037,
+   "page_faults": 21,
+   "proc_cpu_s": 0.047,
+   "n_samples": 1,
+   "cpu_total_mean": 93.5,
+   "cpu_own_mean": 0.8,
+   "cpu_others_mean": 92.7,
+   "cpu_others_max": 92.7,
+   "free_ram_min_mb": 3672,
+   "peak_rss_mb": 182.4,
+   "spill_dir_peak_mb": 0.0,
+   "profile": {
+    "latency_s": 0.03,
+    "cpu_s": 0.003,
+    "plan_s": 0.0181,
+    "op_cpu_s": 0.003,
+    "peak_buffer_mb": 18.7,
+    "peak_temp_dir_mb": 0.0,
+    "blocked_thread_s": 0.018,
+    "io_read_mb": 0.0,
+    "io_written_mb": 0.0,
+    "rows_scanned": 1420,
+    "scan_out_rows": 721,
+    "n_scans": 8,
+    "window_rows": 0,
+    "intermediate_rows": 723,
+    "top_ops": [
+     {
+      "op": "HASH_JOIN",
+      "depth": 3,
+      "rows": 0,
+      "cpu_s": 0.002,
+      "share": 0.512,
+      "detail": "Join Type=LEFT | Conditions=COALESCE(CAST(sub_technique_id AS VARCHAR), sub_technique_id) = technique_id"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 8,
+      "rows": 0,
+      "cpu_s": 0.001,
+      "share": 0.249,
+      "detail": "Join Type=MARK | Conditions=action = #0"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 5,
+      "rows": 1,
+      "cpu_s": 0.0,
+      "share": 0.102,
+      "detail": "Join Type=RIGHT | Conditions=technique_id = technique_id"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 4,
+      "rows": 0,
+      "cpu_s": 0.0,
+      "share": 0.066,
+      "detail": "Join Type=INNER | Conditions=label = label"
+     },
+     {
+      "op": "TABLE_SCAN",
+      "depth": 6,
+      "rows": 1,
+      "cpu_s": 0.0,
+      "share": 0.019,
+      "detail": ""
+     },
+     {
+      "op": "RESULT_COLLECTOR",
+      "depth": 0,
+      "rows": 0,
+      "cpu_s": 0.0,
+      "share": 0.017,
+      "detail": ""
+     },
+     {
+      "op": "TABLE_SCAN",
+      "depth": 4,
+      "rows": 710,
+      "cpu_s": 0.0,
+      "share": 0.016,
+      "detail": ""
+     },
+     {
+      "op": "TABLE_SCAN",
+      "depth": 6,
+      "rows": 0,
+      "cpu_s": 0.0,
+      "share": 0.004,
+      "detail": ""
+     }
+    ]
+   },
+   "attempt": 0,
+   "sql_build_s": 0.0001,
+   "pre_cpu_idle_load": 94.7,
+   "pre_free_ram_mb": 3724,
+   "alerts": 0,
+   "attempts": [
+    {
+     "wall_s": 0.037,
+     "proc_cpu_s": 0.047,
+     "cpu_others_mean": 92.7,
+     "pre_cpu_idle_load": 94.7,
+     "free_ram_min_mb": 3672,
+     "peak_rss_mb": 182.4
+    }
+   ]
+  },
+  "run_key_persistence": {
+   "template": "match",
+   "wall_s": 0.035,
+   "page_faults": 14,
+   "proc_cpu_s": 0.109,
+   "n_samples": 1,
+   "cpu_total_mean": 93.0,
+   "cpu_own_mean": 1.8,
+   "cpu_others_mean": 91.2,
+   "cpu_others_max": 91.2,
+   "free_ram_min_mb": 3587,
+   "peak_rss_mb": 182.5,
+   "spill_dir_peak_mb": 0.0,
+   "profile": {
+    "latency_s": 0.028,
+    "cpu_s": 0.003,
+    "plan_s": 0.0187,
+    "op_cpu_s": 0.003,
+    "peak_buffer_mb": 18.7,
+    "peak_temp_dir_mb": 0.0,
+    "blocked_thread_s": 0.013,
+    "io_read_mb": 0.0,
+    "io_written_mb": 0.0,
+    "rows_scanned": 1420,
+    "scan_out_rows": 721,
+    "n_scans": 8,
+    "window_rows": 0,
+    "intermediate_rows": 723,
+    "top_ops": [
+     {
+      "op": "HASH_JOIN",
+      "depth": 3,
+      "rows": 0,
+      "cpu_s": 0.002,
+      "share": 0.497,
+      "detail": "Join Type=LEFT | Conditions=COALESCE(CAST(sub_technique_id AS VARCHAR), sub_technique_id) = technique_id"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 8,
+      "rows": 0,
+      "cpu_s": 0.001,
+      "share": 0.335,
+      "detail": "Join Type=MARK | Conditions=action = #0"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 5,
+      "rows": 1,
+      "cpu_s": 0.0,
+      "share": 0.06,
+      "detail": "Join Type=RIGHT | Conditions=technique_id = technique_id"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 4,
+      "rows": 0,
+      "cpu_s": 0.0,
+      "share": 0.05,
+      "detail": "Join Type=INNER | Conditions=label = label"
+     },
+     {
+      "op": "TABLE_SCAN",
+      "depth": 4,
+      "rows": 710,
+      "cpu_s": 0.0,
+      "share": 0.015,
+      "detail": ""
+     },
+     {
+      "op": "TABLE_SCAN",
+      "depth": 6,
+      "rows": 1,
+      "cpu_s": 0.0,
+      "share": 0.014,
+      "detail": ""
+     },
+     {
+      "op": "RESULT_COLLECTOR",
+      "depth": 0,
+      "rows": 0,
+      "cpu_s": 0.0,
+      "share": 0.013,
+      "detail": ""
+     },
+     {
+      "op": "COLUMN_DATA_SCAN",
+      "depth": 9,
+      "rows": 9,
+      "cpu_s": 0.0,
+      "share": 0.003,
+      "detail": ""
+     }
+    ]
+   },
+   "attempt": 0,
+   "sql_build_s": 0.0001,
+   "pre_cpu_idle_load": 95.2,
+   "pre_free_ram_mb": 3589,
+   "alerts": 0,
+   "attempts": [
+    {
+     "wall_s": 0.035,
+     "proc_cpu_s": 0.109,
+     "cpu_others_mean": 91.2,
+     "pre_cpu_idle_load": 95.2,
+     "free_ram_min_mb": 3587,
+     "peak_rss_mb": 182.5
+    }
+   ]
+  },
+  "ioc_destination": {
+   "template": "match",
+   "wall_s": 0.036,
+   "page_faults": 0,
+   "proc_cpu_s": 0.031,
+   "n_samples": 1,
+   "cpu_total_mean": 99.8,
+   "cpu_own_mean": 0.5,
+   "cpu_others_mean": 99.3,
+   "cpu_others_max": 99.3,
+   "free_ram_min_mb": 3519,
+   "peak_rss_mb": 182.2,
+   "spill_dir_peak_mb": 0.0,
+   "profile": {
+    "latency_s": 0.029,
+    "cpu_s": 0.004,
+    "plan_s": 0.019,
+    "op_cpu_s": 0.004,
+    "peak_buffer_mb": 19.0,
+    "peak_temp_dir_mb": 0.0,
+    "blocked_thread_s": 0.013,
+    "io_read_mb": 0.0,
+    "io_written_mb": 0.0,
+    "rows_scanned": 1420,
+    "scan_out_rows": 721,
+    "n_scans": 8,
+    "window_rows": 0,
+    "intermediate_rows": 723,
+    "top_ops": [
+     {
+      "op": "HASH_JOIN",
+      "depth": 3,
+      "rows": 0,
+      "cpu_s": 0.002,
+      "share": 0.468,
+      "detail": "Join Type=LEFT | Conditions=COALESCE(CAST(sub_technique_id AS VARCHAR), sub_technique_id) = technique_id"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 8,
+      "rows": 0,
+      "cpu_s": 0.001,
+      "share": 0.236,
+      "detail": "Join Type=MARK | Conditions=action = #0"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 5,
+      "rows": 1,
+      "cpu_s": 0.001,
+      "share": 0.138,
+      "detail": "Join Type=RIGHT | Conditions=technique_id = technique_id"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 4,
+      "rows": 0,
+      "cpu_s": 0.0,
+      "share": 0.082,
+      "detail": "Join Type=INNER | Conditions=label = label"
+     },
+     {
+      "op": "RESULT_COLLECTOR",
+      "depth": 0,
+      "rows": 0,
+      "cpu_s": 0.0,
+      "share": 0.029,
+      "detail": ""
+     },
+     {
+      "op": "TABLE_SCAN",
+      "depth": 4,
+      "rows": 710,
+      "cpu_s": 0.0,
+      "share": 0.017,
+      "detail": ""
+     },
+     {
+      "op": "TABLE_SCAN",
+      "depth": 6,
+      "rows": 1,
+      "cpu_s": 0.0,
+      "share": 0.016,
+      "detail": ""
+     },
+     {
+      "op": "COLUMN_DATA_SCAN",
+      "depth": 6,
+      "rows": 1,
+      "cpu_s": 0.0,
+      "share": 0.002,
+      "detail": ""
+     }
+    ]
+   },
+   "attempt": 0,
+   "sql_build_s": 0.0001,
+   "pre_cpu_idle_load": 98.1,
+   "pre_free_ram_mb": 3533,
+   "alerts": 0,
+   "attempts": [
+    {
+     "wall_s": 0.036,
+     "proc_cpu_s": 0.031,
+     "cpu_others_mean": 99.3,
+     "pre_cpu_idle_load": 98.1,
+     "free_ram_min_mb": 3519,
+     "peak_rss_mb": 182.2
+    }
+   ]
+  },
+  "ransom_extension": {
+   "template": "match",
+   "wall_s": 0.035,
+   "page_faults": 7,
+   "proc_cpu_s": 0.047,
+   "n_samples": 1,
+   "cpu_total_mean": 99.8,
+   "cpu_own_mean": 1.0,
+   "cpu_others_mean": 98.8,
+   "cpu_others_max": 98.8,
+   "free_ram_min_mb": 3493,
+   "peak_rss_mb": 182.3,
+   "spill_dir_peak_mb": 0.0,
+   "profile": {
+    "latency_s": 0.029,
+    "cpu_s": 0.003,
+    "plan_s": 0.0187,
+    "op_cpu_s": 0.003,
+    "peak_buffer_mb": 20.8,
+    "peak_temp_dir_mb": 0.0,
+    "blocked_thread_s": 0.014,
+    "io_read_mb": 0.0,
+    "io_written_mb": 0.0,
+    "rows_scanned": 1420,
+    "scan_out_rows": 721,
+    "n_scans": 8,
+    "window_rows": 0,
+    "intermediate_rows": 723,
+    "top_ops": [
+     {
+      "op": "HASH_JOIN",
+      "depth": 3,
+      "rows": 0,
+      "cpu_s": 0.002,
+      "share": 0.529,
+      "detail": "Join Type=LEFT | Conditions=COALESCE(CAST(sub_technique_id AS VARCHAR), sub_technique_id) = technique_id"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 8,
+      "rows": 0,
+      "cpu_s": 0.001,
+      "share": 0.257,
+      "detail": "Join Type=MARK | Conditions=action = #0"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 5,
+      "rows": 1,
+      "cpu_s": 0.0,
+      "share": 0.085,
+      "detail": "Join Type=RIGHT | Conditions=technique_id = technique_id"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 4,
+      "rows": 0,
+      "cpu_s": 0.0,
+      "share": 0.071,
+      "detail": "Join Type=INNER | Conditions=label = label"
+     },
+     {
+      "op": "TABLE_SCAN",
+      "depth": 4,
+      "rows": 710,
+      "cpu_s": 0.0,
+      "share": 0.016,
+      "detail": ""
+     },
+     {
+      "op": "TABLE_SCAN",
+      "depth": 6,
+      "rows": 1,
+      "cpu_s": 0.0,
+      "share": 0.015,
+      "detail": ""
+     },
+     {
+      "op": "RESULT_COLLECTOR",
+      "depth": 0,
+      "rows": 0,
+      "cpu_s": 0.0,
+      "share": 0.01,
+      "detail": ""
+     },
+     {
+      "op": "TABLE_SCAN",
+      "depth": 10,
+      "rows": 0,
+      "cpu_s": 0.0,
+      "share": 0.003,
+      "detail": ""
+     }
+    ]
+   },
+   "attempt": 0,
+   "sql_build_s": 0.0001,
+   "pre_cpu_idle_load": 99.9,
+   "pre_free_ram_mb": 3503,
+   "alerts": 0,
+   "attempts": [
+    {
+     "wall_s": 0.035,
+     "proc_cpu_s": 0.047,
+     "cpu_others_mean": 98.8,
+     "pre_cpu_idle_load": 99.9,
+     "free_ram_min_mb": 3493,
+     "peak_rss_mb": 182.3
+    }
+   ]
+  },
+  "discovery_commands": {
+   "template": "match",
+   "wall_s": 0.04,
+   "page_faults": 7,
+   "proc_cpu_s": 0.047,
+   "n_samples": 0,
+   "peak_rss_mb": 182.4,
+   "profile": {
+    "latency_s": 0.033,
+    "cpu_s": 0.004,
+    "plan_s": 0.0206,
+    "op_cpu_s": 0.004,
+    "peak_buffer_mb": 19.4,
+    "peak_temp_dir_mb": 0.0,
+    "blocked_thread_s": 0.02,
+    "io_read_mb": 0.0,
+    "io_written_mb": 0.0,
+    "rows_scanned": 1420,
+    "scan_out_rows": 721,
+    "n_scans": 8,
+    "window_rows": 0,
+    "intermediate_rows": 723,
+    "top_ops": [
+     {
+      "op": "HASH_JOIN",
+      "depth": 3,
+      "rows": 0,
+      "cpu_s": 0.002,
+      "share": 0.485,
+      "detail": "Join Type=LEFT | Conditions=COALESCE(CAST(sub_technique_id AS VARCHAR), sub_technique_id) = technique_id"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 8,
+      "rows": 0,
+      "cpu_s": 0.001,
+      "share": 0.317,
+      "detail": "Join Type=MARK | Conditions=action = #0"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 4,
+      "rows": 0,
+      "cpu_s": 0.0,
+      "share": 0.086,
+      "detail": "Join Type=INNER | Conditions=label = label"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 5,
+      "rows": 1,
+      "cpu_s": 0.0,
+      "share": 0.055,
+      "detail": "Join Type=RIGHT | Conditions=technique_id = technique_id"
+     },
+     {
+      "op": "TABLE_SCAN",
+      "depth": 4,
+      "rows": 710,
+      "cpu_s": 0.0,
+      "share": 0.015,
+      "detail": ""
+     },
+     {
+      "op": "TABLE_SCAN",
+      "depth": 6,
+      "rows": 1,
+      "cpu_s": 0.0,
+      "share": 0.013,
+      "detail": ""
+     },
+     {
+      "op": "RESULT_COLLECTOR",
+      "depth": 0,
+      "rows": 0,
+      "cpu_s": 0.0,
+      "share": 0.011,
+      "detail": ""
+     },
+     {
+      "op": "COLUMN_DATA_SCAN",
+      "depth": 6,
+      "rows": 1,
+      "cpu_s": 0.0,
+      "share": 0.003,
+      "detail": ""
+     }
+    ]
+   },
+   "attempt": 0,
+   "sql_build_s": 0.0001,
+   "pre_cpu_idle_load": 99.8,
+   "pre_free_ram_mb": 3145,
+   "alerts": 0,
+   "attempts": [
+    {
+     "wall_s": 0.04,
+     "proc_cpu_s": 0.047,
+     "cpu_others_mean": null,
+     "pre_cpu_idle_load": 99.8,
+     "free_ram_min_mb": null,
+     "peak_rss_mb": 182.4
+    }
+   ]
+  },
+  "discovery_system": {
+   "template": "match",
+   "wall_s": 0.041,
+   "page_faults": 17,
+   "proc_cpu_s": 0.141,
+   "n_samples": 1,
+   "cpu_total_mean": 99.8,
+   "cpu_own_mean": 2.2,
+   "cpu_others_mean": 97.6,
+   "cpu_others_max": 97.6,
+   "free_ram_min_mb": 3130,
+   "peak_rss_mb": 182.5,
+   "spill_dir_peak_mb": 0.0,
+   "profile": {
+    "latency_s": 0.034,
+    "cpu_s": 0.005,
+    "plan_s": 0.02,
+    "op_cpu_s": 0.005,
+    "peak_buffer_mb": 22.0,
+    "peak_temp_dir_mb": 0.0,
+    "blocked_thread_s": 0.017,
+    "io_read_mb": 0.0,
+    "io_written_mb": 0.0,
+    "rows_scanned": 1420,
+    "scan_out_rows": 721,
+    "n_scans": 8,
+    "window_rows": 0,
+    "intermediate_rows": 723,
+    "top_ops": [
+     {
+      "op": "HASH_JOIN",
+      "depth": 3,
+      "rows": 0,
+      "cpu_s": 0.002,
+      "share": 0.425,
+      "detail": "Join Type=LEFT | Conditions=COALESCE(CAST(sub_technique_id AS VARCHAR), sub_technique_id) = technique_id"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 8,
+      "rows": 0,
+      "cpu_s": 0.002,
+      "share": 0.4,
+      "detail": "Join Type=MARK | Conditions=action = #0"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 5,
+      "rows": 1,
+      "cpu_s": 0.0,
+      "share": 0.088,
+      "detail": "Join Type=RIGHT | Conditions=technique_id = technique_id"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 4,
+      "rows": 0,
+      "cpu_s": 0.0,
+      "share": 0.047,
+      "detail": "Join Type=INNER | Conditions=label = label"
+     },
+     {
+      "op": "TABLE_SCAN",
+      "depth": 4,
+      "rows": 710,
+      "cpu_s": 0.0,
+      "share": 0.011,
+      "detail": ""
+     },
+     {
+      "op": "TABLE_SCAN",
+      "depth": 6,
+      "rows": 1,
+      "cpu_s": 0.0,
+      "share": 0.01,
+      "detail": ""
+     },
+     {
+      "op": "RESULT_COLLECTOR",
+      "depth": 0,
+      "rows": 0,
+      "cpu_s": 0.0,
+      "share": 0.006,
+      "detail": ""
+     },
+     {
+      "op": "TABLE_SCAN",
+      "depth": 10,
+      "rows": 0,
+      "cpu_s": 0.0,
+      "share": 0.002,
+      "detail": ""
+     }
+    ]
+   },
+   "attempt": 0,
+   "sql_build_s": 0.0001,
+   "pre_cpu_idle_load": 99.9,
+   "pre_free_ram_mb": 3092,
+   "alerts": 0,
+   "attempts": [
+    {
+     "wall_s": 0.041,
+     "proc_cpu_s": 0.141,
+     "cpu_others_mean": 97.6,
+     "pre_cpu_idle_load": 99.9,
+     "free_ram_min_mb": 3130,
+     "peak_rss_mb": 182.5
+    }
+   ]
+  },
+  "service_or_task": {
+   "template": "match",
+   "wall_s": 0.045,
+   "page_faults": 49,
+   "proc_cpu_s": 0.047,
+   "n_samples": 1,
+   "cpu_total_mean": 99.3,
+   "cpu_own_mean": 0.8,
+   "cpu_others_mean": 98.5,
+   "cpu_others_max": 98.5,
+   "free_ram_min_mb": 2929,
+   "peak_rss_mb": 182.7,
+   "spill_dir_peak_mb": 0.0,
+   "profile": {
+    "latency_s": 0.038,
+    "cpu_s": 0.004,
+    "plan_s": 0.0199,
+    "op_cpu_s": 0.004,
+    "peak_buffer_mb": 18.7,
+    "peak_temp_dir_mb": 0.0,
+    "blocked_thread_s": 0.021,
+    "io_read_mb": 0.0,
+    "io_written_mb": 0.0,
+    "rows_scanned": 1420,
+    "scan_out_rows": 721,
+    "n_scans": 8,
+    "window_rows": 0,
+    "intermediate_rows": 723,
+    "top_ops": [
+     {
+      "op": "HASH_JOIN",
+      "depth": 3,
+      "rows": 0,
+      "cpu_s": 0.002,
+      "share": 0.469,
+      "detail": "Join Type=LEFT | Conditions=COALESCE(CAST(sub_technique_id AS VARCHAR), sub_technique_id) = technique_id"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 8,
+      "rows": 0,
+      "cpu_s": 0.001,
+      "share": 0.303,
+      "detail": "Join Type=MARK | Conditions=action = #0"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 5,
+      "rows": 1,
+      "cpu_s": 0.0,
+      "share": 0.092,
+      "detail": "Join Type=RIGHT | Conditions=technique_id = technique_id"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 4,
+      "rows": 0,
+      "cpu_s": 0.0,
+      "share": 0.071,
+      "detail": "Join Type=INNER | Conditions=label = label"
+     },
+     {
+      "op": "RESULT_COLLECTOR",
+      "depth": 0,
+      "rows": 0,
+      "cpu_s": 0.0,
+      "share": 0.024,
+      "detail": ""
+     },
+     {
+      "op": "TABLE_SCAN",
+      "depth": 6,
+      "rows": 1,
+      "cpu_s": 0.0,
+      "share": 0.015,
+      "detail": ""
+     },
+     {
+      "op": "TABLE_SCAN",
+      "depth": 4,
+      "rows": 710,
+      "cpu_s": 0.0,
+      "share": 0.012,
+      "detail": ""
+     },
+     {
+      "op": "COLUMN_DATA_SCAN",
+      "depth": 6,
+      "rows": 1,
+      "cpu_s": 0.0,
+      "share": 0.002,
+      "detail": ""
+     }
+    ]
+   },
+   "attempt": 0,
+   "sql_build_s": 0.0001,
+   "pre_cpu_idle_load": 98.6,
+   "pre_free_ram_mb": 3011,
+   "alerts": 0,
+   "attempts": [
+    {
+     "wall_s": 0.045,
+     "proc_cpu_s": 0.047,
+     "cpu_others_mean": 98.5,
+     "pre_cpu_idle_load": 98.6,
+     "free_ram_min_mb": 2929,
+     "peak_rss_mb": 182.7
+    }
+   ]
+  },
+  "scheduled_task": {
+   "template": "match",
+   "wall_s": 0.038,
+   "page_faults": 1,
+   "proc_cpu_s": 0.109,
+   "n_samples": 1,
+   "cpu_total_mean": 98.7,
+   "cpu_own_mean": 1.8,
+   "cpu_others_mean": 96.9,
+   "cpu_others_max": 96.9,
+   "free_ram_min_mb": 2968,
+   "peak_rss_mb": 182.7,
+   "spill_dir_peak_mb": 0.0,
+   "profile": {
+    "latency_s": 0.031,
+    "cpu_s": 0.003,
+    "plan_s": 0.0198,
+    "op_cpu_s": 0.003,
+    "peak_buffer_mb": 19.6,
+    "peak_temp_dir_mb": 0.0,
+    "blocked_thread_s": 0.014,
+    "io_read_mb": 0.0,
+    "io_written_mb": 0.0,
+    "rows_scanned": 1420,
+    "scan_out_rows": 721,
+    "n_scans": 8,
+    "window_rows": 0,
+    "intermediate_rows": 723,
+    "top_ops": [
+     {
+      "op": "HASH_JOIN",
+      "depth": 3,
+      "rows": 0,
+      "cpu_s": 0.001,
+      "share": 0.486,
+      "detail": "Join Type=LEFT | Conditions=COALESCE(CAST(sub_technique_id AS VARCHAR), sub_technique_id) = technique_id"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 8,
+      "rows": 0,
+      "cpu_s": 0.001,
+      "share": 0.242,
+      "detail": "Join Type=MARK | Conditions=action = #0"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 5,
+      "rows": 1,
+      "cpu_s": 0.0,
+      "share": 0.119,
+      "detail": "Join Type=RIGHT | Conditions=technique_id = technique_id"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 4,
+      "rows": 0,
+      "cpu_s": 0.0,
+      "share": 0.076,
+      "detail": "Join Type=INNER | Conditions=label = label"
+     },
+     {
+      "op": "TABLE_SCAN",
+      "depth": 6,
+      "rows": 1,
+      "cpu_s": 0.0,
+      "share": 0.023,
+      "detail": ""
+     },
+     {
+      "op": "TABLE_SCAN",
+      "depth": 4,
+      "rows": 710,
+      "cpu_s": 0.0,
+      "share": 0.023,
+      "detail": ""
+     },
+     {
+      "op": "RESULT_COLLECTOR",
+      "depth": 0,
+      "rows": 0,
+      "cpu_s": 0.0,
+      "share": 0.013,
+      "detail": ""
+     },
+     {
+      "op": "COLUMN_DATA_SCAN",
+      "depth": 6,
+      "rows": 1,
+      "cpu_s": 0.0,
+      "share": 0.002,
+      "detail": ""
+     }
+    ]
+   },
+   "attempt": 0,
+   "sql_build_s": 0.0001,
+   "pre_cpu_idle_load": 99.2,
+   "pre_free_ram_mb": 2894,
+   "alerts": 0,
+   "attempts": [
+    {
+     "wall_s": 0.038,
+     "proc_cpu_s": 0.109,
+     "cpu_others_mean": 96.9,
+     "pre_cpu_idle_load": 99.2,
+     "free_ram_min_mb": 2968,
+     "peak_rss_mb": 182.7
+    }
+   ]
+  },
+  "log_cleared": {
+   "template": "match",
+   "wall_s": 0.044,
+   "page_faults": 14,
+   "proc_cpu_s": 0.062,
+   "n_samples": 1,
+   "cpu_total_mean": 100.0,
+   "cpu_own_mean": 1.0,
+   "cpu_others_mean": 99.0,
+   "cpu_others_max": 99.0,
+   "free_ram_min_mb": 2944,
+   "peak_rss_mb": 182.7,
+   "spill_dir_peak_mb": 0.0,
+   "profile": {
+    "latency_s": 0.037,
+    "cpu_s": 0.004,
+    "plan_s": 0.02,
+    "op_cpu_s": 0.004,
+    "peak_buffer_mb": 19.0,
+    "peak_temp_dir_mb": 0.0,
+    "blocked_thread_s": 0.022,
+    "io_read_mb": 0.0,
+    "io_written_mb": 0.0,
+    "rows_scanned": 1420,
+    "scan_out_rows": 721,
+    "n_scans": 8,
+    "window_rows": 0,
+    "intermediate_rows": 723,
+    "top_ops": [
+     {
+      "op": "HASH_JOIN",
+      "depth": 3,
+      "rows": 0,
+      "cpu_s": 0.002,
+      "share": 0.5,
+      "detail": "Join Type=LEFT | Conditions=COALESCE(CAST(sub_technique_id AS VARCHAR), sub_technique_id) = technique_id"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 8,
+      "rows": 0,
+      "cpu_s": 0.001,
+      "share": 0.278,
+      "detail": "Join Type=MARK | Conditions=action = #0"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 4,
+      "rows": 0,
+      "cpu_s": 0.0,
+      "share": 0.094,
+      "detail": "Join Type=INNER | Conditions=label = label"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 5,
+      "rows": 1,
+      "cpu_s": 0.0,
+      "share": 0.073,
+      "detail": "Join Type=RIGHT | Conditions=technique_id = technique_id"
+     },
+     {
+      "op": "RESULT_COLLECTOR",
+      "depth": 0,
+      "rows": 0,
+      "cpu_s": 0.0,
+      "share": 0.014,
+      "detail": ""
+     },
+     {
+      "op": "TABLE_SCAN",
+      "depth": 6,
+      "rows": 1,
+      "cpu_s": 0.0,
+      "share": 0.013,
+      "detail": ""
+     },
+     {
+      "op": "TABLE_SCAN",
+      "depth": 4,
+      "rows": 710,
+      "cpu_s": 0.0,
+      "share": 0.012,
+      "detail": ""
+     },
+     {
+      "op": "COLUMN_DATA_SCAN",
+      "depth": 6,
+      "rows": 1,
+      "cpu_s": 0.0,
+      "share": 0.002,
+      "detail": ""
+     }
+    ]
+   },
+   "attempt": 0,
+   "sql_build_s": 0.0001,
+   "pre_cpu_idle_load": 99.5,
+   "pre_free_ram_mb": 2911,
+   "alerts": 0,
+   "attempts": [
+    {
+     "wall_s": 0.044,
+     "proc_cpu_s": 0.062,
+     "cpu_others_mean": 99.0,
+     "pre_cpu_idle_load": 99.5,
+     "free_ram_min_mb": 2944,
+     "peak_rss_mb": 182.7
+    }
+   ]
+  },
+  "archive_staging": {
+   "template": "match",
+   "wall_s": 0.04,
+   "page_faults": 5,
+   "proc_cpu_s": 0.078,
+   "n_samples": 1,
+   "cpu_total_mean": 100.0,
+   "cpu_own_mean": 1.3,
+   "cpu_others_mean": 98.7,
+   "cpu_others_max": 98.7,
+   "free_ram_min_mb": 2833,
+   "peak_rss_mb": 182.8,
+   "spill_dir_peak_mb": 0.0,
+   "profile": {
+    "latency_s": 0.033,
+    "cpu_s": 0.003,
+    "plan_s": 0.0209,
+    "op_cpu_s": 0.003,
+    "peak_buffer_mb": 18.7,
+    "peak_temp_dir_mb": 0.0,
+    "blocked_thread_s": 0.017,
+    "io_read_mb": 0.0,
+    "io_written_mb": 0.0,
+    "rows_scanned": 1420,
+    "scan_out_rows": 721,
+    "n_scans": 8,
+    "window_rows": 0,
+    "intermediate_rows": 723,
+    "top_ops": [
+     {
+      "op": "HASH_JOIN",
+      "depth": 3,
+      "rows": 0,
+      "cpu_s": 0.001,
+      "share": 0.527,
+      "detail": "Join Type=LEFT | Conditions=COALESCE(CAST(sub_technique_id AS VARCHAR), sub_technique_id) = technique_id"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 8,
+      "rows": 0,
+      "cpu_s": 0.001,
+      "share": 0.265,
+      "detail": "Join Type=MARK | Conditions=action = #0"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 4,
+      "rows": 0,
+      "cpu_s": 0.0,
+      "share": 0.074,
+      "detail": "Join Type=INNER | Conditions=label = label"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 5,
+      "rows": 1,
+      "cpu_s": 0.0,
+      "share": 0.066,
+      "detail": "Join Type=RIGHT | Conditions=technique_id = technique_id"
+     },
+     {
+      "op": "TABLE_SCAN",
+      "depth": 4,
+      "rows": 710,
+      "cpu_s": 0.0,
+      "share": 0.018,
+      "detail": ""
+     },
+     {
+      "op": "TABLE_SCAN",
+      "depth": 6,
+      "rows": 1,
+      "cpu_s": 0.0,
+      "share": 0.017,
+      "detail": ""
+     },
+     {
+      "op": "RESULT_COLLECTOR",
+      "depth": 0,
+      "rows": 0,
+      "cpu_s": 0.0,
+      "share": 0.012,
+      "detail": ""
+     },
+     {
+      "op": "TABLE_SCAN",
+      "depth": 10,
+      "rows": 0,
+      "cpu_s": 0.0,
+      "share": 0.003,
+      "detail": ""
+     }
+    ]
+   },
+   "attempt": 0,
+   "sql_build_s": 0.0001,
+   "pre_cpu_idle_load": 99.3,
+   "pre_free_ram_mb": 2843,
+   "alerts": 0,
+   "attempts": [
+    {
+     "wall_s": 0.04,
+     "proc_cpu_s": 0.078,
+     "cpu_others_mean": 98.7,
+     "pre_cpu_idle_load": 99.3,
+     "free_ram_min_mb": 2833,
+     "peak_rss_mb": 182.8
+    }
+   ]
+  },
+  "suspicious_cmd": {
+   "template": "match",
+   "wall_s": 0.037,
+   "page_faults": 10,
+   "proc_cpu_s": 0.062,
+   "n_samples": 0,
+   "peak_rss_mb": 182.8,
+   "profile": {
+    "latency_s": 0.03,
+    "cpu_s": 0.003,
+    "plan_s": 0.0183,
+    "op_cpu_s": 0.003,
+    "peak_buffer_mb": 18.6,
+    "peak_temp_dir_mb": 0.0,
+    "blocked_thread_s": 0.012,
+    "io_read_mb": 0.0,
+    "io_written_mb": 0.0,
+    "rows_scanned": 1420,
+    "scan_out_rows": 721,
+    "n_scans": 8,
+    "window_rows": 0,
+    "intermediate_rows": 723,
+    "top_ops": [
+     {
+      "op": "HASH_JOIN",
+      "depth": 8,
+      "rows": 0,
+      "cpu_s": 0.001,
+      "share": 0.315,
+      "detail": "Join Type=MARK | Conditions=action = #0"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 3,
+      "rows": 0,
+      "cpu_s": 0.001,
+      "share": 0.298,
+      "detail": "Join Type=LEFT | Conditions=COALESCE(CAST(sub_technique_id AS VARCHAR), sub_technique_id) = technique_id"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 5,
+      "rows": 1,
+      "cpu_s": 0.001,
+      "share": 0.257,
+      "detail": "Join Type=RIGHT | Conditions=technique_id = technique_id"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 4,
+      "rows": 0,
+      "cpu_s": 0.0,
+      "share": 0.061,
+      "detail": "Join Type=INNER | Conditions=label = label"
+     },
+     {
+      "op": "TABLE_SCAN",
+      "depth": 4,
+      "rows": 710,
+      "cpu_s": 0.0,
+      "share": 0.018,
+      "detail": ""
+     },
+     {
+      "op": "RESULT_COLLECTOR",
+      "depth": 0,
+      "rows": 0,
+      "cpu_s": 0.0,
+      "share": 0.016,
+      "detail": ""
+     },
+     {
+      "op": "TABLE_SCAN",
+      "depth": 6,
+      "rows": 1,
+      "cpu_s": 0.0,
+      "share": 0.014,
+      "detail": ""
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 9,
+      "rows": 0,
+      "cpu_s": 0.0,
+      "share": 0.003,
+      "detail": "Join Type=LEFT | Conditions=dst_ip = ip"
+     }
+    ]
+   },
+   "attempt": 0,
+   "sql_build_s": 0.0001,
+   "pre_cpu_idle_load": 99.9,
+   "pre_free_ram_mb": 2684,
+   "alerts": 0,
+   "attempts": [
+    {
+     "wall_s": 0.037,
+     "proc_cpu_s": 0.062,
+     "cpu_others_mean": null,
+     "pre_cpu_idle_load": 99.9,
+     "free_ram_min_mb": null,
+     "peak_rss_mb": 182.8
+    }
+   ]
+  },
+  "wmi_exec": {
+   "template": "match",
+   "wall_s": 0.038,
+   "page_faults": 1,
+   "proc_cpu_s": 0.031,
+   "n_samples": 1,
+   "cpu_total_mean": 99.7,
+   "cpu_own_mean": 0.5,
+   "cpu_others_mean": 99.2,
+   "cpu_others_max": 99.2,
+   "free_ram_min_mb": 2696,
+   "peak_rss_mb": 182.9,
+   "spill_dir_peak_mb": 0.0,
+   "profile": {
+    "latency_s": 0.031,
+    "cpu_s": 0.005,
+    "plan_s": 0.0194,
+    "op_cpu_s": 0.005,
+    "peak_buffer_mb": 18.7,
+    "peak_temp_dir_mb": 0.0,
+    "blocked_thread_s": 0.016,
+    "io_read_mb": 0.0,
+    "io_written_mb": 0.0,
+    "rows_scanned": 1420,
+    "scan_out_rows": 721,
+    "n_scans": 8,
+    "window_rows": 0,
+    "intermediate_rows": 723,
+    "top_ops": [
+     {
+      "op": "HASH_JOIN",
+      "depth": 3,
+      "rows": 0,
+      "cpu_s": 0.002,
+      "share": 0.468,
+      "detail": "Join Type=LEFT | Conditions=COALESCE(CAST(sub_technique_id AS VARCHAR), sub_technique_id) = technique_id"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 8,
+      "rows": 0,
+      "cpu_s": 0.001,
+      "share": 0.317,
+      "detail": "Join Type=MARK | Conditions=action = #0"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 5,
+      "rows": 1,
+      "cpu_s": 0.001,
+      "share": 0.121,
+      "detail": "Join Type=RIGHT | Conditions=technique_id = technique_id"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 4,
+      "rows": 0,
+      "cpu_s": 0.0,
+      "share": 0.048,
+      "detail": "Join Type=INNER | Conditions=label = label"
+     },
+     {
+      "op": "TABLE_SCAN",
+      "depth": 4,
+      "rows": 710,
+      "cpu_s": 0.0,
+      "share": 0.012,
+      "detail": ""
+     },
+     {
+      "op": "TABLE_SCAN",
+      "depth": 6,
+      "rows": 1,
+      "cpu_s": 0.0,
+      "share": 0.01,
+      "detail": ""
+     },
+     {
+      "op": "RESULT_COLLECTOR",
+      "depth": 0,
+      "rows": 0,
+      "cpu_s": 0.0,
+      "share": 0.01,
+      "detail": ""
+     },
+     {
+      "op": "COLUMN_DATA_SCAN",
+      "depth": 6,
+      "rows": 1,
+      "cpu_s": 0.0,
+      "share": 0.002,
+      "detail": ""
+     }
+    ]
+   },
+   "attempt": 0,
+   "sql_build_s": 0.0001,
+   "pre_cpu_idle_load": 100.0,
+   "pre_free_ram_mb": 2557,
+   "alerts": 0,
+   "attempts": [
+    {
+     "wall_s": 0.038,
+     "proc_cpu_s": 0.031,
+     "cpu_others_mean": 99.2,
+     "pre_cpu_idle_load": 100.0,
+     "free_ram_min_mb": 2696,
+     "peak_rss_mb": 182.9
+    }
+   ]
+  },
+  "unix_reverse_shell": {
+   "template": "match",
+   "wall_s": 0.055,
+   "page_faults": 5,
+   "proc_cpu_s": 0.047,
+   "n_samples": 1,
+   "cpu_total_mean": 100.0,
+   "cpu_own_mean": 0.7,
+   "cpu_others_mean": 99.3,
+   "cpu_others_max": 99.3,
+   "free_ram_min_mb": 2706,
+   "peak_rss_mb": 183.0,
+   "spill_dir_peak_mb": 0.0,
+   "profile": {
+    "latency_s": 0.035,
+    "cpu_s": 0.004,
+    "plan_s": 0.0211,
+    "op_cpu_s": 0.004,
+    "peak_buffer_mb": 18.7,
+    "peak_temp_dir_mb": 0.0,
+    "blocked_thread_s": 0.021,
+    "io_read_mb": 0.0,
+    "io_written_mb": 0.0,
+    "rows_scanned": 1420,
+    "scan_out_rows": 721,
+    "n_scans": 8,
+    "window_rows": 0,
+    "intermediate_rows": 723,
+    "top_ops": [
+     {
+      "op": "HASH_JOIN",
+      "depth": 3,
+      "rows": 0,
+      "cpu_s": 0.002,
+      "share": 0.655,
+      "detail": "Join Type=LEFT | Conditions=COALESCE(CAST(sub_technique_id AS VARCHAR), sub_technique_id) = technique_id"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 8,
+      "rows": 0,
+      "cpu_s": 0.0,
+      "share": 0.137,
+      "detail": "Join Type=MARK | Conditions=action = #0"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 5,
+      "rows": 1,
+      "cpu_s": 0.0,
+      "share": 0.077,
+      "detail": "Join Type=RIGHT | Conditions=technique_id = technique_id"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 4,
+      "rows": 0,
+      "cpu_s": 0.0,
+      "share": 0.066,
+      "detail": "Join Type=INNER | Conditions=label = label"
+     },
+     {
+      "op": "TABLE_SCAN",
+      "depth": 6,
+      "rows": 1,
+      "cpu_s": 0.0,
+      "share": 0.017,
+      "detail": ""
+     },
+     {
+      "op": "TABLE_SCAN",
+      "depth": 4,
+      "rows": 710,
+      "cpu_s": 0.0,
+      "share": 0.015,
+      "detail": ""
+     },
+     {
+      "op": "RESULT_COLLECTOR",
+      "depth": 0,
+      "rows": 0,
+      "cpu_s": 0.0,
+      "share": 0.014,
+      "detail": ""
+     },
+     {
+      "op": "TABLE_SCAN",
+      "depth": 11,
+      "rows": 0,
+      "cpu_s": 0.0,
+      "share": 0.002,
+      "detail": ""
+     }
+    ]
+   },
+   "attempt": 0,
+   "sql_build_s": 0.0001,
+   "pre_cpu_idle_load": 99.9,
+   "pre_free_ram_mb": 2715,
+   "alerts": 0,
+   "attempts": [
+    {
+     "wall_s": 0.055,
+     "proc_cpu_s": 0.047,
+     "cpu_others_mean": 99.3,
+     "pre_cpu_idle_load": 99.9,
+     "free_ram_min_mb": 2706,
+     "peak_rss_mb": 183.0
+    }
+   ]
+  },
+  "indicator_removal_files": {
+   "template": "match",
+   "wall_s": 0.049,
+   "page_faults": 8,
+   "proc_cpu_s": 0.047,
+   "n_samples": 1,
+   "cpu_total_mean": 99.6,
+   "cpu_own_mean": 0.7,
+   "cpu_others_mean": 98.9,
+   "cpu_others_max": 98.9,
+   "free_ram_min_mb": 2654,
+   "peak_rss_mb": 183.0,
+   "spill_dir_peak_mb": 0.0,
+   "profile": {
+    "latency_s": 0.042,
+    "cpu_s": 0.003,
+    "plan_s": 0.0208,
+    "op_cpu_s": 0.003,
+    "peak_buffer_mb": 21.3,
+    "peak_temp_dir_mb": 0.0,
+    "blocked_thread_s": 0.0,
+    "io_read_mb": 0.0,
+    "io_written_mb": 0.0,
+    "rows_scanned": 1420,
+    "scan_out_rows": 721,
+    "n_scans": 8,
+    "window_rows": 0,
+    "intermediate_rows": 723,
+    "top_ops": [
+     {
+      "op": "HASH_JOIN",
+      "depth": 3,
+      "rows": 0,
+      "cpu_s": 0.002,
+      "share": 0.491,
+      "detail": "Join Type=LEFT | Conditions=COALESCE(CAST(sub_technique_id AS VARCHAR), sub_technique_id) = technique_id"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 8,
+      "rows": 0,
+      "cpu_s": 0.001,
+      "share": 0.204,
+      "detail": "Join Type=MARK | Conditions=action = #0"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 5,
+      "rows": 1,
+      "cpu_s": 0.001,
+      "share": 0.161,
+      "detail": "Join Type=RIGHT | Conditions=technique_id = technique_id"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 4,
+      "rows": 0,
+      "cpu_s": 0.0,
+      "share": 0.076,
+      "detail": "Join Type=INNER | Conditions=label = label"
+     },
+     {
+      "op": "RESULT_COLLECTOR",
+      "depth": 0,
+      "rows": 0,
+      "cpu_s": 0.0,
+      "share": 0.019,
+      "detail": ""
+     },
+     {
+      "op": "TABLE_SCAN",
+      "depth": 4,
+      "rows": 710,
+      "cpu_s": 0.0,
+      "share": 0.015,
+      "detail": ""
+     },
+     {
+      "op": "TABLE_SCAN",
+      "depth": 6,
+      "rows": 1,
+      "cpu_s": 0.0,
+      "share": 0.014,
+      "detail": ""
+     },
+     {
+      "op": "COLUMN_DATA_SCAN",
+      "depth": 6,
+      "rows": 1,
+      "cpu_s": 0.0,
+      "share": 0.003,
+      "detail": ""
+     }
+    ]
+   },
+   "attempt": 0,
+   "sql_build_s": 0.0001,
+   "pre_cpu_idle_load": 99.6,
+   "pre_free_ram_mb": 2634,
+   "alerts": 0,
+   "attempts": [
+    {
+     "wall_s": 0.049,
+     "proc_cpu_s": 0.047,
+     "cpu_others_mean": 98.9,
+     "pre_cpu_idle_load": 99.6,
+     "free_ram_min_mb": 2654,
+     "peak_rss_mb": 183.0
+    }
+   ]
+  },
+  "disable_security_tools": {
+   "template": "match",
+   "wall_s": 0.04,
+   "page_faults": 22,
+   "proc_cpu_s": 0.062,
+   "n_samples": 1,
+   "cpu_total_mean": 99.1,
+   "cpu_own_mean": 1.0,
+   "cpu_others_mean": 98.1,
+   "cpu_others_max": 98.1,
+   "free_ram_min_mb": 2549,
+   "peak_rss_mb": 183.1,
+   "spill_dir_peak_mb": 0.0,
+   "profile": {
+    "latency_s": 0.033,
+    "cpu_s": 0.003,
+    "plan_s": 0.02,
+    "op_cpu_s": 0.003,
+    "peak_buffer_mb": 18.9,
+    "peak_temp_dir_mb": 0.0,
+    "blocked_thread_s": 0.018,
+    "io_read_mb": 0.0,
+    "io_written_mb": 0.0,
+    "rows_scanned": 1420,
+    "scan_out_rows": 721,
+    "n_scans": 8,
+    "window_rows": 0,
+    "intermediate_rows": 723,
+    "top_ops": [
+     {
+      "op": "HASH_JOIN",
+      "depth": 3,
+      "rows": 0,
+      "cpu_s": 0.002,
+      "share": 0.494,
+      "detail": "Join Type=LEFT | Conditions=COALESCE(CAST(sub_technique_id AS VARCHAR), sub_technique_id) = technique_id"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 8,
+      "rows": 0,
+      "cpu_s": 0.001,
+      "share": 0.228,
+      "detail": "Join Type=MARK | Conditions=action = #0"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 5,
+      "rows": 1,
+      "cpu_s": 0.0,
+      "share": 0.144,
+      "detail": "Join Type=RIGHT | Conditions=technique_id = technique_id"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 4,
+      "rows": 0,
+      "cpu_s": 0.0,
+      "share": 0.075,
+      "detail": "Join Type=INNER | Conditions=label = label"
+     },
+     {
+      "op": "TABLE_SCAN",
+      "depth": 6,
+      "rows": 1,
+      "cpu_s": 0.0,
+      "share": 0.015,
+      "detail": ""
+     },
+     {
+      "op": "TABLE_SCAN",
+      "depth": 4,
+      "rows": 710,
+      "cpu_s": 0.0,
+      "share": 0.015,
+      "detail": ""
+     },
+     {
+      "op": "RESULT_COLLECTOR",
+      "depth": 0,
+      "rows": 0,
+      "cpu_s": 0.0,
+      "share": 0.012,
+      "detail": ""
+     },
+     {
+      "op": "COLUMN_DATA_SCAN",
+      "depth": 6,
+      "rows": 1,
+      "cpu_s": 0.0,
+      "share": 0.003,
+      "detail": ""
+     }
+    ]
+   },
+   "attempt": 0,
+   "sql_build_s": 0.0001,
+   "pre_cpu_idle_load": 99.6,
+   "pre_free_ram_mb": 2557,
+   "alerts": 0,
+   "attempts": [
+    {
+     "wall_s": 0.04,
+     "proc_cpu_s": 0.062,
+     "cpu_others_mean": 98.1,
+     "pre_cpu_idle_load": 99.6,
+     "free_ram_min_mb": 2549,
+     "peak_rss_mb": 183.1
+    }
+   ]
+  },
+  "sudo_escalation": {
+   "template": "sudo_escalation",
+   "wall_s": 0.263,
+   "page_faults": 859,
+   "proc_cpu_s": 0.312,
+   "n_samples": 1,
+   "cpu_total_mean": 99.5,
+   "cpu_own_mean": 5.0,
+   "cpu_others_mean": 94.5,
+   "cpu_others_max": 94.5,
+   "free_ram_min_mb": 2587,
+   "peak_rss_mb": 183.2,
+   "spill_dir_peak_mb": 0.0,
+   "profile": {
+    "latency_s": 0.255,
+    "cpu_s": 0.778,
+    "plan_s": 0.2571,
+    "op_cpu_s": 0.778,
+    "peak_buffer_mb": 33.9,
+    "peak_temp_dir_mb": 0.0,
+    "blocked_thread_s": 0.018,
+    "io_read_mb": 2.8,
+    "io_written_mb": 0.0,
+    "rows_scanned": 1420,
+    "scan_out_rows": 1421,
+    "n_scans": 8,
+    "window_rows": 0,
+    "intermediate_rows": 1422,
+    "top_ops": [
+     {
+      "op": "TABLE_SCAN",
+      "depth": 11,
+      "rows": 0,
+      "cpu_s": 0.759,
+      "share": 0.977,
+      "detail": ""
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 5,
+      "rows": 0,
+      "cpu_s": 0.01,
+      "share": 0.012,
+      "detail": "Join Type=LEFT | Conditions=technique_id = technique_id"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 6,
+      "rows": 0,
+      "cpu_s": 0.007,
+      "share": 0.01,
+      "detail": "Join Type=LEFT | Conditions=COALESCE(CAST(sub_technique_id AS VARCHAR), sub_technique_id) = technique_id"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 7,
+      "rows": 0,
+      "cpu_s": 0.001,
+      "share": 0.001,
+      "detail": "Join Type=INNER | Conditions=label = label"
+     },
+     {
+      "op": "TABLE_SCAN",
+      "depth": 7,
+      "rows": 710,
+      "cpu_s": 0.0,
+      "share": 0.0,
+      "detail": ""
+     },
+     {
+      "op": "TABLE_SCAN",
+      "depth": 6,
+      "rows": 710,
+      "cpu_s": 0.0,
+      "share": 0.0,
+      "detail": ""
+     },
+     {
+      "op": "RESULT_COLLECTOR",
+      "depth": 0,
+      "rows": 0,
+      "cpu_s": 0.0,
+      "share": 0.0,
+      "detail": ""
+     },
+     {
+      "op": "COLUMN_DATA_SCAN",
+      "depth": 8,
+      "rows": 1,
+      "cpu_s": 0.0,
+      "share": 0.0,
+      "detail": ""
+     }
+    ]
+   },
+   "attempt": 0,
+   "sql_build_s": 0.0001,
+   "pre_cpu_idle_load": 97.3,
+   "pre_free_ram_mb": 2569,
+   "alerts": 0,
+   "attempts": [
+    {
+     "wall_s": 0.263,
+     "proc_cpu_s": 0.312,
+     "cpu_others_mean": 94.5,
+     "pre_cpu_idle_load": 97.3,
+     "free_ram_min_mb": 2587,
+     "peak_rss_mb": 183.2
+    }
+   ]
+  },
+  "lsass_dump": {
+   "template": "match",
+   "wall_s": 0.04,
+   "page_faults": 516,
+   "proc_cpu_s": 0.062,
+   "n_samples": 1,
+   "cpu_total_mean": 98.0,
+   "cpu_own_mean": 0.9,
+   "cpu_others_mean": 97.1,
+   "cpu_others_max": 97.1,
+   "free_ram_min_mb": 2774,
+   "peak_rss_mb": 111.5,
+   "spill_dir_peak_mb": 0.0,
+   "profile": {
+    "latency_s": 0.032,
+    "cpu_s": 0.004,
+    "plan_s": 0.0193,
+    "op_cpu_s": 0.004,
+    "peak_buffer_mb": 18.9,
+    "peak_temp_dir_mb": 0.0,
+    "blocked_thread_s": 0.019,
+    "io_read_mb": 0.0,
+    "io_written_mb": 0.0,
+    "rows_scanned": 1420,
+    "scan_out_rows": 721,
+    "n_scans": 8,
+    "window_rows": 0,
+    "intermediate_rows": 723,
+    "top_ops": [
+     {
+      "op": "HASH_JOIN",
+      "depth": 3,
+      "rows": 0,
+      "cpu_s": 0.002,
+      "share": 0.491,
+      "detail": "Join Type=LEFT | Conditions=COALESCE(CAST(sub_technique_id AS VARCHAR), sub_technique_id) = technique_id"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 8,
+      "rows": 0,
+      "cpu_s": 0.001,
+      "share": 0.278,
+      "detail": "Join Type=MARK | Conditions=action = #0"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 5,
+      "rows": 1,
+      "cpu_s": 0.001,
+      "share": 0.125,
+      "detail": "Join Type=RIGHT | Conditions=technique_id = technique_id"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 4,
+      "rows": 0,
+      "cpu_s": 0.0,
+      "share": 0.053,
+      "detail": "Join Type=INNER | Conditions=label = label"
+     },
+     {
+      "op": "TABLE_SCAN",
+      "depth": 6,
+      "rows": 1,
+      "cpu_s": 0.0,
+      "share": 0.015,
+      "detail": ""
+     },
+     {
+      "op": "TABLE_SCAN",
+      "depth": 4,
+      "rows": 710,
+      "cpu_s": 0.0,
+      "share": 0.015,
+      "detail": ""
+     },
+     {
+      "op": "RESULT_COLLECTOR",
+      "depth": 0,
+      "rows": 0,
+      "cpu_s": 0.0,
+      "share": 0.009,
+      "detail": ""
+     },
+     {
+      "op": "COLUMN_DATA_SCAN",
+      "depth": 6,
+      "rows": 1,
+      "cpu_s": 0.0,
+      "share": 0.002,
+      "detail": ""
+     }
+    ]
+   },
+   "attempt": 0,
+   "sql_build_s": 0.0001,
+   "pre_cpu_idle_load": 96.8,
+   "pre_free_ram_mb": 2694,
+   "alerts": 0,
+   "attempts": [
+    {
+     "wall_s": 0.04,
+     "proc_cpu_s": 0.062,
+     "cpu_others_mean": 97.1,
+     "pre_cpu_idle_load": 96.8,
+     "free_ram_min_mb": 2774,
+     "peak_rss_mb": 111.5
+    }
+   ]
+  },
+  "kerberoasting": {
+   "template": "kerberoasting",
+   "wall_s": 0.298,
+   "page_faults": 7298,
+   "proc_cpu_s": 0.5,
+   "n_samples": 2,
+   "cpu_total_mean": 97.8,
+   "cpu_own_mean": 3.8,
+   "cpu_others_mean": 94.0,
+   "cpu_others_max": 94.6,
+   "free_ram_min_mb": 2611,
+   "peak_rss_mb": 137.5,
+   "spill_dir_peak_mb": 0.0,
+   "profile": {
+    "latency_s": 0.283,
+    "cpu_s": 0.792,
+    "plan_s": 0.3412,
+    "op_cpu_s": 0.792,
+    "peak_buffer_mb": 28.6,
+    "peak_temp_dir_mb": 0.0,
+    "blocked_thread_s": 0.014,
+    "io_read_mb": 2.8,
+    "io_written_mb": 0.0,
+    "rows_scanned": 1420,
+    "scan_out_rows": 1421,
+    "n_scans": 10,
+    "window_rows": 0,
+    "intermediate_rows": 1422,
+    "top_ops": [
+     {
+      "op": "TABLE_SCAN",
+      "depth": 11,
+      "rows": 0,
+      "cpu_s": 0.783,
+      "share": 0.988,
+      "detail": ""
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 5,
+      "rows": 0,
+      "cpu_s": 0.008,
+      "share": 0.01,
+      "detail": "Join Type=LEFT | Conditions=technique_id = technique_id"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 7,
+      "rows": 0,
+      "cpu_s": 0.002,
+      "share": 0.002,
+      "detail": "Join Type=INNER | Conditions=label = label"
+     },
+     {
+      "op": "RESULT_COLLECTOR",
+      "depth": 0,
+      "rows": 0,
+      "cpu_s": 0.0,
+      "share": 0.0,
+      "detail": ""
+     },
+     {
+      "op": "TABLE_SCAN",
+      "depth": 6,
+      "rows": 710,
+      "cpu_s": 0.0,
+      "share": 0.0,
+      "detail": ""
+     },
+     {
+      "op": "TABLE_SCAN",
+      "depth": 7,
+      "rows": 710,
+      "cpu_s": 0.0,
+      "share": 0.0,
+      "detail": ""
+     },
+     {
+      "op": "COLUMN_DATA_SCAN",
+      "depth": 8,
+      "rows": 1,
+      "cpu_s": 0.0,
+      "share": 0.0,
+      "detail": ""
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 6,
+      "rows": 0,
+      "cpu_s": 0.0,
+      "share": 0.0,
+      "detail": "Join Type=RIGHT | Conditions=technique_id = COALESCE(CAST(sub_technique_id AS VARCHAR), sub_technique_id)"
+     }
+    ]
+   },
+   "attempt": 0,
+   "sql_build_s": 0.0001,
+   "pre_cpu_idle_load": 98.2,
+   "pre_free_ram_mb": 2657,
+   "alerts": 0,
+   "attempts": [
+    {
+     "wall_s": 0.298,
+     "proc_cpu_s": 0.5,
+     "cpu_others_mean": 94.0,
+     "pre_cpu_idle_load": 98.2,
+     "free_ram_min_mb": 2611,
+     "peak_rss_mb": 137.5
+    }
+   ]
+  },
+  "pass_the_hash": {
+   "template": "pass_the_hash",
+   "wall_s": 0.143,
+   "page_faults": 1328,
+   "proc_cpu_s": 0.125,
+   "n_samples": 1,
+   "cpu_total_mean": 98.5,
+   "cpu_own_mean": 2.0,
+   "cpu_others_mean": 96.5,
+   "cpu_others_max": 96.5,
+   "free_ram_min_mb": 3392,
+   "peak_rss_mb": 140.3,
+   "spill_dir_peak_mb": 0.0,
+   "profile": {
+    "latency_s": 0.136,
+    "cpu_s": 0.004,
+    "plan_s": 0.2434,
+    "op_cpu_s": 0.004,
+    "peak_buffer_mb": 23.6,
+    "peak_temp_dir_mb": 0.0,
+    "blocked_thread_s": 0.012,
+    "io_read_mb": 2.8,
+    "io_written_mb": 0.0,
+    "rows_scanned": 1420,
+    "scan_out_rows": 1421,
+    "n_scans": 7,
+    "window_rows": 0,
+    "intermediate_rows": 1422,
+    "top_ops": [
+     {
+      "op": "HASH_JOIN",
+      "depth": 5,
+      "rows": 0,
+      "cpu_s": 0.002,
+      "share": 0.54,
+      "detail": "Join Type=LEFT | Conditions=technique_id = technique_id"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 6,
+      "rows": 0,
+      "cpu_s": 0.001,
+      "share": 0.348,
+      "detail": "Join Type=LEFT | Conditions=COALESCE(CAST(sub_technique_id AS VARCHAR), sub_technique_id) = technique_id"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 7,
+      "rows": 0,
+      "cpu_s": 0.0,
+      "share": 0.053,
+      "detail": "Join Type=INNER | Conditions=label = label"
+     },
+     {
+      "op": "RESULT_COLLECTOR",
+      "depth": 0,
+      "rows": 0,
+      "cpu_s": 0.0,
+      "share": 0.02,
+      "detail": ""
+     },
+     {
+      "op": "TABLE_SCAN",
+      "depth": 6,
+      "rows": 710,
+      "cpu_s": 0.0,
+      "share": 0.017,
+      "detail": ""
+     },
+     {
+      "op": "TABLE_SCAN",
+      "depth": 7,
+      "rows": 710,
+      "cpu_s": 0.0,
+      "share": 0.015,
+      "detail": ""
+     },
+     {
+      "op": "COLUMN_DATA_SCAN",
+      "depth": 8,
+      "rows": 1,
+      "cpu_s": 0.0,
+      "share": 0.002,
+      "detail": ""
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 4,
+      "rows": 0,
+      "cpu_s": 0.0,
+      "share": 0.001,
+      "detail": "Join Type=LEFT | Conditions=src_ip = ip"
+     }
+    ]
+   },
+   "attempt": 0,
+   "sql_build_s": 0.0001,
+   "pre_cpu_idle_load": 97.9,
+   "pre_free_ram_mb": 3412,
+   "alerts": 0,
+   "attempts": [
+    {
+     "wall_s": 0.143,
+     "proc_cpu_s": 0.125,
+     "cpu_others_mean": 96.5,
+     "pre_cpu_idle_load": 97.9,
+     "free_ram_min_mb": 3392,
+     "peak_rss_mb": 140.3
+    }
+   ]
+  },
+  "fw_admin_bruteforce": {
+   "template": "brute_force_then_success",
+   "wall_s": 14.304,
+   "page_faults": 3545557,
+   "proc_cpu_s": 46.516,
+   "n_samples": 23,
+   "cpu_total_mean": 99.5,
+   "cpu_own_mean": 21.8,
+   "cpu_others_mean": 77.7,
+   "cpu_others_max": 96.6,
+   "free_ram_min_mb": 688,
+   "peak_rss_mb": 2891.9,
+   "spill_dir_peak_mb": 0.0,
+   "profile": {
+    "latency_s": 14.281,
+    "cpu_s": 121.953,
+    "plan_s": 0.66,
+    "op_cpu_s": 121.953,
+    "peak_buffer_mb": 3457.9,
+    "peak_temp_dir_mb": 0.0,
+    "blocked_thread_s": 0.342,
+    "io_read_mb": 1361.4,
+    "io_written_mb": 0.0,
+    "rows_scanned": 2394153,
+    "scan_out_rows": 11525546,
+    "n_scans": 22,
+    "window_rows": 26772,
+    "intermediate_rows": 24134806,
+    "top_ops": [
+     {
+      "op": "TABLE_SCAN",
+      "depth": 10,
+      "rows": 2392733,
+      "cpu_s": 63.979,
+      "share": 0.525,
+      "detail": ""
+     },
+     {
+      "op": "CTE",
+      "depth": 14,
+      "rows": 0,
+      "cpu_s": 13.874,
+      "share": 0.114,
+      "detail": ""
+     },
+     {
+      "op": "HASH_GROUP_BY",
+      "depth": 17,
+      "rows": 2130,
+      "cpu_s": 9.796,
+      "share": 0.08,
+      "detail": "Aggregates=count_star(); min(#4); max(#5); min(#6); min_by(#7, #8, #9); min_by(#10, #11, #12) | Groups=#0; #1; #2; #3"
+     },
+     {
+      "op": "CTE",
+      "depth": 8,
+      "rows": 0,
+      "cpu_s": 7.763,
+      "share": 0.064,
+      "detail": ""
+     },
+     {
+      "op": "CTE",
+      "depth": 10,
+      "rows": 0,
+      "cpu_s": 6.544,
+      "share": 0.054,
+      "detail": ""
+     },
+     {
+      "op": "PROJECTION",
+      "depth": 18,
+      "rows": 1084749,
+      "cpu_s": 3.49,
+      "share": 0.029,
+      "detail": ""
+     },
+     {
+      "op": "TABLE_SCAN",
+      "depth": 15,
+      "rows": 0,
+      "cpu_s": 3.221,
+      "share": 0.026,
+      "detail": ""
+     },
+     {
+      "op": "HASH_GROUP_BY",
+      "depth": 12,
+      "rows": 110910,
+      "cpu_s": 2.866,
+      "share": 0.024,
+      "detail": "Aggregates=count_star() | Groups=#0; #1; #2"
+     }
+    ]
+   },
+   "attempt": 0,
+   "sql_build_s": 0.0001,
+   "pre_cpu_idle_load": 99.6,
+   "pre_free_ram_mb": 3035,
+   "alerts": 1104,
+   "attempts": [
+    {
+     "wall_s": 14.304,
+     "proc_cpu_s": 46.516,
+     "cpu_others_mean": 77.7,
+     "pre_cpu_idle_load": 99.6,
+     "free_ram_min_mb": 688,
+     "peak_rss_mb": 2891.9
+    }
+   ]
+  },
+  "fw_admin_spray": {
+   "template": "password_spray",
+   "wall_s": 25.178,
+   "page_faults": 3819913,
+   "proc_cpu_s": 61.0,
+   "n_samples": 45,
+   "cpu_total_mean": 98.2,
+   "cpu_own_mean": 17.6,
+   "cpu_others_mean": 80.6,
+   "cpu_others_max": 96.8,
+   "free_ram_min_mb": 295,
+   "peak_rss_mb": 3640.2,
+   "spill_dir_peak_mb": 0.0,
+   "profile": {
+    "latency_s": 25.147,
+    "cpu_s": 227.993,
+    "plan_s": 0.6901,
+    "op_cpu_s": 227.993,
+    "peak_buffer_mb": 4574.4,
+    "peak_temp_dir_mb": 0.0,
+    "blocked_thread_s": 2.366,
+    "io_read_mb": 1360.9,
+    "io_written_mb": 0.0,
+    "rows_scanned": 2394153,
+    "scan_out_rows": 19584665,
+    "n_scans": 22,
+    "window_rows": 324573,
+    "intermediate_rows": 53717830,
+    "top_ops": [
+     {
+      "op": "TABLE_SCAN",
+      "depth": 10,
+      "rows": 2392733,
+      "cpu_s": 59.844,
+      "share": 0.262,
+      "detail": ""
+     },
+     {
+      "op": "CTE",
+      "depth": 13,
+      "rows": 0,
+      "cpu_s": 45.605,
+      "share": 0.2,
+      "detail": ""
+     },
+     {
+      "op": "HASH_GROUP_BY",
+      "depth": 23,
+      "rows": 228,
+      "cpu_s": 25.777,
+      "share": 0.113,
+      "detail": "Aggregates=min(#2); max(#3); min(#4); count_star(); min_by(#5, #6, #7); min_by(#8, #9, #10) | Groups=#0; #1"
+     },
+     {
+      "op": "CTE",
+      "depth": 10,
+      "rows": 0,
+      "cpu_s": 20.42,
+      "share": 0.09,
+      "detail": ""
+     },
+     {
+      "op": "PROJECTION",
+      "depth": 24,
+      "rows": 2370501,
+      "cpu_s": 11.041,
+      "share": 0.048,
+      "detail": ""
+     },
+     {
+      "op": "CTE",
+      "depth": 8,
+      "rows": 0,
+      "cpu_s": 8.38,
+      "share": 0.037,
+      "detail": ""
+     },
+     {
+      "op": "WINDOW",
+      "depth": 18,
+      "rows": 132268,
+      "cpu_s": 7.167,
+      "share": 0.031,
+      "detail": "Projections=sum(CASE  WHEN (((g0 IS NULL) OR (g0 > 600000))) THEN (1) ELSE 0 END) OVER (PARTITION BY src_ip, dv ORDER BY ts_ms ASC NULLS LAST ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)"
+     },
+     {
+      "op": "WINDOW",
+      "depth": 21,
+      "rows": 132268,
+      "cpu_s": 6.903,
+      "share": 0.03,
+      "detail": "Projections=lag(ts_ms, 1, NULL::BIGINT) OVER (PARTITION BY src_ip, dv ORDER BY ts_ms ASC NULLS LAST)"
+     }
+    ]
+   },
+   "attempt": 0,
+   "sql_build_s": 0.0008,
+   "pre_cpu_idle_load": 97.7,
+   "pre_free_ram_mb": 3543,
+   "alerts": 228,
+   "attempts": [
+    {
+     "wall_s": 25.178,
+     "proc_cpu_s": 61.0,
+     "cpu_others_mean": 80.6,
+     "pre_cpu_idle_load": 97.7,
+     "free_ram_min_mb": 295,
+     "peak_rss_mb": 3640.2
+    }
+   ]
+  },
+  "vpn_bruteforce_success": {
+   "template": "brute_force_then_success",
+   "wall_s": 0.264,
+   "page_faults": 12872,
+   "proc_cpu_s": 0.25,
+   "n_samples": 1,
+   "cpu_total_mean": 85.7,
+   "cpu_own_mean": 4.8,
+   "cpu_others_mean": 80.9,
+   "cpu_others_max": 80.9,
+   "free_ram_min_mb": 4472,
+   "peak_rss_mb": 129.0,
+   "spill_dir_peak_mb": 0.0,
+   "profile": {
+    "latency_s": 0.245,
+    "cpu_s": 0.003,
+    "plan_s": 0.4335,
+    "op_cpu_s": 0.003,
+    "peak_buffer_mb": 17.5,
+    "peak_temp_dir_mb": 0.0,
+    "blocked_thread_s": 0.016,
+    "io_read_mb": 5.5,
+    "io_written_mb": 0.0,
+    "rows_scanned": 1420,
+    "scan_out_rows": 1422,
+    "n_scans": 17,
+    "window_rows": 0,
+    "intermediate_rows": 1423,
+    "top_ops": [
+     {
+      "op": "HASH_JOIN",
+      "depth": 5,
+      "rows": 0,
+      "cpu_s": 0.002,
+      "share": 0.646,
+      "detail": "Join Type=LEFT | Conditions=technique_id = technique_id"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 7,
+      "rows": 0,
+      "cpu_s": 0.001,
+      "share": 0.274,
+      "detail": "Join Type=INNER | Conditions=label = label"
+     },
+     {
+      "op": "TABLE_SCAN",
+      "depth": 6,
+      "rows": 710,
+      "cpu_s": 0.0,
+      "share": 0.027,
+      "detail": ""
+     },
+     {
+      "op": "RESULT_COLLECTOR",
+      "depth": 0,
+      "rows": 0,
+      "cpu_s": 0.0,
+      "share": 0.012,
+      "detail": ""
+     },
+     {
+      "op": "TABLE_SCAN",
+      "depth": 7,
+      "rows": 710,
+      "cpu_s": 0.0,
+      "share": 0.01,
+      "detail": ""
+     },
+     {
+      "op": "COLUMN_DATA_SCAN",
+      "depth": 8,
+      "rows": 2,
+      "cpu_s": 0.0,
+      "share": 0.003,
+      "detail": ""
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 6,
+      "rows": 0,
+      "cpu_s": 0.0,
+      "share": 0.003,
+      "detail": "Join Type=RIGHT | Conditions=technique_id = COALESCE(CAST(sub_technique_id AS VARCHAR), sub_technique_id)"
+     },
+     {
+      "op": "TABLE_SCAN",
+      "depth": 5,
+      "rows": 0,
+      "cpu_s": 0.0,
+      "share": 0.002,
+      "detail": ""
+     }
+    ]
+   },
+   "attempt": 0,
+   "sql_build_s": 0.0005,
+   "pre_cpu_idle_load": 88.7,
+   "pre_free_ram_mb": 4491,
+   "alerts": 0,
+   "attempts": [
+    {
+     "wall_s": 0.264,
+     "proc_cpu_s": 0.25,
+     "cpu_others_mean": 80.9,
+     "pre_cpu_idle_load": 88.7,
+     "free_ram_min_mb": 4472,
+     "peak_rss_mb": 129.0
+    }
+   ]
+  },
+  "ips_signatures": {
+   "template": "signature_map",
+   "wall_s": 5.735,
+   "page_faults": 2927015,
+   "proc_cpu_s": 36.078,
+   "n_samples": 11,
+   "cpu_total_mean": 95.5,
+   "cpu_own_mean": 47.8,
+   "cpu_others_mean": 47.7,
+   "cpu_others_max": 71.5,
+   "free_ram_min_mb": 3517,
+   "peak_rss_mb": 913.1,
+   "spill_dir_peak_mb": 0.0,
+   "profile": {
+    "latency_s": 5.726,
+    "cpu_s": 62.303,
+    "plan_s": 0.1759,
+    "op_cpu_s": 62.303,
+    "peak_buffer_mb": 1460.3,
+    "peak_temp_dir_mb": 0.0,
+    "blocked_thread_s": 0.131,
+    "io_read_mb": 1359.4,
+    "io_written_mb": 0.0,
+    "rows_scanned": 106774,
+    "scan_out_rows": 106207,
+    "n_scans": 10,
+    "window_rows": 0,
+    "intermediate_rows": 393136,
+    "top_ops": [
+     {
+      "op": "TABLE_SCAN",
+      "depth": 14,
+      "rows": 105354,
+      "cpu_s": 59.664,
+      "share": 0.958,
+      "detail": ""
+     },
+     {
+      "op": "FILTER",
+      "depth": 13,
+      "rows": 23910,
+      "cpu_s": 2.344,
+      "share": 0.038,
+      "detail": ""
+     },
+     {
+      "op": "INSERT",
+      "depth": 1,
+      "rows": 1,
+      "cpu_s": 0.076,
+      "share": 0.001,
+      "detail": ""
+     },
+     {
+      "op": "PROJECTION",
+      "depth": 7,
+      "rows": 23910,
+      "cpu_s": 0.07,
+      "share": 0.001,
+      "detail": ""
+     },
+     {
+      "op": "PROJECTION",
+      "depth": 11,
+      "rows": 23910,
+      "cpu_s": 0.047,
+      "share": 0.001,
+      "detail": ""
+     },
+     {
+      "op": "PROJECTION",
+      "depth": 2,
+      "rows": 23910,
+      "cpu_s": 0.038,
+      "share": 0.001,
+      "detail": ""
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 3,
+      "rows": 23910,
+      "cpu_s": 0.018,
+      "share": 0.0,
+      "detail": "Join Type=LEFT | Conditions=COALESCE(CAST(sub_technique_id AS VARCHAR), sub_technique_id) = technique_id"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 10,
+      "rows": 23910,
+      "cpu_s": 0.01,
+      "share": 0.0,
+      "detail": "Join Type=LEFT | Conditions=src_ip = ip"
+     }
+    ]
+   },
+   "attempt": 0,
+   "sql_build_s": 0.0012,
+   "pre_cpu_idle_load": 69.7,
+   "pre_free_ram_mb": 4447,
+   "alerts": 23910,
+   "attempts": [
+    {
+     "wall_s": 5.735,
+     "proc_cpu_s": 36.078,
+     "cpu_others_mean": 47.7,
+     "pre_cpu_idle_load": 69.7,
+     "free_ram_min_mb": 3517,
+     "peak_rss_mb": 913.1
+    }
+   ]
+  },
+  "av_malware_download": {
+   "template": "match",
+   "wall_s": 0.036,
+   "page_faults": 289,
+   "proc_cpu_s": 0.031,
+   "n_samples": 1,
+   "cpu_total_mean": 78.1,
+   "cpu_own_mean": 0.5,
+   "cpu_others_mean": 77.6,
+   "cpu_others_max": 77.6,
+   "free_ram_min_mb": 3705,
+   "peak_rss_mb": 117.2,
+   "spill_dir_peak_mb": 0.0,
+   "profile": {
+    "latency_s": 0.029,
+    "cpu_s": 0.004,
+    "plan_s": 0.0186,
+    "op_cpu_s": 0.004,
+    "peak_buffer_mb": 35.4,
+    "peak_temp_dir_mb": 0.0,
+    "blocked_thread_s": 0.017,
+    "io_read_mb": 0.0,
+    "io_written_mb": 0.0,
+    "rows_scanned": 1420,
+    "scan_out_rows": 721,
+    "n_scans": 8,
+    "window_rows": 0,
+    "intermediate_rows": 723,
+    "top_ops": [
+     {
+      "op": "HASH_JOIN",
+      "depth": 3,
+      "rows": 0,
+      "cpu_s": 0.002,
+      "share": 0.521,
+      "detail": "Join Type=LEFT | Conditions=COALESCE(CAST(sub_technique_id AS VARCHAR), sub_technique_id) = technique_id"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 8,
+      "rows": 0,
+      "cpu_s": 0.001,
+      "share": 0.23,
+      "detail": "Join Type=MARK | Conditions=action = #0"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 5,
+      "rows": 1,
+      "cpu_s": 0.0,
+      "share": 0.119,
+      "detail": "Join Type=RIGHT | Conditions=technique_id = technique_id"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 4,
+      "rows": 0,
+      "cpu_s": 0.0,
+      "share": 0.085,
+      "detail": "Join Type=INNER | Conditions=label = label"
+     },
+     {
+      "op": "RESULT_COLLECTOR",
+      "depth": 0,
+      "rows": 0,
+      "cpu_s": 0.0,
+      "share": 0.015,
+      "detail": ""
+     },
+     {
+      "op": "TABLE_SCAN",
+      "depth": 4,
+      "rows": 710,
+      "cpu_s": 0.0,
+      "share": 0.011,
+      "detail": ""
+     },
+     {
+      "op": "TABLE_SCAN",
+      "depth": 6,
+      "rows": 1,
+      "cpu_s": 0.0,
+      "share": 0.008,
+      "detail": ""
+     },
+     {
+      "op": "COLUMN_DATA_SCAN",
+      "depth": 6,
+      "rows": 1,
+      "cpu_s": 0.0,
+      "share": 0.002,
+      "detail": ""
+     }
+    ]
+   },
+   "attempt": 0,
+   "sql_build_s": 0.0001,
+   "pre_cpu_idle_load": 90.7,
+   "pre_free_ram_mb": 3693,
+   "alerts": 0,
+   "attempts": [
+    {
+     "wall_s": 0.036,
+     "proc_cpu_s": 0.031,
+     "cpu_others_mean": 77.6,
+     "pre_cpu_idle_load": 90.7,
+     "free_ram_min_mb": 3705,
+     "peak_rss_mb": 117.2
+    }
+   ]
+  },
+  "port_scan": {
+   "template": "port_scan",
+   "wall_s": 25.778,
+   "page_faults": 1068162,
+   "proc_cpu_s": 48.844,
+   "n_samples": 51,
+   "cpu_total_mean": 83.4,
+   "cpu_own_mean": 15.4,
+   "cpu_others_mean": 68.0,
+   "cpu_others_max": 87.1,
+   "free_ram_min_mb": 1178,
+   "peak_rss_mb": 3150.7,
+   "spill_dir_peak_mb": 0.0,
+   "profile": {
+    "latency_s": 25.734,
+    "cpu_s": 149.748,
+    "plan_s": 0.6825,
+    "op_cpu_s": 149.748,
+    "peak_buffer_mb": 3274.1,
+    "peak_temp_dir_mb": 0.0,
+    "blocked_thread_s": 4.89,
+    "io_read_mb": 794.8,
+    "io_written_mb": 0.0,
+    "rows_scanned": 27809526,
+    "scan_out_rows": 41136446,
+    "n_scans": 37,
+    "window_rows": 0,
+    "intermediate_rows": 160635575,
+    "top_ops": [
+     {
+      "op": "TABLE_SCAN",
+      "depth": 16,
+      "rows": 13891765,
+      "cpu_s": 51.362,
+      "share": 0.343,
+      "detail": ""
+     },
+     {
+      "op": "CTE",
+      "depth": 13,
+      "rows": 0,
+      "cpu_s": 28.705,
+      "share": 0.192,
+      "detail": ""
+     },
+     {
+      "op": "TABLE_SCAN",
+      "depth": 17,
+      "rows": 13891765,
+      "cpu_s": 22.031,
+      "share": 0.147,
+      "detail": ""
+     },
+     {
+      "op": "HASH_GROUP_BY",
+      "depth": 21,
+      "rows": 11251962,
+      "cpu_s": 17.975,
+      "share": 0.12,
+      "detail": "Aggregates= | Groups=#0; #1; #2"
+     },
+     {
+      "op": "HASH_GROUP_BY",
+      "depth": 18,
+      "rows": 11251956,
+      "cpu_s": 7.492,
+      "share": 0.05,
+      "detail": "Aggregates=count_star() | Groups=#0; #1"
+     },
+     {
+      "op": "HASH_GROUP_BY",
+      "depth": 24,
+      "rows": 2025781,
+      "cpu_s": 5.875,
+      "share": 0.039,
+      "detail": "Aggregates= | Groups=#0; #1; #2"
+     },
+     {
+      "op": "CTE",
+      "depth": 14,
+      "rows": 0,
+      "cpu_s": 5.851,
+      "share": 0.039,
+      "detail": ""
+     },
+     {
+      "op": "FILTER",
+      "depth": 15,
+      "rows": 2025783,
+      "cpu_s": 5.37,
+      "share": 0.036,
+      "detail": ""
+     }
+    ]
+   },
+   "attempt": 0,
+   "sql_build_s": 0.0004,
+   "pre_cpu_idle_load": 69.0,
+   "pre_free_ram_mb": 3673,
+   "alerts": 0,
+   "attempts": [
+    {
+     "wall_s": 25.778,
+     "proc_cpu_s": 48.844,
+     "cpu_others_mean": 68.0,
+     "pre_cpu_idle_load": 69.0,
+     "free_ram_min_mb": 1178,
+     "peak_rss_mb": 3150.7
+    }
+   ]
+  },
+  "internal_lateral": {
+   "template": "internal_lateral",
+   "wall_s": 4.229,
+   "page_faults": 2332783,
+   "proc_cpu_s": 28.156,
+   "n_samples": 7,
+   "cpu_total_mean": 97.7,
+   "cpu_own_mean": 48.6,
+   "cpu_others_mean": 49.1,
+   "cpu_others_max": 82.0,
+   "free_ram_min_mb": 3159,
+   "peak_rss_mb": 813.0,
+   "spill_dir_peak_mb": 0.0,
+   "profile": {
+    "latency_s": 4.216,
+    "cpu_s": 45.643,
+    "plan_s": 0.2311,
+    "op_cpu_s": 45.643,
+    "peak_buffer_mb": 1342.1,
+    "peak_temp_dir_mb": 0.0,
+    "blocked_thread_s": 0.182,
+    "io_read_mb": 1088.2,
+    "io_written_mb": 0.0,
+    "rows_scanned": 8353960,
+    "scan_out_rows": 8353975,
+    "n_scans": 14,
+    "window_rows": 0,
+    "intermediate_rows": 16708240,
+    "top_ops": [
+     {
+      "op": "TABLE_SCAN",
+      "depth": 18,
+      "rows": 8352540,
+      "cpu_s": 44.923,
+      "share": 0.984,
+      "detail": ""
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 17,
+      "rows": 8352540,
+      "cpu_s": 0.55,
+      "share": 0.012,
+      "detail": "Join Type=MARK | Conditions=dst_port = #0"
+     },
+     {
+      "op": "FILTER",
+      "depth": 16,
+      "rows": 862,
+      "cpu_s": 0.143,
+      "share": 0.003,
+      "detail": ""
+     },
+     {
+      "op": "FILTER",
+      "depth": 14,
+      "rows": 0,
+      "cpu_s": 0.012,
+      "share": 0.0,
+      "detail": ""
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 10,
+      "rows": 0,
+      "cpu_s": 0.005,
+      "share": 0.0,
+      "detail": "Join Type=MARK | Conditions=action = #0"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 5,
+      "rows": 0,
+      "cpu_s": 0.005,
+      "share": 0.0,
+      "detail": "Join Type=LEFT | Conditions=technique_id = technique_id"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 6,
+      "rows": 0,
+      "cpu_s": 0.004,
+      "share": 0.0,
+      "detail": "Join Type=LEFT | Conditions=COALESCE(sub_technique_id, sub_technique_id) = technique_id"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 7,
+      "rows": 0,
+      "cpu_s": 0.001,
+      "share": 0.0,
+      "detail": "Join Type=INNER | Conditions=label = label"
+     }
+    ]
+   },
+   "attempt": 0,
+   "sql_build_s": 0.0004,
+   "pre_cpu_idle_load": 95.8,
+   "pre_free_ram_mb": 3761,
+   "alerts": 0,
+   "attempts": [
+    {
+     "wall_s": 4.229,
+     "proc_cpu_s": 28.156,
+     "cpu_others_mean": 49.1,
+     "pre_cpu_idle_load": 95.8,
+     "free_ram_min_mb": 3159,
+     "peak_rss_mb": 813.0
+    }
+   ]
+  },
+  "inbound_remote_service": {
+   "template": "internal_lateral",
+   "wall_s": 3.787,
+   "page_faults": 2333134,
+   "proc_cpu_s": 27.531,
+   "n_samples": 6,
+   "cpu_total_mean": 95.2,
+   "cpu_own_mean": 51.4,
+   "cpu_others_mean": 43.9,
+   "cpu_others_max": 83.0,
+   "free_ram_min_mb": 3049,
+   "peak_rss_mb": 797.8,
+   "spill_dir_peak_mb": 0.0,
+   "profile": {
+    "latency_s": 3.775,
+    "cpu_s": 40.984,
+    "plan_s": 0.1481,
+    "op_cpu_s": 40.984,
+    "peak_buffer_mb": 1320.2,
+    "peak_temp_dir_mb": 0.0,
+    "blocked_thread_s": 0.145,
+    "io_read_mb": 1088.2,
+    "io_written_mb": 0.0,
+    "rows_scanned": 8353960,
+    "scan_out_rows": 8353975,
+    "n_scans": 14,
+    "window_rows": 0,
+    "intermediate_rows": 16708240,
+    "top_ops": [
+     {
+      "op": "TABLE_SCAN",
+      "depth": 18,
+      "rows": 8352540,
+      "cpu_s": 40.256,
+      "share": 0.982,
+      "detail": ""
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 17,
+      "rows": 8352540,
+      "cpu_s": 0.612,
+      "share": 0.015,
+      "detail": "Join Type=MARK | Conditions=dst_port = #0"
+     },
+     {
+      "op": "FILTER",
+      "depth": 16,
+      "rows": 862,
+      "cpu_s": 0.106,
+      "share": 0.003,
+      "detail": ""
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 5,
+      "rows": 0,
+      "cpu_s": 0.004,
+      "share": 0.0,
+      "detail": "Join Type=LEFT | Conditions=technique_id = technique_id"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 6,
+      "rows": 0,
+      "cpu_s": 0.003,
+      "share": 0.0,
+      "detail": "Join Type=LEFT | Conditions=COALESCE(sub_technique_id, sub_technique_id) = technique_id"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 10,
+      "rows": 0,
+      "cpu_s": 0.001,
+      "share": 0.0,
+      "detail": "Join Type=MARK | Conditions=action = #0"
+     },
+     {
+      "op": "FILTER",
+      "depth": 14,
+      "rows": 0,
+      "cpu_s": 0.001,
+      "share": 0.0,
+      "detail": ""
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 7,
+      "rows": 0,
+      "cpu_s": 0.0,
+      "share": 0.0,
+      "detail": "Join Type=INNER | Conditions=label = label"
+     }
+    ]
+   },
+   "attempt": 0,
+   "sql_build_s": 0.0001,
+   "pre_cpu_idle_load": 68.2,
+   "pre_free_ram_mb": 3709,
+   "alerts": 0,
+   "attempts": [
+    {
+     "wall_s": 3.787,
+     "proc_cpu_s": 27.531,
+     "cpu_others_mean": 43.9,
+     "pre_cpu_idle_load": 68.2,
+     "free_ram_min_mb": 3049,
+     "peak_rss_mb": 797.8
+    }
+   ]
+  },
+  "fw_config_change_after_login": {
+   "template": "config_change_after_login",
+   "wall_s": 0.278,
+   "page_faults": 5506,
+   "proc_cpu_s": 0.484,
+   "n_samples": 2,
+   "cpu_total_mean": 77.7,
+   "cpu_own_mean": 3.9,
+   "cpu_others_mean": 73.8,
+   "cpu_others_max": 81.5,
+   "free_ram_min_mb": 3506,
+   "peak_rss_mb": 243.8,
+   "spill_dir_peak_mb": 0.0,
+   "profile": {
+    "latency_s": 0.271,
+    "cpu_s": 0.451,
+    "plan_s": 0.2981,
+    "op_cpu_s": 0.451,
+    "peak_buffer_mb": 48.4,
+    "peak_temp_dir_mb": 0.0,
+    "blocked_thread_s": 0.035,
+    "io_read_mb": 5.6,
+    "io_written_mb": 0.0,
+    "rows_scanned": 1420,
+    "scan_out_rows": 1421,
+    "n_scans": 9,
+    "window_rows": 0,
+    "intermediate_rows": 1422,
+    "top_ops": [
+     {
+      "op": "TABLE_SCAN",
+      "depth": 11,
+      "rows": 0,
+      "cpu_s": 0.224,
+      "share": 0.497,
+      "detail": ""
+     },
+     {
+      "op": "TABLE_SCAN",
+      "depth": 16,
+      "rows": 0,
+      "cpu_s": 0.217,
+      "share": 0.481,
+      "detail": ""
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 5,
+      "rows": 0,
+      "cpu_s": 0.006,
+      "share": 0.013,
+      "detail": "Join Type=LEFT | Conditions=technique_id = technique_id"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 6,
+      "rows": 0,
+      "cpu_s": 0.003,
+      "share": 0.006,
+      "detail": "Join Type=LEFT | Conditions=COALESCE(CAST(sub_technique_id AS VARCHAR), sub_technique_id) = technique_id"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 7,
+      "rows": 0,
+      "cpu_s": 0.001,
+      "share": 0.002,
+      "detail": "Join Type=INNER | Conditions=label = label"
+     },
+     {
+      "op": "RESULT_COLLECTOR",
+      "depth": 0,
+      "rows": 0,
+      "cpu_s": 0.0,
+      "share": 0.0,
+      "detail": ""
+     },
+     {
+      "op": "TABLE_SCAN",
+      "depth": 7,
+      "rows": 710,
+      "cpu_s": 0.0,
+      "share": 0.0,
+      "detail": ""
+     },
+     {
+      "op": "TABLE_SCAN",
+      "depth": 6,
+      "rows": 710,
+      "cpu_s": 0.0,
+      "share": 0.0,
+      "detail": ""
+     }
+    ]
+   },
+   "attempt": 0,
+   "sql_build_s": 0.0002,
+   "pre_cpu_idle_load": 90.1,
+   "pre_free_ram_mb": 3534,
+   "alerts": 0,
+   "attempts": [
+    {
+     "wall_s": 0.278,
+     "proc_cpu_s": 0.484,
+     "cpu_others_mean": 73.8,
+     "pre_cpu_idle_load": 90.1,
+     "free_ram_min_mb": 3506,
+     "peak_rss_mb": 243.8
+    }
+   ]
+  },
+  "tor_or_proxy_app": {
+   "template": "match",
+   "wall_s": 0.039,
+   "page_faults": 458,
+   "proc_cpu_s": 0.031,
+   "n_samples": 1,
+   "cpu_total_mean": 70.3,
+   "cpu_own_mean": 0.5,
+   "cpu_others_mean": 69.8,
+   "cpu_others_max": 69.8,
+   "free_ram_min_mb": 3479,
+   "peak_rss_mb": 110.0,
+   "spill_dir_peak_mb": 0.0,
+   "profile": {
+    "latency_s": 0.032,
+    "cpu_s": 0.005,
+    "plan_s": 0.016,
+    "op_cpu_s": 0.005,
+    "peak_buffer_mb": 35.4,
+    "peak_temp_dir_mb": 0.0,
+    "blocked_thread_s": 0.02,
+    "io_read_mb": 0.0,
+    "io_written_mb": 0.0,
+    "rows_scanned": 1420,
+    "scan_out_rows": 721,
+    "n_scans": 8,
+    "window_rows": 0,
+    "intermediate_rows": 723,
+    "top_ops": [
+     {
+      "op": "HASH_JOIN",
+      "depth": 8,
+      "rows": 0,
+      "cpu_s": 0.002,
+      "share": 0.413,
+      "detail": "Join Type=MARK | Conditions=action = #0"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 3,
+      "rows": 0,
+      "cpu_s": 0.002,
+      "share": 0.327,
+      "detail": "Join Type=LEFT | Conditions=COALESCE(CAST(sub_technique_id AS VARCHAR), sub_technique_id) = technique_id"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 5,
+      "rows": 1,
+      "cpu_s": 0.001,
+      "share": 0.135,
+      "detail": "Join Type=RIGHT | Conditions=technique_id = technique_id"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 4,
+      "rows": 0,
+      "cpu_s": 0.0,
+      "share": 0.075,
+      "detail": "Join Type=INNER | Conditions=label = label"
+     },
+     {
+      "op": "TABLE_SCAN",
+      "depth": 4,
+      "rows": 710,
+      "cpu_s": 0.0,
+      "share": 0.014,
+      "detail": ""
+     },
+     {
+      "op": "RESULT_COLLECTOR",
+      "depth": 0,
+      "rows": 0,
+      "cpu_s": 0.0,
+      "share": 0.013,
+      "detail": ""
+     },
+     {
+      "op": "TABLE_SCAN",
+      "depth": 6,
+      "rows": 1,
+      "cpu_s": 0.0,
+      "share": 0.008,
+      "detail": ""
+     },
+     {
+      "op": "TABLE_SCAN",
+      "depth": 6,
+      "rows": 0,
+      "cpu_s": 0.0,
+      "share": 0.006,
+      "detail": ""
+     }
+    ]
+   },
+   "attempt": 0,
+   "sql_build_s": 0.0001,
+   "pre_cpu_idle_load": 71.0,
+   "pre_free_ram_mb": 3570,
+   "alerts": 0,
+   "attempts": [
+    {
+     "wall_s": 0.039,
+     "proc_cpu_s": 0.031,
+     "cpu_others_mean": 69.8,
+     "pre_cpu_idle_load": 71.0,
+     "free_ram_min_mb": 3479,
+     "peak_rss_mb": 110.0
+    }
+   ]
+  },
+  "web_malicious_category": {
+   "template": "match",
+   "wall_s": 0.087,
+   "page_faults": 2228,
+   "proc_cpu_s": 0.109,
+   "n_samples": 1,
+   "cpu_total_mean": 92.8,
+   "cpu_own_mean": 1.8,
+   "cpu_others_mean": 91.0,
+   "cpu_others_max": 91.0,
+   "free_ram_min_mb": 3028,
+   "peak_rss_mb": 113.4,
+   "spill_dir_peak_mb": 0.0,
+   "profile": {
+    "latency_s": 0.078,
+    "cpu_s": 0.026,
+    "plan_s": 0.0206,
+    "op_cpu_s": 0.026,
+    "peak_buffer_mb": 38.1,
+    "peak_temp_dir_mb": 0.0,
+    "blocked_thread_s": 0.057,
+    "io_read_mb": 0.0,
+    "io_written_mb": 0.0,
+    "rows_scanned": 4937,
+    "scan_out_rows": 4238,
+    "n_scans": 9,
+    "window_rows": 0,
+    "intermediate_rows": 35893,
+    "top_ops": [
+     {
+      "op": "HASH_JOIN",
+      "depth": 3,
+      "rows": 3517,
+      "cpu_s": 0.005,
+      "share": 0.199,
+      "detail": "Join Type=LEFT | Conditions=COALESCE(CAST(sub_technique_id AS VARCHAR), sub_technique_id) = technique_id"
+     },
+     {
+      "op": "PROJECTION",
+      "depth": 7,
+      "rows": 3517,
+      "cpu_s": 0.005,
+      "share": 0.192,
+      "detail": ""
+     },
+     {
+      "op": "INSERT",
+      "depth": 1,
+      "rows": 1,
+      "cpu_s": 0.004,
+      "share": 0.155,
+      "detail": ""
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 8,
+      "rows": 3517,
+      "cpu_s": 0.004,
+      "share": 0.139,
+      "detail": "Join Type=MARK | Conditions=action = #0"
+     },
+     {
+      "op": "TABLE_SCAN",
+      "depth": 11,
+      "rows": 3517,
+      "cpu_s": 0.003,
+      "share": 0.133,
+      "detail": ""
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 6,
+      "rows": 3517,
+      "cpu_s": 0.003,
+      "share": 0.12,
+      "detail": "Join Type=LEFT | Conditions=src_ip = ip"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 4,
+      "rows": 3517,
+      "cpu_s": 0.001,
+      "share": 0.024,
+      "detail": "Join Type=INNER | Conditions=label = label"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 5,
+      "rows": 1,
+      "cpu_s": 0.0,
+      "share": 0.015,
+      "detail": "Join Type=RIGHT | Conditions=technique_id = technique_id"
+     }
+    ]
+   },
+   "attempt": 0,
+   "sql_build_s": 0.0001,
+   "pre_cpu_idle_load": 83.8,
+   "pre_free_ram_mb": 3097,
+   "alerts": 3517,
+   "attempts": [
+    {
+     "wall_s": 0.087,
+     "proc_cpu_s": 0.109,
+     "cpu_others_mean": 91.0,
+     "pre_cpu_idle_load": 83.8,
+     "free_ram_min_mb": 3028,
+     "peak_rss_mb": 113.4
+    }
+   ]
+  },
+  "av_blocked": {
+   "template": "blocked_daily",
+   "wall_s": 6.054,
+   "page_faults": 2960083,
+   "proc_cpu_s": 34.609,
+   "n_samples": 11,
+   "cpu_total_mean": 96.2,
+   "cpu_own_mean": 39.8,
+   "cpu_others_mean": 56.4,
+   "cpu_others_max": 96.0,
+   "free_ram_min_mb": 1811,
+   "peak_rss_mb": 661.2,
+   "spill_dir_peak_mb": 0.0,
+   "profile": {
+    "latency_s": 6.043,
+    "cpu_s": 64.801,
+    "plan_s": 0.22,
+    "op_cpu_s": 64.801,
+    "peak_buffer_mb": 1552.5,
+    "peak_temp_dir_mb": 0.0,
+    "blocked_thread_s": 0.206,
+    "io_read_mb": 1360.2,
+    "io_written_mb": 0.0,
+    "rows_scanned": 265296,
+    "scan_out_rows": 264602,
+    "n_scans": 10,
+    "window_rows": 0,
+    "intermediate_rows": 2388086,
+    "top_ops": [
+     {
+      "op": "TABLE_SCAN",
+      "depth": 19,
+      "rows": 263876,
+      "cpu_s": 58.832,
+      "share": 0.908,
+      "detail": ""
+     },
+     {
+      "op": "PROJECTION",
+      "depth": 8,
+      "rows": 1386,
+      "cpu_s": 2.069,
+      "share": 0.032,
+      "detail": ""
+     },
+     {
+      "op": "HASH_GROUP_BY",
+      "depth": 10,
+      "rows": 1386,
+      "cpu_s": 1.918,
+      "share": 0.03,
+      "detail": "Aggregates=min(#3); max(#4); min(#5); count_star(); list(#6); list(#7); list(#8); min_by(#9, #10, #11); min_by(#12, #13, #14) | Groups=#0; #1; #2"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 18,
+      "rows": 263876,
+      "cpu_s": 1.329,
+      "share": 0.021,
+      "detail": "Join Type=MARK | Conditions=lower(outcome) = #0"
+     },
+     {
+      "op": "PROJECTION",
+      "depth": 11,
+      "rows": 263876,
+      "cpu_s": 0.499,
+      "share": 0.008,
+      "detail": ""
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 3,
+      "rows": 1386,
+      "cpu_s": 0.063,
+      "share": 0.001,
+      "detail": "Join Type=RIGHT | Conditions=technique_id = COALESCE(CAST(sub_technique_id AS VARCHAR), sub_technique_id)"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 15,
+      "rows": 263876,
+      "cpu_s": 0.025,
+      "share": 0.0,
+      "detail": "Join Type=LEFT | Conditions=src_ip = ip"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 14,
+      "rows": 263876,
+      "cpu_s": 0.019,
+      "share": 0.0,
+      "detail": "Join Type=LEFT | Conditions=dst_ip = ip"
+     }
+    ]
+   },
+   "attempt": 0,
+   "sql_build_s": 0.0002,
+   "pre_cpu_idle_load": 73.3,
+   "pre_free_ram_mb": 3251,
+   "alerts": 1386,
+   "attempts": [
+    {
+     "wall_s": 6.054,
+     "proc_cpu_s": 34.609,
+     "cpu_others_mean": 56.4,
+     "pre_cpu_idle_load": 73.3,
+     "free_ram_min_mb": 1811,
+     "peak_rss_mb": 661.2
+    }
+   ]
+  },
+  "ips_blocked": {
+   "template": "blocked_daily",
+   "wall_s": 6.133,
+   "page_faults": 2992256,
+   "proc_cpu_s": 36.969,
+   "n_samples": 12,
+   "cpu_total_mean": 96.8,
+   "cpu_own_mean": 47.0,
+   "cpu_others_mean": 49.8,
+   "cpu_others_max": 88.2,
+   "free_ram_min_mb": 2491,
+   "peak_rss_mb": 792.9,
+   "spill_dir_peak_mb": 0.0,
+   "profile": {
+    "latency_s": 6.121,
+    "cpu_s": 62.754,
+    "plan_s": 0.1959,
+    "op_cpu_s": 62.754,
+    "peak_buffer_mb": 1717.0,
+    "peak_temp_dir_mb": 0.0,
+    "blocked_thread_s": 0.161,
+    "io_read_mb": 1359.2,
+    "io_written_mb": 0.0,
+    "rows_scanned": 528877,
+    "scan_out_rows": 528310,
+    "n_scans": 10,
+    "window_rows": 0,
+    "intermediate_rows": 4085314,
+    "top_ops": [
+     {
+      "op": "TABLE_SCAN",
+      "depth": 19,
+      "rows": 527457,
+      "cpu_s": 50.47,
+      "share": 0.804,
+      "detail": ""
+     },
+     {
+      "op": "HASH_GROUP_BY",
+      "depth": 10,
+      "rows": 8313,
+      "cpu_s": 3.465,
+      "share": 0.055,
+      "detail": "Aggregates=min(#3); max(#4); min(#5); count_star(); list(#6); list(#7); list(#8); min_by(#9, #10, #11); min_by(#12, #13, #14) | Groups=#0; #1; #2"
+     },
+     {
+      "op": "PROJECTION",
+      "depth": 8,
+      "rows": 8313,
+      "cpu_s": 2.651,
+      "share": 0.042,
+      "detail": ""
+     },
+     {
+      "op": "PROJECTION",
+      "depth": 11,
+      "rows": 422103,
+      "cpu_s": 2.648,
+      "share": 0.042,
+      "detail": ""
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 18,
+      "rows": 527457,
+      "cpu_s": 1.88,
+      "share": 0.03,
+      "detail": "Join Type=MARK | Conditions=lower(outcome) = #0"
+     },
+     {
+      "op": "FILTER",
+      "depth": 17,
+      "rows": 422103,
+      "cpu_s": 0.752,
+      "share": 0.012,
+      "detail": ""
+     },
+     {
+      "op": "INSERT",
+      "depth": 1,
+      "rows": 1,
+      "cpu_s": 0.316,
+      "share": 0.005,
+      "detail": ""
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 15,
+      "rows": 422103,
+      "cpu_s": 0.188,
+      "share": 0.003,
+      "detail": "Join Type=LEFT | Conditions=src_ip = ip"
+     }
+    ]
+   },
+   "attempt": 0,
+   "sql_build_s": 0.0002,
+   "pre_cpu_idle_load": 82.0,
+   "pre_free_ram_mb": 2759,
+   "alerts": 8313,
+   "attempts": [
+    {
+     "wall_s": 6.133,
+     "proc_cpu_s": 36.969,
+     "cpu_others_mean": 49.8,
+     "pre_cpu_idle_load": 82.0,
+     "free_ram_min_mb": 2491,
+     "peak_rss_mb": 792.9
+    }
+   ]
+  },
+  "vpn_login_context": {
+   "template": "vpn_login_context",
+   "wall_s": 0.44,
+   "page_faults": 18388,
+   "proc_cpu_s": 0.406,
+   "n_samples": 2,
+   "cpu_total_mean": 83.2,
+   "cpu_own_mean": 3.4,
+   "cpu_others_mean": 79.9,
+   "cpu_others_max": 92.6,
+   "free_ram_min_mb": 3203,
+   "peak_rss_mb": 190.4,
+   "spill_dir_peak_mb": 0.0,
+   "profile": {
+    "latency_s": 0.432,
+    "cpu_s": 0.001,
+    "plan_s": 0.8212,
+    "op_cpu_s": 0.001,
+    "peak_buffer_mb": 40.3,
+    "peak_temp_dir_mb": 0.0,
+    "blocked_thread_s": 0.012,
+    "io_read_mb": 8.3,
+    "io_written_mb": 0.0,
+    "rows_scanned": 1420,
+    "scan_out_rows": 1421,
+    "n_scans": 8,
+    "window_rows": 0,
+    "intermediate_rows": 1423,
+    "top_ops": [
+     {
+      "op": "HASH_JOIN",
+      "depth": 5,
+      "rows": 0,
+      "cpu_s": 0.001,
+      "share": 0.757,
+      "detail": "Join Type=INNER | Conditions=label = label"
+     },
+     {
+      "op": "RESULT_COLLECTOR",
+      "depth": 0,
+      "rows": 0,
+      "cpu_s": 0.0,
+      "share": 0.051,
+      "detail": ""
+     },
+     {
+      "op": "TABLE_SCAN",
+      "depth": 5,
+      "rows": 710,
+      "cpu_s": 0.0,
+      "share": 0.051,
+      "detail": ""
+     },
+     {
+      "op": "TABLE_SCAN",
+      "depth": 4,
+      "rows": 710,
+      "cpu_s": 0.0,
+      "share": 0.045,
+      "detail": ""
+     },
+     {
+      "op": "CTE_SCAN",
+      "depth": 17,
+      "rows": 0,
+      "cpu_s": 0.0,
+      "share": 0.031,
+      "detail": ""
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 3,
+      "rows": 0,
+      "cpu_s": 0.0,
+      "share": 0.008,
+      "detail": "Join Type=RIGHT | Conditions=technique_id = COALESCE(CAST(sub_technique_id AS VARCHAR), sub_technique_id)"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 16,
+      "rows": 0,
+      "cpu_s": 0.0,
+      "share": 0.008,
+      "detail": "Join Type=LEFT | Conditions=ts_ms IS NOT DISTINCT FROM #0; src_ip IS NOT DISTINCT FROM #1"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 4,
+      "rows": 0,
+      "cpu_s": 0.0,
+      "share": 0.008,
+      "detail": "Join Type=RIGHT | Conditions=technique_id = technique_id"
+     }
+    ]
+   },
+   "attempt": 0,
+   "sql_build_s": 0.0033,
+   "pre_cpu_idle_load": 81.9,
+   "pre_free_ram_mb": 3346,
+   "alerts": 0,
+   "attempts": [
+    {
+     "wall_s": 0.44,
+     "proc_cpu_s": 0.406,
+     "cpu_others_mean": 79.9,
+     "pre_cpu_idle_load": 81.9,
+     "free_ram_min_mb": 3203,
+     "peak_rss_mb": 190.4
+    }
+   ]
+  }
+ },
+ "steps": {
+  "lookups_host_ip_map_s": 0.135,
+  "validate_s": 3.176,
+  "prepare_s": 0.022,
+  "match_scan": {
+   "wall_s": 6.979,
+   "page_faults": 2940095,
+   "proc_cpu_s": 41.688,
+   "n_samples": 10,
+   "cpu_total_mean": 99.5,
+   "cpu_own_mean": 42.8,
+   "cpu_others_mean": 56.6,
+   "cpu_others_max": 94.5,
+   "free_ram_min_mb": 2181,
+   "peak_rss_mb": 754.7,
+   "spill_dir_peak_mb": 0.0,
+   "profile": {
+    "latency_s": 6.962,
+    "cpu_s": 74.117,
+    "plan_s": 0.2965,
+    "op_cpu_s": 74.117,
+    "peak_buffer_mb": 1539.8,
+    "peak_temp_dir_mb": 0.0,
+    "blocked_thread_s": 0.417,
+    "io_read_mb": 1360.5,
+    "io_written_mb": 0.0,
+    "rows_scanned": 13364308,
+    "scan_out_rows": 13364404,
+    "n_scans": 17,
+    "window_rows": 0,
+    "intermediate_rows": 120321073,
+    "top_ops": [
+     {
+      "op": "TABLE_SCAN",
+      "depth": 22,
+      "rows": 13364308,
+      "cpu_s": 59.977,
+      "share": 0.809,
+      "detail": ""
+     },
+     {
+      "op": "FILTER",
+      "depth": 13,
+      "rows": 3517,
+      "cpu_s": 7.77,
+      "share": 0.105,
+      "detail": ""
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 15,
+      "rows": 13364308,
+      "cpu_s": 1.545,
+      "share": 0.021,
+      "detail": "Join Type=MARK | Conditions=COALESCE(lower(outcome), '.') = #0"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 14,
+      "rows": 13364308,
+      "cpu_s": 1.432,
+      "share": 0.019,
+      "detail": "Join Type=MARK | Conditions=lower(app) = #0"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 21,
+      "rows": 13364308,
+      "cpu_s": 0.757,
+      "share": 0.01,
+      "detail": "Join Type=MARK | Conditions=lower(parent_process) = #0"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 17,
+      "rows": 13364308,
+      "cpu_s": 0.66,
+      "share": 0.009,
+      "detail": "Join Type=MARK | Conditions=action = #0"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 20,
+      "rows": 13364308,
+      "cpu_s": 0.527,
+      "share": 0.007,
+      "detail": "Join Type=MARK | Conditions=lower(process_name) = #0"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 18,
+      "rows": 13364308,
+      "cpu_s": 0.513,
+      "share": 0.007,
+      "detail": "Join Type=MARK | Conditions=lower(process_name) = #0"
+     }
+    ]
+   },
+   "alerts": 3517
+  },
+  "relabel": {
+   "wall_s": 0.009,
+   "page_faults": 38,
+   "proc_cpu_s": 0.016,
+   "n_samples": 1,
+   "cpu_total_mean": 94.8,
+   "cpu_own_mean": 0.5,
+   "cpu_others_mean": 94.3,
+   "cpu_others_max": 94.3,
+   "free_ram_min_mb": 3180,
+   "peak_rss_mb": 190.7,
+   "spill_dir_peak_mb": 0.0,
+   "profile": {
+    "latency_s": 0.432,
+    "cpu_s": 0.001,
+    "plan_s": 0.8212,
+    "op_cpu_s": 0.001,
+    "peak_buffer_mb": 40.3,
+    "peak_temp_dir_mb": 0.0,
+    "blocked_thread_s": 0.012,
+    "io_read_mb": 8.3,
+    "io_written_mb": 0.0,
+    "rows_scanned": 1420,
+    "scan_out_rows": 1421,
+    "n_scans": 8,
+    "window_rows": 0,
+    "intermediate_rows": 1423,
+    "top_ops": [
+     {
+      "op": "HASH_JOIN",
+      "depth": 5,
+      "rows": 0,
+      "cpu_s": 0.001,
+      "share": 0.757,
+      "detail": "Join Type=INNER | Conditions=label = label"
+     },
+     {
+      "op": "RESULT_COLLECTOR",
+      "depth": 0,
+      "rows": 0,
+      "cpu_s": 0.0,
+      "share": 0.051,
+      "detail": ""
+     },
+     {
+      "op": "TABLE_SCAN",
+      "depth": 5,
+      "rows": 710,
+      "cpu_s": 0.0,
+      "share": 0.051,
+      "detail": ""
+     },
+     {
+      "op": "TABLE_SCAN",
+      "depth": 4,
+      "rows": 710,
+      "cpu_s": 0.0,
+      "share": 0.045,
+      "detail": ""
+     },
+     {
+      "op": "CTE_SCAN",
+      "depth": 17,
+      "rows": 0,
+      "cpu_s": 0.0,
+      "share": 0.031,
+      "detail": ""
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 3,
+      "rows": 0,
+      "cpu_s": 0.0,
+      "share": 0.008,
+      "detail": "Join Type=RIGHT | Conditions=technique_id = COALESCE(CAST(sub_technique_id AS VARCHAR), sub_technique_id)"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 16,
+      "rows": 0,
+      "cpu_s": 0.0,
+      "share": 0.008,
+      "detail": "Join Type=LEFT | Conditions=ts_ms IS NOT DISTINCT FROM #0; src_ip IS NOT DISTINCT FROM #1"
+     },
+     {
+      "op": "HASH_JOIN",
+      "depth": 4,
+      "rows": 0,
+      "cpu_s": 0.0,
+      "share": 0.008,
+      "detail": "Join Type=RIGHT | Conditions=technique_id = technique_id"
+     }
+    ]
+   },
+   "relabelled": 0
+  },
+  "copy_raw_alerts": {
+   "wall_s": 0.211,
+   "page_faults": 19678,
+   "proc_cpu_s": 0.125,
+   "n_samples": 2,
+   "cpu_total_mean": 38.2,
+   "cpu_own_mean": 1.1,
+   "cpu_others_mean": 37.0,
+   "cpu_others_max": 43.1,
+   "free_ram_min_mb": 2086,
+   "peak_rss_mb": 260.4,
+   "spill_dir_peak_mb": 0.0,
+   "profile": {
+    "latency_s": 0.191,
+    "cpu_s": 0.061,
+    "plan_s": 0.011,
+    "op_cpu_s": 0.061,
+    "peak_buffer_mb": 74.9,
+    "peak_temp_dir_mb": 0.0,
+    "blocked_thread_s": 0.185,
+    "io_read_mb": 0.0,
+    "io_written_mb": 5.5,
+    "rows_scanned": 38458,
+    "scan_out_rows": 38458,
+    "n_scans": 1,
+    "window_rows": 0,
+    "intermediate_rows": 38459,
+    "top_ops": [
+     {
+      "op": "COPY_TO_FILE",
+      "depth": 1,
+      "rows": 1,
+      "cpu_s": 0.031,
+      "share": 0.511,
+      "detail": ""
+     },
+     {
+      "op": "TABLE_SCAN",
+      "depth": 2,
+      "rows": 38458,
+      "cpu_s": 0.03,
+      "share": 0.489,
+      "detail": ""
+     },
+     {
+      "op": "RESULT_COLLECTOR",
+      "depth": 0,
+      "rows": 0,
+      "cpu_s": 0.0,
+      "share": 0.0,
+      "detail": ""
+     }
+    ]
+   }
+  },
+  "baseline": {
+   "wall_s": 0.144,
+   "page_faults": 1582,
+   "proc_cpu_s": 0.234,
+   "n_samples": 1,
+   "cpu_total_mean": 35.7,
+   "cpu_own_mean": 3.8,
+   "cpu_others_mean": 31.9,
+   "cpu_others_max": 31.9,
+   "free_ram_min_mb": 2091,
+   "peak_rss_mb": 264.1,
+   "spill_dir_peak_mb": 0.0,
+   "profile": {
+    "latency_s": 0.141,
+    "cpu_s": 0.716,
+    "plan_s": 0.0925,
+    "op_cpu_s": 0.716,
+    "peak_buffer_mb": 137.9,
+    "peak_temp_dir_mb": 0.0,
+    "blocked_thread_s": 0.006,
+    "io_read_mb": 2.8,
+    "io_written_mb": 0.0,
+    "rows_scanned": 17076961,
+    "scan_out_rows": 17087829,
+    "n_scans": 5,
+    "window_rows": 0,
+    "intermediate_rows": 34283958,
+    "top_ops": [
+     {
+      "op": "HASH_GROUP_BY",
+      "depth": 15,
+      "rows": 5434,
+      "cpu_s": 0.341,
+      "share": 0.476,
+      "detail": "Aggregates= | Groups=#0; #1; #2"
+     },
+     {
+      "op": "HASH_GROUP_BY",
+      "depth": 13,
+      "rows": 1387,
+      "cpu_s": 0.208,
+      "share": 0.29,
+      "detail": "Aggregates=count_star() | Groups=#0; #1"
+     },
+     {
+      "op": "CTE",
+      "depth": 2,
+      "rows": 0,
+      "cpu_s": 0.07,
+      "share": 0.098,
+      "detail": ""
+     },
+     {
+      "op": "TABLE_SCAN",
+      "depth": 13,
+      "rows": 17000045,
+      "cpu_s": 0.024,
+      "share": 0.033,
+      "detail": ""
+     },
+     {
+      "op": "HASH_GROUP_BY",
+      "depth": 4,
+      "rows": 5434,
+      "cpu_s": 0.016,
+      "share": 0.022,
+      "detail": "Aggregates= | Groups=#0; #1; #2"
+     },
+     {
+      "op": "PARTITIONED_AGGREGATE",
+      "depth": 11,
+      "rows": 1,
+      "cpu_s": 0.014,
+      "share": 0.02,
+      "detail": "Aggregates= | Groups=#0"
+     },
+     {
+      "op": "HASH_GROUP_BY",
+      "depth": 4,
+      "rows": 6,
+      "cpu_s": 0.012,
+      "share": 0.017,
+      "detail": "Aggregates=list(#1) FILTER (WHERE #3) Filter: #3; any_value(#3); count(#4) | Groups=#0"
+     },
+     {
+      "op": "HASH_GROUP_BY",
+      "depth": 8,
+      "rows": 6,
+      "cpu_s": 0.011,
+      "share": 0.015,
+      "detail": "Aggregates=count_star() | Groups=#0; #1"
+     }
+    ]
+   }
+  }
+ },
+ "code_hashes": {
+  "config/rules.yaml": "5493cbe0de3a",
+  "config/pipeline.yaml": "745a384a648d",
+  "config/sigma_map.yaml": "7eb0835d1c44",
+  "config/ioc.yaml": "2fde88ba7a72",
+  "backend/attacklens/detect.py": "6f1535f4b679",
+  "backend/attacklens/detect_cloud.py": "69ec5a3ae363",
+  "backend/attacklens/detect_cloud_behaviour.py": "dd04595f9bdb",
+  "backend/attacklens/detect_cloud_ev.py": "8beea56cc746",
+  "backend/attacklens/detect_cloud_geo.py": "39702a1e156a",
+  "backend/attacklens/detect_cloud_templates.py": "5f5a24373a81",
+  "backend/attacklens/detect_sql.py": "f648aa3365da",
+  "backend/attacklens/detect_templates.py": "44a116d1c872",
+  "backend/attacklens/detect_templates2.py": "8cfa70cbf6c6",
+  "backend/attacklens/detect_templates3.py": "c6096fe34d83",
+  "backend/attacklens/detect_templates_net.py": "3e3345995df3",
+  "backend/attacklens/sigma_detect.py": "87af28481b45",
+  "backend/attacklens/db.py": "6f8f8c90b786"
+ },
+ "memory_limit": "5GB",
+ "threads": 12,
+ "duckdb": "2.0.0",
+ "started": "2026-11-01T04:13:38",
+ "idle_before": {
+  "cpu_idle_load": 87.9,
+  "free_ram_mb": 2831
+ },
+ "fingerprint": {
+  "detect.py": "8b8aa225d1",
+  "detect_cloud.py": "bb9cf67d63",
+  "detect_cloud_behaviour.py": "49fd43cf7d",
+  "detect_cloud_ev.py": "1e4f8ba4b7",
+  "detect_cloud_geo.py": "a6f55b2fbe",
+  "detect_cloud_templates.py": "2b1b3cac5a",
+  "detect_sql.py": "141c3ea661",
+  "detect_templates.py": "4430844760",
+  "detect_templates2.py": "aea21feefe",
+  "detect_templates3.py": "70d1426846",
+  "detect_templates_net.py": "479edbfcda",
+  "sigma_cache.py": "96e49aa819",
+  "sigma_compile.py": "a0b92a5afb",
+  "sigma_detect.py": "c5727327de",
+  "sigma_prefilter.py": "3755c5f53c",
+  "sigma_rules.py": "11a5a84725",
+  "allowlist.yaml": "6fe8b74a00",
+  "cloud.yaml": "b2ac6eeade",
+  "integrations.yaml": "85b21a7381",
+  "ioc.yaml": "d0f87c9368",
+  "linking.yaml": "23e2a92198",
+  "live.yaml": "348fbd0e4d",
+  "narrative.yaml": "280afb4b26",
+  "pipeline.yaml": "bc6a87dbd8",
+  "rules.yaml": "0173ef0905",
+  "rules_cloud.yaml": "269680ebca",
+  "sigma_map.yaml": "5a79cb601c",
+  "sources.yaml": "1dcbc4280e",
+  "_all": "a1318e7928"
+ },
+ "rows": 17000045,
+ "rows_ok": 17000045,
+ "rows_per_day": {
+  "2026-10-30": 17000045
+ },
+ "sigma": {
+  "wall_s": 147.638,
+  "page_faults": 613468,
+  "proc_cpu_s": 279.125,
+  "n_samples": 283,
+  "cpu_total_mean": 86.8,
+  "cpu_own_mean": 15.6,
+  "cpu_others_mean": 71.1,
+  "cpu_others_max": 95.5,
+  "free_ram_min_mb": 897,
+  "peak_rss_mb": 498.7,
+  "spill_dir_peak_mb": 0.0,
+  "profile": {
+   "latency_s": 0.002,
+   "cpu_s": 0.001,
+   "plan_s": 0.002,
+   "op_cpu_s": 0.001,
+   "peak_buffer_mb": 35.1,
+   "peak_temp_dir_mb": 0.0,
+   "blocked_thread_s": 0.001,
+   "io_read_mb": 0.0,
+   "io_written_mb": 0.0,
+   "rows_scanned": 32314,
+   "scan_out_rows": 0,
+   "n_scans": 1,
+   "window_rows": 0,
+   "intermediate_rows": 0,
+   "top_ops": [
+    {
+     "op": "TABLE_SCAN",
+     "depth": 4,
+     "rows": 0,
+     "cpu_s": 0.001,
+     "share": 0.997,
+     "detail": ""
+    },
+    {
+     "op": "HASH_GROUP_BY",
+     "depth": 2,
+     "rows": 0,
+     "cpu_s": 0.0,
+     "share": 0.002,
+     "detail": "Aggregates=count_star() | Groups=#0"
+    },
+    {
+     "op": "ORDER_BY",
+     "depth": 1,
+     "rows": 0,
+     "cpu_s": 0.0,
+     "share": 0.002,
+     "detail": ""
+    },
+    {
+     "op": "RESULT_COLLECTOR",
+     "depth": 0,
+     "rows": 0,
+     "cpu_s": 0.0,
+     "share": 0.0,
+     "detail": ""
+    },
+    {
+     "op": "PROJECTION",
+     "depth": 3,
+     "rows": 0,
+     "cpu_s": 0.0,
+     "share": 0.0,
+     "detail": ""
+    }
+   ]
+  },
+  "stats": {
+   "sigma_alerts": 0,
+   "sigma_wall_s": 147.62,
+   "rows_matched": 0,
+   "load_s": 0.213,
+   "scan_s": 147.266,
+   "group_s": {
+    "antivirus": 3.627,
+    "linux_syslog": 0.122,
+    "file_event": 0.541,
+    "network_connection": 4.507,
+    "process_creation": 0.238,
+    "dns": 10.253,
+    "fortigate_event": 0.595,
+    "proxy": 2.917,
+    "webserver": 14.918,
+    "win_security": 0.351,
+    "dns_query": 14.684,
+    "file_event+": 4.314,
+    "network_connection+": 59.835,
+    "process_creation+": 0.772,
+    "registry": 27.314,
+    "firewall": 2.278
+   },
+   "batches": 20,
+   "cache_key": "116887bf922e9054"
+  },
+  "statements": [
+   {
+    "label": "antivirus",
+    "kind": "sigma_gate_count",
+    "wall_s": 3.595,
+    "profile": {
+     "latency_s": 0.034,
+     "cpu_s": 0.001,
+     "plan_s": 0.0579,
+     "op_cpu_s": 0.001,
+     "peak_buffer_mb": 35.1,
+     "peak_temp_dir_mb": 0.0,
+     "blocked_thread_s": 0.001,
+     "io_read_mb": 0.0,
+     "io_written_mb": 0.0,
+     "rows_scanned": 0,
+     "scan_out_rows": 1,
+     "n_scans": 1,
+     "window_rows": 0,
+     "intermediate_rows": 3286,
+     "top_ops": [
+      {
+       "op": "INSERT",
+       "depth": 1,
+       "rows": 1,
+       "cpu_s": 0.001,
+       "share": 0.54,
+       "detail": ""
+      },
+      {
+       "op": "UNNEST",
+       "depth": 3,
+       "rows": 1642,
+       "cpu_s": 0.001,
+       "share": 0.419,
+       "detail": ""
+      },
+      {
+       "op": "RESULT_COLLECTOR",
+       "depth": 0,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.038,
+       "detail": ""
+      },
+      {
+       "op": "PROJECTION",
+       "depth": 2,
+       "rows": 1642,
+       "cpu_s": 0.0,
+       "share": 0.002,
+       "detail": ""
+      },
+      {
+       "op": "DUMMY_SCAN",
+       "depth": 4,
+       "rows": 1,
+       "cpu_s": 0.0,
+       "share": 0.001,
+       "detail": ""
+      }
+     ]
+    }
+   },
+   {
+    "label": "antivirus",
+    "kind": "group_total",
+    "wall_s": 3.627,
+    "n_rules": 9,
+    "tuples": 0,
+    "matched_tuples": 0,
+    "mode": "direct"
+   },
+   {
+    "label": "linux_syslog",
+    "kind": "sigma_gate_count",
+    "wall_s": 0.093,
+    "profile": {
+     "latency_s": 0.034,
+     "cpu_s": 0.001,
+     "plan_s": 0.0579,
+     "op_cpu_s": 0.001,
+     "peak_buffer_mb": 35.1,
+     "peak_temp_dir_mb": 0.0,
+     "blocked_thread_s": 0.001,
+     "io_read_mb": 0.0,
+     "io_written_mb": 0.0,
+     "rows_scanned": 0,
+     "scan_out_rows": 1,
+     "n_scans": 1,
+     "window_rows": 0,
+     "intermediate_rows": 3286,
+     "top_ops": [
+      {
+       "op": "INSERT",
+       "depth": 1,
+       "rows": 1,
+       "cpu_s": 0.001,
+       "share": 0.54,
+       "detail": ""
+      },
+      {
+       "op": "UNNEST",
+       "depth": 3,
+       "rows": 1642,
+       "cpu_s": 0.001,
+       "share": 0.419,
+       "detail": ""
+      },
+      {
+       "op": "RESULT_COLLECTOR",
+       "depth": 0,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.038,
+       "detail": ""
+      },
+      {
+       "op": "PROJECTION",
+       "depth": 2,
+       "rows": 1642,
+       "cpu_s": 0.0,
+       "share": 0.002,
+       "detail": ""
+      },
+      {
+       "op": "DUMMY_SCAN",
+       "depth": 4,
+       "rows": 1,
+       "cpu_s": 0.0,
+       "share": 0.001,
+       "detail": ""
+      }
+     ]
+    }
+   },
+   {
+    "label": "linux_syslog",
+    "kind": "group_total",
+    "wall_s": 0.122,
+    "n_rules": 19,
+    "tuples": 0,
+    "matched_tuples": 0,
+    "mode": "direct"
+   },
+   {
+    "label": "file_event",
+    "kind": "sigma_distinct_tuples",
+    "wall_s": 0.29,
+    "profile": {
+     "latency_s": 0.276,
+     "cpu_s": 0.844,
+     "plan_s": 0.2268,
+     "op_cpu_s": 0.844,
+     "peak_buffer_mb": 39.4,
+     "peak_temp_dir_mb": 0.0,
+     "blocked_thread_s": 0.0,
+     "io_read_mb": 2.8,
+     "io_written_mb": 0.0,
+     "rows_scanned": 0,
+     "scan_out_rows": 0,
+     "n_scans": 1,
+     "window_rows": 0,
+     "intermediate_rows": 1,
+     "top_ops": [
+      {
+       "op": "TABLE_SCAN",
+       "depth": 9,
+       "rows": 0,
+       "cpu_s": 0.843,
+       "share": 0.999,
+       "detail": ""
+      },
+      {
+       "op": "RESULT_COLLECTOR",
+       "depth": 0,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.001,
+       "detail": ""
+      },
+      {
+       "op": "FILTER",
+       "depth": 8,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      },
+      {
+       "op": "HASH_GROUP_BY",
+       "depth": 4,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": "Aggregates= | Groups=#0; #1; #2"
+      },
+      {
+       "op": "CREATE_TABLE_AS",
+       "depth": 1,
+       "rows": 1,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      },
+      {
+       "op": "PROJECTION",
+       "depth": 2,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      },
+      {
+       "op": "PROJECTION",
+       "depth": 3,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      },
+      {
+       "op": "PROJECTION",
+       "depth": 5,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      }
+     ]
+    }
+   },
+   {
+    "label": "file_event",
+    "kind": "other",
+    "wall_s": 0.194,
+    "profile": {
+     "latency_s": 0.192,
+     "cpu_s": 0.533,
+     "plan_s": 0.2613,
+     "op_cpu_s": 0.533,
+     "peak_buffer_mb": 37.7,
+     "peak_temp_dir_mb": 0.0,
+     "blocked_thread_s": 0.002,
+     "io_read_mb": 2.8,
+     "io_written_mb": 0.0,
+     "rows_scanned": 0,
+     "scan_out_rows": 0,
+     "n_scans": 1,
+     "window_rows": 0,
+     "intermediate_rows": 0,
+     "top_ops": [
+      {
+       "op": "TABLE_SCAN",
+       "depth": 4,
+       "rows": 0,
+       "cpu_s": 0.533,
+       "share": 1.0,
+       "detail": ""
+      },
+      {
+       "op": "RESULT_COLLECTOR",
+       "depth": 0,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      },
+      {
+       "op": "PROJECTION",
+       "depth": 1,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      },
+      {
+       "op": "PROJECTION",
+       "depth": 2,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      },
+      {
+       "op": "STREAMING_LIMIT",
+       "depth": 3,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      }
+     ]
+    }
+   },
+   {
+    "label": "file_event",
+    "kind": "group_total",
+    "wall_s": 0.541,
+    "n_rules": 19,
+    "tuples": 0,
+    "matched_tuples": 0,
+    "mode": "distinct"
+   },
+   {
+    "label": "network_connection",
+    "kind": "sigma_distinct_tuples",
+    "wall_s": 4.296,
+    "profile": {
+     "latency_s": 4.286,
+     "cpu_s": 48.567,
+     "plan_s": 0.2465,
+     "op_cpu_s": 48.567,
+     "peak_buffer_mb": 88.5,
+     "peak_temp_dir_mb": 0.0,
+     "blocked_thread_s": 0.002,
+     "io_read_mb": 120.4,
+     "io_written_mb": 0.0,
+     "rows_scanned": 17000045,
+     "scan_out_rows": 17000045,
+     "n_scans": 1,
+     "window_rows": 0,
+     "intermediate_rows": 17000046,
+     "top_ops": [
+      {
+       "op": "TABLE_SCAN",
+       "depth": 9,
+       "rows": 17000045,
+       "cpu_s": 28.189,
+       "share": 0.58,
+       "detail": ""
+      },
+      {
+       "op": "FILTER",
+       "depth": 8,
+       "rows": 0,
+       "cpu_s": 20.377,
+       "share": 0.42,
+       "detail": ""
+      },
+      {
+       "op": "RESULT_COLLECTOR",
+       "depth": 0,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      },
+      {
+       "op": "HASH_GROUP_BY",
+       "depth": 4,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": "Aggregates= | Groups=#0; #1; #2; #3; #4"
+      },
+      {
+       "op": "CREATE_TABLE_AS",
+       "depth": 1,
+       "rows": 1,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      },
+      {
+       "op": "PROJECTION",
+       "depth": 2,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      },
+      {
+       "op": "PROJECTION",
+       "depth": 3,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      },
+      {
+       "op": "PROJECTION",
+       "depth": 5,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      }
+     ]
+    }
+   },
+   {
+    "label": "network_connection",
+    "kind": "other",
+    "wall_s": 0.111,
+    "profile": {
+     "latency_s": 0.001,
+     "cpu_s": 0.0,
+     "plan_s": 0.0009,
+     "op_cpu_s": 0.0,
+     "peak_buffer_mb": 35.0,
+     "peak_temp_dir_mb": 0.0,
+     "blocked_thread_s": 0.0,
+     "io_read_mb": 0.0,
+     "io_written_mb": 0.0,
+     "rows_scanned": 0,
+     "scan_out_rows": 0,
+     "n_scans": 0,
+     "window_rows": 0,
+     "intermediate_rows": 0,
+     "top_ops": [
+      {
+       "op": "DROP",
+       "depth": 1,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 1.0,
+       "detail": ""
+      },
+      {
+       "op": "RESULT_COLLECTOR",
+       "depth": 0,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      }
+     ]
+    }
+   },
+   {
+    "label": "network_connection",
+    "kind": "group_total",
+    "wall_s": 4.507,
+    "n_rules": 5,
+    "tuples": 0,
+    "matched_tuples": 0,
+    "mode": "distinct"
+   },
+   {
+    "label": "process_creation",
+    "kind": "sigma_distinct_tuples",
+    "wall_s": 0.167,
+    "profile": {
+     "latency_s": 0.164,
+     "cpu_s": 0.535,
+     "plan_s": 0.1879,
+     "op_cpu_s": 0.535,
+     "peak_buffer_mb": 39.1,
+     "peak_temp_dir_mb": 0.0,
+     "blocked_thread_s": 0.002,
+     "io_read_mb": 2.8,
+     "io_written_mb": 0.0,
+     "rows_scanned": 0,
+     "scan_out_rows": 0,
+     "n_scans": 1,
+     "window_rows": 0,
+     "intermediate_rows": 1,
+     "top_ops": [
+      {
+       "op": "TABLE_SCAN",
+       "depth": 8,
+       "rows": 0,
+       "cpu_s": 0.535,
+       "share": 1.0,
+       "detail": ""
+      },
+      {
+       "op": "RESULT_COLLECTOR",
+       "depth": 0,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      },
+      {
+       "op": "CREATE_TABLE_AS",
+       "depth": 1,
+       "rows": 1,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      },
+      {
+       "op": "HASH_GROUP_BY",
+       "depth": 4,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": "Aggregates= | Groups=#0; #1; #2; #3"
+      },
+      {
+       "op": "PROJECTION",
+       "depth": 2,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      },
+      {
+       "op": "PROJECTION",
+       "depth": 3,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      },
+      {
+       "op": "PROJECTION",
+       "depth": 5,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      },
+      {
+       "op": "PROJECTION",
+       "depth": 6,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      }
+     ]
+    }
+   },
+   {
+    "label": "process_creation",
+    "kind": "group_total",
+    "wall_s": 0.238,
+    "n_rules": 170,
+    "tuples": 0,
+    "matched_tuples": 0,
+    "mode": "distinct"
+   },
+   {
+    "label": "dns",
+    "kind": "sigma_distinct_tuples",
+    "wall_s": 9.91,
+    "profile": {
+     "latency_s": 9.894,
+     "cpu_s": 113.141,
+     "plan_s": 0.2114,
+     "op_cpu_s": 113.141,
+     "peak_buffer_mb": 38.0,
+     "peak_temp_dir_mb": 0.0,
+     "blocked_thread_s": 0.339,
+     "io_read_mb": 10.5,
+     "io_written_mb": 0.0,
+     "rows_scanned": 0,
+     "scan_out_rows": 0,
+     "n_scans": 1,
+     "window_rows": 0,
+     "intermediate_rows": 1,
+     "top_ops": [
+      {
+       "op": "TABLE_SCAN",
+       "depth": 5,
+       "rows": 0,
+       "cpu_s": 113.141,
+       "share": 1.0,
+       "detail": ""
+      },
+      {
+       "op": "RESULT_COLLECTOR",
+       "depth": 0,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      },
+      {
+       "op": "CREATE_TABLE_AS",
+       "depth": 1,
+       "rows": 1,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      },
+      {
+       "op": "HASH_GROUP_BY",
+       "depth": 3,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": "Aggregates= | Groups=#0"
+      },
+      {
+       "op": "PROJECTION",
+       "depth": 2,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      },
+      {
+       "op": "PROJECTION",
+       "depth": 4,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      }
+     ]
+    }
+   },
+   {
+    "label": "dns",
+    "kind": "other",
+    "wall_s": 0.17,
+    "profile": {
+     "latency_s": 0.001,
+     "cpu_s": 0.0,
+     "plan_s": 0.0012,
+     "op_cpu_s": 0.0,
+     "peak_buffer_mb": 35.0,
+     "peak_temp_dir_mb": 0.0,
+     "blocked_thread_s": 0.0,
+     "io_read_mb": 0.0,
+     "io_written_mb": 0.0,
+     "rows_scanned": 0,
+     "scan_out_rows": 0,
+     "n_scans": 0,
+     "window_rows": 0,
+     "intermediate_rows": 0,
+     "top_ops": [
+      {
+       "op": "DROP",
+       "depth": 1,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 1.0,
+       "detail": ""
+      },
+      {
+       "op": "RESULT_COLLECTOR",
+       "depth": 0,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      }
+     ]
+    }
+   },
+   {
+    "label": "dns",
+    "kind": "group_total",
+    "wall_s": 10.253,
+    "n_rules": 9,
+    "tuples": 0,
+    "matched_tuples": 0,
+    "mode": "distinct"
+   },
+   {
+    "label": "fortigate_event",
+    "kind": "sigma_distinct_tuples",
+    "wall_s": 0.347,
+    "profile": {
+     "latency_s": 0.342,
+     "cpu_s": 0.113,
+     "plan_s": 0.2976,
+     "op_cpu_s": 0.113,
+     "peak_buffer_mb": 37.2,
+     "peak_temp_dir_mb": 0.0,
+     "blocked_thread_s": 0.0,
+     "io_read_mb": 2.8,
+     "io_written_mb": 0.0,
+     "rows_scanned": 0,
+     "scan_out_rows": 0,
+     "n_scans": 1,
+     "window_rows": 0,
+     "intermediate_rows": 1,
+     "top_ops": [
+      {
+       "op": "TABLE_SCAN",
+       "depth": 7,
+       "rows": 0,
+       "cpu_s": 0.113,
+       "share": 0.999,
+       "detail": ""
+      },
+      {
+       "op": "RESULT_COLLECTOR",
+       "depth": 0,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.001,
+       "detail": ""
+      },
+      {
+       "op": "FILTER",
+       "depth": 6,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      },
+      {
+       "op": "CREATE_TABLE_AS",
+       "depth": 1,
+       "rows": 1,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      },
+      {
+       "op": "HASH_GROUP_BY",
+       "depth": 3,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": "Aggregates= | Groups=#0; #1"
+      },
+      {
+       "op": "PROJECTION",
+       "depth": 2,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      },
+      {
+       "op": "PROJECTION",
+       "depth": 4,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      },
+      {
+       "op": "PROJECTION",
+       "depth": 5,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      }
+     ]
+    }
+   },
+   {
+    "label": "fortigate_event",
+    "kind": "other",
+    "wall_s": 0.165,
+    "profile": {
+     "latency_s": 0.163,
+     "cpu_s": 0.272,
+     "plan_s": 0.2303,
+     "op_cpu_s": 0.272,
+     "peak_buffer_mb": 36.4,
+     "peak_temp_dir_mb": 0.0,
+     "blocked_thread_s": 0.0,
+     "io_read_mb": 2.8,
+     "io_written_mb": 0.0,
+     "rows_scanned": 0,
+     "scan_out_rows": 0,
+     "n_scans": 1,
+     "window_rows": 0,
+     "intermediate_rows": 0,
+     "top_ops": [
+      {
+       "op": "TABLE_SCAN",
+       "depth": 4,
+       "rows": 0,
+       "cpu_s": 0.272,
+       "share": 1.0,
+       "detail": ""
+      },
+      {
+       "op": "RESULT_COLLECTOR",
+       "depth": 0,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      },
+      {
+       "op": "PROJECTION",
+       "depth": 1,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      },
+      {
+       "op": "PROJECTION",
+       "depth": 2,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      },
+      {
+       "op": "STREAMING_LIMIT",
+       "depth": 3,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      }
+     ]
+    }
+   },
+   {
+    "label": "fortigate_event",
+    "kind": "group_total",
+    "wall_s": 0.595,
+    "n_rules": 6,
+    "tuples": 0,
+    "matched_tuples": 0,
+    "mode": "distinct"
+   },
+   {
+    "label": "proxy",
+    "kind": "sigma_distinct_tuples",
+    "wall_s": 2.695,
+    "profile": {
+     "latency_s": 2.649,
+     "cpu_s": 18.054,
+     "plan_s": 0.3547,
+     "op_cpu_s": 18.054,
+     "peak_buffer_mb": 119.9,
+     "peak_temp_dir_mb": 0.0,
+     "blocked_thread_s": 0.08,
+     "io_read_mb": 12.3,
+     "io_written_mb": 0.0,
+     "rows_scanned": 17000045,
+     "scan_out_rows": 17000045,
+     "n_scans": 1,
+     "window_rows": 0,
+     "intermediate_rows": 20172446,
+     "top_ops": [
+      {
+       "op": "FILTER",
+       "depth": 7,
+       "rows": 793076,
+       "cpu_s": 14.747,
+       "share": 0.817,
+       "detail": ""
+      },
+      {
+       "op": "TABLE_SCAN",
+       "depth": 8,
+       "rows": 17000045,
+       "cpu_s": 2.16,
+       "share": 0.12,
+       "detail": ""
+      },
+      {
+       "op": "HASH_GROUP_BY",
+       "depth": 3,
+       "rows": 48,
+       "cpu_s": 0.812,
+       "share": 0.045,
+       "detail": "Aggregates= | Groups=#0; #1; #2"
+      },
+      {
+       "op": "PROJECTION",
+       "depth": 5,
+       "rows": 793076,
+       "cpu_s": 0.326,
+       "share": 0.018,
+       "detail": ""
+      },
+      {
+       "op": "PROJECTION",
+       "depth": 4,
+       "rows": 793076,
+       "cpu_s": 0.004,
+       "share": 0.0,
+       "detail": ""
+      },
+      {
+       "op": "PROJECTION",
+       "depth": 6,
+       "rows": 793076,
+       "cpu_s": 0.004,
+       "share": 0.0,
+       "detail": ""
+      },
+      {
+       "op": "CREATE_TABLE_AS",
+       "depth": 1,
+       "rows": 1,
+       "cpu_s": 0.001,
+       "share": 0.0,
+       "detail": ""
+      },
+      {
+       "op": "PROJECTION",
+       "depth": 2,
+       "rows": 48,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      }
+     ]
+    }
+   },
+   {
+    "label": "proxy",
+    "kind": "sigma_predicates_on_tuples",
+    "wall_s": 0.118,
+    "profile": {
+     "latency_s": 0.064,
+     "cpu_s": 0.001,
+     "plan_s": 0.103,
+     "op_cpu_s": 0.001,
+     "peak_buffer_mb": 35.6,
+     "peak_temp_dir_mb": 0.0,
+     "blocked_thread_s": 0.006,
+     "io_read_mb": 0.0,
+     "io_written_mb": 0.0,
+     "rows_scanned": 48,
+     "scan_out_rows": 48,
+     "n_scans": 1,
+     "window_rows": 0,
+     "intermediate_rows": 49,
+     "top_ops": [
+      {
+       "op": "FILTER",
+       "depth": 3,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.734,
+       "detail": ""
+      },
+      {
+       "op": "RESULT_COLLECTOR",
+       "depth": 0,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.138,
+       "detail": ""
+      },
+      {
+       "op": "TABLE_SCAN",
+       "depth": 4,
+       "rows": 48,
+       "cpu_s": 0.0,
+       "share": 0.122,
+       "detail": ""
+      },
+      {
+       "op": "INSERT",
+       "depth": 1,
+       "rows": 1,
+       "cpu_s": 0.0,
+       "share": 0.006,
+       "detail": ""
+      },
+      {
+       "op": "PROJECTION",
+       "depth": 2,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      }
+     ]
+    }
+   },
+   {
+    "label": "proxy",
+    "kind": "group_total",
+    "wall_s": 2.917,
+    "n_rules": 13,
+    "tuples": 48,
+    "matched_tuples": 0,
+    "mode": "distinct"
+   },
+   {
+    "label": "webserver",
+    "kind": "sigma_distinct_tuples",
+    "wall_s": 12.871,
+    "profile": {
+     "latency_s": 12.837,
+     "cpu_s": 143.936,
+     "plan_s": 0.3506,
+     "op_cpu_s": 143.936,
+     "peak_buffer_mb": 55.7,
+     "peak_temp_dir_mb": 0.0,
+     "blocked_thread_s": 0.686,
+     "io_read_mb": 78.8,
+     "io_written_mb": 0.0,
+     "rows_scanned": 0,
+     "scan_out_rows": 0,
+     "n_scans": 1,
+     "window_rows": 0,
+     "intermediate_rows": 1,
+     "top_ops": [
+      {
+       "op": "TABLE_SCAN",
+       "depth": 9,
+       "rows": 0,
+       "cpu_s": 143.936,
+       "share": 1.0,
+       "detail": ""
+      },
+      {
+       "op": "RESULT_COLLECTOR",
+       "depth": 0,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      },
+      {
+       "op": "FILTER",
+       "depth": 8,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      },
+      {
+       "op": "FILTER",
+       "depth": 6,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      },
+      {
+       "op": "CREATE_TABLE_AS",
+       "depth": 1,
+       "rows": 1,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      },
+      {
+       "op": "HASH_GROUP_BY",
+       "depth": 3,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": "Aggregates= | Groups=#0"
+      },
+      {
+       "op": "PROJECTION",
+       "depth": 2,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      },
+      {
+       "op": "PROJECTION",
+       "depth": 4,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      }
+     ]
+    }
+   },
+   {
+    "label": "webserver",
+    "kind": "other",
+    "wall_s": 1.943,
+    "profile": {
+     "latency_s": 1.936,
+     "cpu_s": 21.017,
+     "plan_s": 0.2812,
+     "op_cpu_s": 21.017,
+     "peak_buffer_mb": 89.2,
+     "peak_temp_dir_mb": 0.0,
+     "blocked_thread_s": 0.017,
+     "io_read_mb": 189.1,
+     "io_written_mb": 0.0,
+     "rows_scanned": 16550383,
+     "scan_out_rows": 16550383,
+     "n_scans": 1,
+     "window_rows": 0,
+     "intermediate_rows": 18136535,
+     "top_ops": [
+      {
+       "op": "TABLE_SCAN",
+       "depth": 6,
+       "rows": 16550383,
+       "cpu_s": 19.852,
+       "share": 0.945,
+       "detail": ""
+      },
+      {
+       "op": "FILTER",
+       "depth": 3,
+       "rows": 0,
+       "cpu_s": 0.747,
+       "share": 0.036,
+       "detail": ""
+      },
+      {
+       "op": "FILTER",
+       "depth": 5,
+       "rows": 793076,
+       "cpu_s": 0.408,
+       "share": 0.019,
+       "detail": ""
+      },
+      {
+       "op": "PROJECTION",
+       "depth": 4,
+       "rows": 793076,
+       "cpu_s": 0.009,
+       "share": 0.0,
+       "detail": ""
+      },
+      {
+       "op": "RESULT_COLLECTOR",
+       "depth": 0,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      },
+      {
+       "op": "PROJECTION",
+       "depth": 1,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      },
+      {
+       "op": "STREAMING_LIMIT",
+       "depth": 2,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      }
+     ]
+    }
+   },
+   {
+    "label": "webserver",
+    "kind": "group_total",
+    "wall_s": 14.918,
+    "n_rules": 25,
+    "tuples": 0,
+    "matched_tuples": 0,
+    "mode": "distinct"
+   },
+   {
+    "label": "win_security",
+    "kind": "sigma_distinct_tuples",
+    "wall_s": 0.18,
+    "profile": {
+     "latency_s": 0.164,
+     "cpu_s": 0.001,
+     "plan_s": 0.2075,
+     "op_cpu_s": 0.001,
+     "peak_buffer_mb": 40.5,
+     "peak_temp_dir_mb": 0.0,
+     "blocked_thread_s": 0.017,
+     "io_read_mb": 2.8,
+     "io_written_mb": 0.0,
+     "rows_scanned": 0,
+     "scan_out_rows": 0,
+     "n_scans": 1,
+     "window_rows": 0,
+     "intermediate_rows": 1,
+     "top_ops": [
+      {
+       "op": "TABLE_SCAN",
+       "depth": 7,
+       "rows": 0,
+       "cpu_s": 0.001,
+       "share": 0.766,
+       "detail": ""
+      },
+      {
+       "op": "RESULT_COLLECTOR",
+       "depth": 0,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.213,
+       "detail": ""
+      },
+      {
+       "op": "FILTER",
+       "depth": 6,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.017,
+       "detail": ""
+      },
+      {
+       "op": "HASH_GROUP_BY",
+       "depth": 3,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.002,
+       "detail": "Aggregates= | Groups=#0; #1; #2; #3; #4; #5; #6; #7; #8"
+      },
+      {
+       "op": "CREATE_TABLE_AS",
+       "depth": 1,
+       "rows": 1,
+       "cpu_s": 0.0,
+       "share": 0.002,
+       "detail": ""
+      },
+      {
+       "op": "PROJECTION",
+       "depth": 2,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      },
+      {
+       "op": "PROJECTION",
+       "depth": 4,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      },
+      {
+       "op": "PROJECTION",
+       "depth": 5,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      }
+     ]
+    }
+   },
+   {
+    "label": "win_security",
+    "kind": "other",
+    "wall_s": 0.09,
+    "profile": {
+     "latency_s": 0.087,
+     "cpu_s": 0.0,
+     "plan_s": 0.1689,
+     "op_cpu_s": 0.0,
+     "peak_buffer_mb": 36.6,
+     "peak_temp_dir_mb": 0.0,
+     "blocked_thread_s": 0.0,
+     "io_read_mb": 2.8,
+     "io_written_mb": 0.0,
+     "rows_scanned": 0,
+     "scan_out_rows": 0,
+     "n_scans": 1,
+     "window_rows": 0,
+     "intermediate_rows": 0,
+     "top_ops": [
+      {
+       "op": "TABLE_SCAN",
+       "depth": 4,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 1.0,
+       "detail": ""
+      },
+      {
+       "op": "RESULT_COLLECTOR",
+       "depth": 0,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      },
+      {
+       "op": "PROJECTION",
+       "depth": 1,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      },
+      {
+       "op": "PROJECTION",
+       "depth": 2,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      },
+      {
+       "op": "STREAMING_LIMIT",
+       "depth": 3,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      }
+     ]
+    }
+   },
+   {
+    "label": "win_security",
+    "kind": "group_total",
+    "wall_s": 0.351,
+    "n_rules": 28,
+    "tuples": 0,
+    "matched_tuples": 0,
+    "mode": "distinct"
+   },
+   {
+    "label": "dns_query",
+    "kind": "sigma_distinct_tuples",
+    "wall_s": 14.426,
+    "profile": {
+     "latency_s": 14.395,
+     "cpu_s": 166.732,
+     "plan_s": 0.2601,
+     "op_cpu_s": 166.732,
+     "peak_buffer_mb": 42.0,
+     "peak_temp_dir_mb": 0.0,
+     "blocked_thread_s": 0.0,
+     "io_read_mb": 11.7,
+     "io_written_mb": 0.0,
+     "rows_scanned": 527573,
+     "scan_out_rows": 527573,
+     "n_scans": 1,
+     "window_rows": 0,
+     "intermediate_rows": 527574,
+     "top_ops": [
+      {
+       "op": "FILTER",
+       "depth": 8,
+       "rows": 0,
+       "cpu_s": 145.614,
+       "share": 0.873,
+       "detail": ""
+      },
+      {
+       "op": "TABLE_SCAN",
+       "depth": 9,
+       "rows": 527573,
+       "cpu_s": 21.116,
+       "share": 0.127,
+       "detail": ""
+      },
+      {
+       "op": "RESULT_COLLECTOR",
+       "depth": 0,
+       "rows": 0,
+       "cpu_s": 0.001,
+       "share": 0.0,
+       "detail": ""
+      },
+      {
+       "op": "HASH_GROUP_BY",
+       "depth": 4,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": "Aggregates= | Groups=#0; #1; #2"
+      },
+      {
+       "op": "CREATE_TABLE_AS",
+       "depth": 1,
+       "rows": 1,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      },
+      {
+       "op": "PROJECTION",
+       "depth": 2,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      },
+      {
+       "op": "PROJECTION",
+       "depth": 3,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      },
+      {
+       "op": "PROJECTION",
+       "depth": 5,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      }
+     ]
+    }
+   },
+   {
+    "label": "dns_query",
+    "kind": "other",
+    "wall_s": 0.156,
+    "profile": {
+     "latency_s": 0.001,
+     "cpu_s": 0.0,
+     "plan_s": 0.0013,
+     "op_cpu_s": 0.0,
+     "peak_buffer_mb": 35.1,
+     "peak_temp_dir_mb": 0.0,
+     "blocked_thread_s": 0.0,
+     "io_read_mb": 0.0,
+     "io_written_mb": 0.0,
+     "rows_scanned": 0,
+     "scan_out_rows": 0,
+     "n_scans": 0,
+     "window_rows": 0,
+     "intermediate_rows": 0,
+     "top_ops": [
+      {
+       "op": "DROP",
+       "depth": 1,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 1.0,
+       "detail": ""
+      },
+      {
+       "op": "RESULT_COLLECTOR",
+       "depth": 0,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      }
+     ]
+    }
+   },
+   {
+    "label": "dns_query",
+    "kind": "group_total",
+    "wall_s": 14.684,
+    "n_rules": 25,
+    "tuples": 0,
+    "matched_tuples": 0,
+    "mode": "distinct"
+   },
+   {
+    "label": "file_event",
+    "kind": "sigma_distinct_tuples",
+    "wall_s": 4.026,
+    "profile": {
+     "latency_s": 3.81,
+     "cpu_s": 1.485,
+     "plan_s": 0.4476,
+     "op_cpu_s": 1.485,
+     "peak_buffer_mb": 41.3,
+     "peak_temp_dir_mb": 0.0,
+     "blocked_thread_s": 0.0,
+     "io_read_mb": 2.8,
+     "io_written_mb": 0.0,
+     "rows_scanned": 0,
+     "scan_out_rows": 0,
+     "n_scans": 1,
+     "window_rows": 0,
+     "intermediate_rows": 1,
+     "top_ops": [
+      {
+       "op": "TABLE_SCAN",
+       "depth": 9,
+       "rows": 0,
+       "cpu_s": 1.481,
+       "share": 0.997,
+       "detail": ""
+      },
+      {
+       "op": "RESULT_COLLECTOR",
+       "depth": 0,
+       "rows": 0,
+       "cpu_s": 0.004,
+       "share": 0.003,
+       "detail": ""
+      },
+      {
+       "op": "FILTER",
+       "depth": 8,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      },
+      {
+       "op": "CREATE_TABLE_AS",
+       "depth": 1,
+       "rows": 1,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      },
+      {
+       "op": "HASH_GROUP_BY",
+       "depth": 4,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": "Aggregates= | Groups=#0; #1; #2; #3; #4; #5"
+      },
+      {
+       "op": "PROJECTION",
+       "depth": 2,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      },
+      {
+       "op": "PROJECTION",
+       "depth": 3,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      },
+      {
+       "op": "PROJECTION",
+       "depth": 5,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      }
+     ]
+    }
+   },
+   {
+    "label": "file_event",
+    "kind": "other",
+    "wall_s": 0.177,
+    "profile": {
+     "latency_s": 0.175,
+     "cpu_s": 0.56,
+     "plan_s": 0.2245,
+     "op_cpu_s": 0.56,
+     "peak_buffer_mb": 37.7,
+     "peak_temp_dir_mb": 0.0,
+     "blocked_thread_s": 0.001,
+     "io_read_mb": 2.8,
+     "io_written_mb": 0.0,
+     "rows_scanned": 0,
+     "scan_out_rows": 0,
+     "n_scans": 1,
+     "window_rows": 0,
+     "intermediate_rows": 0,
+     "top_ops": [
+      {
+       "op": "TABLE_SCAN",
+       "depth": 4,
+       "rows": 0,
+       "cpu_s": 0.56,
+       "share": 1.0,
+       "detail": ""
+      },
+      {
+       "op": "RESULT_COLLECTOR",
+       "depth": 0,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      },
+      {
+       "op": "PROJECTION",
+       "depth": 1,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      },
+      {
+       "op": "PROJECTION",
+       "depth": 2,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      },
+      {
+       "op": "STREAMING_LIMIT",
+       "depth": 3,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      }
+     ]
+    }
+   },
+   {
+    "label": "file_event",
+    "kind": "group_total",
+    "wall_s": 4.314,
+    "n_rules": 163,
+    "tuples": 0,
+    "matched_tuples": 0,
+    "mode": "distinct"
+   },
+   {
+    "label": "network_connection",
+    "kind": "sigma_distinct_tuples",
+    "wall_s": 59.371,
+    "profile": {
+     "latency_s": 59.291,
+     "cpu_s": 679.624,
+     "plan_s": 0.4181,
+     "op_cpu_s": 679.624,
+     "peak_buffer_mb": 114.0,
+     "peak_temp_dir_mb": 0.0,
+     "blocked_thread_s": 0.653,
+     "io_read_mb": 207.8,
+     "io_written_mb": 0.0,
+     "rows_scanned": 15943093,
+     "scan_out_rows": 15943093,
+     "n_scans": 1,
+     "window_rows": 0,
+     "intermediate_rows": 15943094,
+     "top_ops": [
+      {
+       "op": "FILTER",
+       "depth": 8,
+       "rows": 0,
+       "cpu_s": 601.745,
+       "share": 0.885,
+       "detail": ""
+      },
+      {
+       "op": "TABLE_SCAN",
+       "depth": 9,
+       "rows": 15943093,
+       "cpu_s": 77.875,
+       "share": 0.115,
+       "detail": ""
+      },
+      {
+       "op": "RESULT_COLLECTOR",
+       "depth": 0,
+       "rows": 0,
+       "cpu_s": 0.004,
+       "share": 0.0,
+       "detail": ""
+      },
+      {
+       "op": "HASH_GROUP_BY",
+       "depth": 4,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": "Aggregates= | Groups=#0; #1; #2; #3; #4; #5; #6; #7; #8; #9; #10"
+      },
+      {
+       "op": "CREATE_TABLE_AS",
+       "depth": 1,
+       "rows": 1,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      },
+      {
+       "op": "PROJECTION",
+       "depth": 2,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      },
+      {
+       "op": "PROJECTION",
+       "depth": 3,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      },
+      {
+       "op": "PROJECTION",
+       "depth": 5,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      }
+     ]
+    }
+   },
+   {
+    "label": "network_connection",
+    "kind": "other",
+    "wall_s": 0.355,
+    "profile": {
+     "latency_s": 0.001,
+     "cpu_s": 0.0,
+     "plan_s": 0.001,
+     "op_cpu_s": 0.0,
+     "peak_buffer_mb": 35.1,
+     "peak_temp_dir_mb": 0.0,
+     "blocked_thread_s": 0.0,
+     "io_read_mb": 0.0,
+     "io_written_mb": 0.0,
+     "rows_scanned": 0,
+     "scan_out_rows": 0,
+     "n_scans": 0,
+     "window_rows": 0,
+     "intermediate_rows": 0,
+     "top_ops": [
+      {
+       "op": "DROP",
+       "depth": 1,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 1.0,
+       "detail": ""
+      },
+      {
+       "op": "RESULT_COLLECTOR",
+       "depth": 0,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      }
+     ]
+    }
+   },
+   {
+    "label": "network_connection",
+    "kind": "group_total",
+    "wall_s": 59.835,
+    "n_rules": 50,
+    "tuples": 0,
+    "matched_tuples": 0,
+    "mode": "distinct"
+   },
+   {
+    "label": "process_creation",
+    "kind": "sigma_distinct_tuples",
+    "wall_s": 0.699,
+    "profile": {
+     "latency_s": 0.696,
+     "cpu_s": 7.19,
+     "plan_s": 0.1564,
+     "op_cpu_s": 7.19,
+     "peak_buffer_mb": 40.2,
+     "peak_temp_dir_mb": 0.0,
+     "blocked_thread_s": 0.0,
+     "io_read_mb": 2.8,
+     "io_written_mb": 0.0,
+     "rows_scanned": 0,
+     "scan_out_rows": 0,
+     "n_scans": 1,
+     "window_rows": 0,
+     "intermediate_rows": 1,
+     "top_ops": [
+      {
+       "op": "TABLE_SCAN",
+       "depth": 8,
+       "rows": 0,
+       "cpu_s": 7.19,
+       "share": 1.0,
+       "detail": ""
+      },
+      {
+       "op": "RESULT_COLLECTOR",
+       "depth": 0,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      },
+      {
+       "op": "CREATE_TABLE_AS",
+       "depth": 1,
+       "rows": 1,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      },
+      {
+       "op": "HASH_GROUP_BY",
+       "depth": 4,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": "Aggregates= | Groups=#0; #1; #2; #3; #4"
+      },
+      {
+       "op": "PROJECTION",
+       "depth": 2,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      },
+      {
+       "op": "PROJECTION",
+       "depth": 3,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      },
+      {
+       "op": "PROJECTION",
+       "depth": 5,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      },
+      {
+       "op": "PROJECTION",
+       "depth": 6,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      }
+     ]
+    }
+   },
+   {
+    "label": "process_creation",
+    "kind": "group_total",
+    "wall_s": 0.772,
+    "n_rules": 1033,
+    "tuples": 0,
+    "matched_tuples": 0,
+    "mode": "distinct"
+   },
+   {
+    "label": "registry",
+    "kind": "sigma_distinct_tuples",
+    "wall_s": 27.152,
+    "profile": {
+     "latency_s": 27.113,
+     "cpu_s": 307.947,
+     "plan_s": 0.5921,
+     "op_cpu_s": 307.947,
+     "peak_buffer_mb": 42.5,
+     "peak_temp_dir_mb": 0.0,
+     "blocked_thread_s": 0.994,
+     "io_read_mb": 2.8,
+     "io_written_mb": 0.0,
+     "rows_scanned": 0,
+     "scan_out_rows": 0,
+     "n_scans": 1,
+     "window_rows": 0,
+     "intermediate_rows": 1,
+     "top_ops": [
+      {
+       "op": "TABLE_SCAN",
+       "depth": 9,
+       "rows": 0,
+       "cpu_s": 307.947,
+       "share": 1.0,
+       "detail": ""
+      },
+      {
+       "op": "RESULT_COLLECTOR",
+       "depth": 0,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      },
+      {
+       "op": "FILTER",
+       "depth": 8,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      },
+      {
+       "op": "CREATE_TABLE_AS",
+       "depth": 1,
+       "rows": 1,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      },
+      {
+       "op": "HASH_GROUP_BY",
+       "depth": 4,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": "Aggregates= | Groups=#0; #1; #2; #3; #4"
+      },
+      {
+       "op": "PROJECTION",
+       "depth": 2,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      },
+      {
+       "op": "PROJECTION",
+       "depth": 3,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      },
+      {
+       "op": "PROJECTION",
+       "depth": 5,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      }
+     ]
+    }
+   },
+   {
+    "label": "registry",
+    "kind": "other",
+    "wall_s": 0.093,
+    "profile": {
+     "latency_s": 0.078,
+     "cpu_s": 0.251,
+     "plan_s": 0.097,
+     "op_cpu_s": 0.251,
+     "peak_buffer_mb": 37.6,
+     "peak_temp_dir_mb": 0.0,
+     "blocked_thread_s": 0.0,
+     "io_read_mb": 2.8,
+     "io_written_mb": 0.0,
+     "rows_scanned": 0,
+     "scan_out_rows": 0,
+     "n_scans": 1,
+     "window_rows": 0,
+     "intermediate_rows": 0,
+     "top_ops": [
+      {
+       "op": "TABLE_SCAN",
+       "depth": 4,
+       "rows": 0,
+       "cpu_s": 0.251,
+       "share": 1.0,
+       "detail": ""
+      },
+      {
+       "op": "RESULT_COLLECTOR",
+       "depth": 0,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      },
+      {
+       "op": "PROJECTION",
+       "depth": 1,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      },
+      {
+       "op": "PROJECTION",
+       "depth": 2,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      },
+      {
+       "op": "STREAMING_LIMIT",
+       "depth": 3,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      }
+     ]
+    }
+   },
+   {
+    "label": "registry",
+    "kind": "group_total",
+    "wall_s": 27.314,
+    "n_rules": 67,
+    "tuples": 0,
+    "matched_tuples": 0,
+    "mode": "distinct"
+   },
+   {
+    "label": "firewall",
+    "kind": "sigma_distinct_tuples",
+    "wall_s": 2.135,
+    "profile": {
+     "latency_s": 2.133,
+     "cpu_s": 24.652,
+     "plan_s": 0.0847,
+     "op_cpu_s": 24.652,
+     "peak_buffer_mb": 83.6,
+     "peak_temp_dir_mb": 0.0,
+     "blocked_thread_s": 0.012,
+     "io_read_mb": 189.6,
+     "io_written_mb": 0.0,
+     "rows_scanned": 17000045,
+     "scan_out_rows": 17000045,
+     "n_scans": 1,
+     "window_rows": 0,
+     "intermediate_rows": 17000046,
+     "top_ops": [
+      {
+       "op": "TABLE_SCAN",
+       "depth": 8,
+       "rows": 17000045,
+       "cpu_s": 21.821,
+       "share": 0.885,
+       "detail": ""
+      },
+      {
+       "op": "FILTER",
+       "depth": 7,
+       "rows": 0,
+       "cpu_s": 2.831,
+       "share": 0.115,
+       "detail": ""
+      },
+      {
+       "op": "RESULT_COLLECTOR",
+       "depth": 0,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      },
+      {
+       "op": "HASH_GROUP_BY",
+       "depth": 3,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": "Aggregates= | Groups=#0; #1"
+      },
+      {
+       "op": "CREATE_TABLE_AS",
+       "depth": 1,
+       "rows": 1,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      },
+      {
+       "op": "PROJECTION",
+       "depth": 2,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      },
+      {
+       "op": "PROJECTION",
+       "depth": 4,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      },
+      {
+       "op": "PROJECTION",
+       "depth": 5,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      }
+     ]
+    }
+   },
+   {
+    "label": "firewall",
+    "kind": "other",
+    "wall_s": 0.065,
+    "profile": {
+     "latency_s": 0.001,
+     "cpu_s": 0.0,
+     "plan_s": 0.0008,
+     "op_cpu_s": 0.0,
+     "peak_buffer_mb": 35.0,
+     "peak_temp_dir_mb": 0.0,
+     "blocked_thread_s": 0.0,
+     "io_read_mb": 0.0,
+     "io_written_mb": 0.0,
+     "rows_scanned": 0,
+     "scan_out_rows": 0,
+     "n_scans": 0,
+     "window_rows": 0,
+     "intermediate_rows": 0,
+     "top_ops": [
+      {
+       "op": "DROP",
+       "depth": 1,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 1.0,
+       "detail": ""
+      },
+      {
+       "op": "RESULT_COLLECTOR",
+       "depth": 0,
+       "rows": 0,
+       "cpu_s": 0.0,
+       "share": 0.0,
+       "detail": ""
+      }
+     ]
+    }
+   },
+   {
+    "label": "firewall",
+    "kind": "group_total",
+    "wall_s": 2.278,
+    "n_rules": 1,
+    "tuples": 0,
+    "matched_tuples": 0,
+    "mode": "distinct"
+   }
+  ]
+ },
+ "finished": "2026-11-01T04:19:23"
+}

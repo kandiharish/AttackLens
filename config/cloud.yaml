@@ -1,0 +1,745 @@
+# Cloud detection settings (attacklens/detect_cloud*.py; rules in config/rules_cloud.yaml; catalog:
+# reports/cloud/rule_catalog.md). Every threshold, window, allowlist and the cloud_ev column map live here.
+#
+# Rules reference values of `params` as {cfg.<name>} inside SQL (lists expand to ('a', 'b'), strings to a quoted
+# literal, numbers as-is) and as "{cfg.<name>}" for a whole template parameter value.
+# Never add generator label paths here (threat, rule, labels, labels_extra, event.kind, event.severity, ...):
+# backend/tests/test_detect_cloud.py greps this file and rules_cloud.yaml for them.
+
+enabled: true
+source_types: [cloudtrail_json, azure_signin_json, azure_activity_json, azure_storageblob_json, gcp_audit_json,
+               aws_vpcflow_json, aws_vpcflow_txt, aws_r53resolver_json, aws_nfw_json,   # track AWS
+               k8s_audit_json, gcp_vpcflow_json, gcp_firewall_json, gcp_dns_json,   # track K8s + GCP
+               azure_keyvault_json, azure_graph_json, azure_risk_json,   # track Azure
+               okta_json, gws_reports_json, m365_ual_json, m365_purview_csv, auth0_json, duo_auth_json]   # identity SaaS
+max_alerts_per_rule: 1000      # per run; overflow (lowest severity, then latest) is dropped and counted
+context_severity: 35           # <= this never seeds and never counts as a tactic on its own (gate). Rules with
+                               # `context: true` are capped here AFTER every rule ran: sequences still read their
+                               # full severity (the combination is the signal), the emitted alert is context only.
+automation:                    # CI/CD / IaC identities (params.automation_identity_patterns) on rules with `automation`:
+  severity: 35                 # cap when the hit's identity is automation and shows NO risk signal (never dropped)
+  new_network_days: 14         # risk: a network (ASN, else /16 or /48) this identity did not use in the last N days
+  denied_min: 5                # risk: >= N denied calls by the identity within +-denied_window_ms
+  denied_window_ms: 3600000
+  # risk: user agent matches params.attack_ua_regex. Off-hours is NOT a risk signal here: pipelines run on cron and
+  # release trains at any hour, and there is no business-hours calendar in the config.
+evidence:
+  mode: summary                # summary: "time=... api=... actor=... ip=... req=..." from raw fields; raw: raw_line prefix
+  req_chars: 160               # request / target JSON chars kept in a summary line
+  # line count / length bounds: rules.yaml thresholds evidence_max_lines / evidence_max_chars / source_keys_max
+cold_start:                    # baseline rules (first_seen, rate_spike, distinct_burst with baseline_mult)
+  severity: 30                 # alert severity when the actor / account history is too short (baseline_ok=false)
+  min_history_days: 3
+  min_actor_events: 50
+dedupe: true                   # drop duplicate deliveries (org + account trail) by dedup_id before any rule runs
+endpoint_host_source_types: [aws_nfw_json]   # device logs about other machines: host = internal endpoint (its owner)
+default_allow:                 # every rule: a match by these principals is downgraded (never dropped)
+  lists: [iac_principals, redteam_principals]
+  severity: 45
+change_windows: []             # [{start: "2026-10-30T10:00:00Z", end: "...", principals: [..] (optional)}] -> 45
+promote_first_seen:            # rules with `promote: {first_seen: <sev>}`: (acct, actor_key, api) unseen before
+  baseline_days: 14
+geo:                           # all optional; nothing is downloaded at runtime (reports/cloud/README.md)
+  asn_db_path: null            # iptoasn ip2asn-v4.tsv(.gz) / ip2asn-combined.tsv(.gz): start, end, asn, cc, description
+  country_centroids_path: null # CSV with header cc,lat,lon -> location for B6 when the row has no coordinates
+  provider_ranges:             # AWS ip-ranges.json, Google cloud.json, Azure ServiceTags JSON or a text list of CIDRs
+    aws: null
+    gcp: null
+    azure: null
+  ipv4_prefix_bits: 16         # network key without an ASN: /16 for IPv4 ...
+  ipv6_prefix_hextets: 3       # ... /48 for IPv6
+
+params:
+  # ---- allowlists (lower-case; compared with the actor and the role-level actor_key) -------------------------------
+  iac_principals: []
+  redteam_principals: []
+  iam_admin_principals: []
+  ses_admins: []
+  genai_principals: []
+  ml_principals: []
+  backup_principals: []
+  kms_admins: []
+  ca_admins: []
+  helpdesk_principals: []
+  inventory_principals: []
+  nsm_principals: []
+  vm_ops_principals: []
+  app_owner_allow: []
+  onboarding_principals: []
+  no_mfa_allow_users: []
+  root_allow_ips: []
+  machine_principals: []         # extra identities for the machine track (excluded from first-seen / geo / travel)
+  # CI/CD and IaC identities (RE2, matched on the lower-case actor, actor_key (role), issuer role name, GCP principal,
+  # Azure caller / initiating app). Role session names (gha-*) are chosen by the caller of AssumeRole, so a match only
+  # downgrades when the identity also shows no risk signal (cloud.yaml `automation`). Add your own deploy roles here.
+  automation_identity_patterns:
+    - '^repo:[^:/]+/[^:]+:(ref|environment|pull_request|job_workflow_ref):'   # GitHub Actions OIDC subject
+    - '^gha-[0-9a-z_-]+$'                                                       # GitHub Actions role session name
+    - '^github-?actions?([-_.].*)?$'                                            # aws-actions default session name
+    - '^project_path:[^:]+:ref_type:'                                           # GitLab CI OIDC subject
+    - '^organization:[^:]+:project:[^:]+:workspace:'                            # HCP Terraform / Terraform Cloud OIDC
+    - '(^|[-_./:@])terraform([-_./:@]|$)'                                       # Terraform deploy roles / SAs
+    - '^cdk-[a-z0-9]+-(deploy|cfn-exec|file-publishing|image-publishing|lookup)-role'  # AWS CDK bootstrap roles
+    - '^awscloudformation$|(^|[-_/])cloudformation[-_]?(exec|execution|deploy|service)'  # CloudFormation service roles
+    - '^sc://[^/]+/[^/]+/'                                                      # Azure DevOps service connection (WIF)
+    - '^[0-9]+@cloudbuild\.gserviceaccount\.com$|@gcp-sa-cloudbuild\.iam\.gserviceaccount\.com$'  # GCP Cloud Build
+  automation_identity_regex: '[^\s\S]'   # runtime: built from automation_identity_patterns by detect_cloud_ev
+  trusted_aws_accounts: []       # 12-digit ids; the event's own account is always trusted
+  trusted_domains: []            # GCP members / guests
+  trusted_guest_domains: []
+  trusted_app_ids: []
+  trusted_oidc_issuers: ["https://token.actions.githubusercontent.com"]
+  corp_egress_cidrs: []          # IPv4 CIDRs of the corporate egress (ignored by travel / multi-network rules)
+  hosting_asns: []               # ASNs of hosting / VPN providers (with geo.asn_db_path)
+  hosting_asn_regex: "amazon|google|microsoft|digitalocean|ovh|hetzner|linode|vultr|choopa|m247|datacamp|leaseweb|contabo|tor|mullvad|nord|proton|expressvpn"
+  public_bucket_allow: []
+  public_sg_allow: []
+  public_lambda_allow: []
+  ssm_allow_documents: ["AWS-RunPatchBaseline", "AWS-UpdateSSMAgent", "AWS-ConfigureAWSPackage", "AWS-GatherSoftwareInventory"]
+  device_code_allow_apps: []
+  legacy_auth_allow_users: []
+  az_allow_extension_regex: 'mde\.windows|mde\.linux|azuremonitorwindowsagent|azuremonitorlinuxagent|microsoftmonitoringagent|guestconfiguration'
+  federation_brokers: []
+  export_allow_bucket_regex: '[^\s\S]'   # matches nothing; e.g. 'analytics-exports|bi-dump'
+  ssec_allow_principals: []
+  guest_inviters: []
+  allowed_regions: []            # empty = no static region list; first-seen (acct, region) still applies
+  global_services: ["iam.amazonaws.com", "sts.amazonaws.com", "organizations.amazonaws.com", "route53.amazonaws.com", "cloudfront.amazonaws.com", "signin.amazonaws.com", "health.amazonaws.com", "support.amazonaws.com", "account.amazonaws.com", "billing.amazonaws.com", "ce.amazonaws.com", "s3.amazonaws.com"]
+  # ---- runtime flags (overwritten by detect_cloud after the geo files are loaded; false = file absent) -------------
+  geo_asn: false
+  geo_ranges_aws: false
+  geo_ranges_gcp: false
+  geo_ranges_azure: false
+  # ---- regexes (RE2, matched on lower-case text) -------------------------------------------------------------------
+  admin_group_regex: "admin|administrators|poweruser|iam"
+  console_broker_ua_regex: 'jersey/\$\{project\.version\}|granted|aws-vault'
+  attack_ua_regex: "pacu|trufflehog|s3 browser|azurehound|roadtools|roadrecon|aadinternals|teamfiltration|graphrunner|tokentactics|kali|parrot|pentoo|blackarch|cloudfox|stratus-red-team|cloudsploit|weirdaal|cliam|gcploit"
+  scanner_ua_regex: "prowler|scoutsuite|steampipe|cloudquery|cartography"
+  inventory_ua_regex: "prowler|scoutsuite|steampipe|cloudquery|cartography|aws-config|wiz|orca"
+  iac_ua_regex: "terraform|pulumi|cloudformation|cdk|serverless|sam-cli|github-actions|codebuild"
+  suspicious_name_regex: "^(test|temp|tmp|backdoor|key|pwn|hack|a|x)[0-9]*$"
+  admin_policy_regex: ":policy/(administratoraccess|iamfullaccess|poweruseraccess|awsorganizationsfullaccess)$"
+  aws_gpu_regex: "^(p[0-9]|g[0-9]|gr6|trn[0-9]|inf[0-9]|dl[0-9]|x[0-9]|u-|.*\\.metal|.*\\.(16|18|24|32|48)xlarge)"
+  az_big_vm_regex: "\"vmsize\"\\s*:\\s*\"[^\"]*(nc|nd|nv|hb|hc|_m[0-9]{3}|416|208|192|128|120|96|80|72|64|48|44|40)"
+  gcp_big_machine_regex: "(a2-|a3-|g2-|n1-[a-z0-9]+-(highcpu|highmem)-(64|96))"
+  miner_regex: "xmrig|minerd|cpuminer|nicehash|stratum\\+tcp"
+  ransom_note_regex: "readme|recover|decrypt|ransom|restore.*files|how_to"
+  risky_scopes_regex: "mail\\.read|mail\\.readwrite|mail\\.send|files\\.read(write)?\\.all|sites\\.read(write)?\\.all|offline_access|user\\.readwrite\\.all|directory\\.readwrite\\.all"
+  entra_priv_role_regex: "global administrator|privileged role administrator|privileged authentication administrator|application administrator|cloud application administrator|user administrator|hybrid identity administrator|security administrator|conditional access administrator|exchange administrator|intune administrator|company administrator"
+  scripting_ua_families: ["python-requests", "curl", "go-http-client", "boto3", "botocore", "powershell"]
+  # ---- ids (unverified against Microsoft docs at build time; see reports/cloud/README.md) ---------------------------
+  entra_priv_role_ids: ["62e90394-69f5-4237-9190-012177145e10", "e8611ab8-c189-46e8-94e1-60213ab1f814", "7be44c8a-adaf-4e2a-84d6-ab2649e08a13", "9b895d92-2cd3-44c7-9d02-a6ac2d5ea5c3", "158c047a-c907-4556-b7ef-446551a6b5f7", "fe930be7-5e62-47db-91af-98c3a49a38b1", "8ac3fc64-6eca-42ea-9e69-59f4c7b60eb2", "194ae4cb-b126-40b2-bd5b-6091b380977d", "b1be1c3e-b65d-4f19-8427-f6fa0d97feb9", "29232cdf-9323-42fd-ade2-1d097af3e4de", "3a2c62db-5318-420d-8d74-23affee5d9d5", "7698a772-787b-4ac8-901f-60d6b08affd2"]
+  az_priv_role_def_ids: ["8e3af657-a8ff-443c-a75c-2fe8c4bcb635", "b24988ac-6180-42a0-ab88-20f7382dd24c", "18d7d88d-d35e-4fb5-a5c3-7773c20a72d9", "f58310d9-a9f6-439a-9e8d-f62e7b41a168"]
+  graph_priv_app_role_ids: ["9e3f62cf-ca93-4989-b6ce-bf83c28f9fe8", "06b708a9-e830-4db3-a914-8e69da51d44f", "1bfefb4e-e0b5-418b-a88f-73c46d2cc8e9", "19dbc75e-c2e2-444c-a770-ec69d8559fc7", "e2a3a72e-5f79-4c64-b1b1-878b674786c9", "810c84a8-4a9e-49e6-bf7d-12d183f40d01", "75359482-378d-4052-8f01-80520e7db3cd", "dc890d15-9560-4a4c-9b7f-a736ec74ec40"]
+  gcp_admin_roles: ["roles/owner", "roles/editor", "roles/iam.securityadmin", "roles/iam.roleadmin", "roles/resourcemanager.organizationadmin", "roles/resourcemanager.projectiamadmin", "roles/iam.serviceaccountadmin"]
+  gcp_impersonation_roles: ["roles/iam.serviceaccounttokencreator", "roles/iam.serviceaccountuser", "roles/iam.workloadidentityuser", "roles/iam.serviceaccountkeyadmin", "roles/iam.serviceaccountopenidtokencreator"]
+  legacy_auth_clients: ["exchange activesync", "imap4", "pop3", "authenticated smtp", "other clients", "mapi over http", "exchange web services", "autodiscover", "offline address book", "exchange online powershell"]
+  azure_pw_fail_codes: ["50126", "50053", "50056", "50055"]
+  azure_pw_ok_codes: ["0", "50074", "50076", "50158", "500121"]
+  azure_mfa_deny_codes: ["500121", "50074", "50076"]
+  sensitive_ports: [22, 3389, 445, 5985, 5986, 1433, 3306, 5432, 6379, 9200, 27017, 2375, 6443]
+  sensitive_apis: ["CreateAccessKey", "CreateLoginProfile", "UpdateLoginProfile", "AttachUserPolicy", "AttachRolePolicy", "PutUserPolicy", "PutRolePolicy", "CreatePolicyVersion", "UpdateAssumeRolePolicy", "GetSecretValue", "BatchGetSecretValue", "GetPasswordData", "StopLogging", "DeleteTrail", "PutEventSelectors", "CreateUser", "AddUserToGroup", "MICROSOFT.AUTHORIZATION/ROLEASSIGNMENTS/WRITE", "MICROSOFT.STORAGE/STORAGEACCOUNTS/LISTKEYS/ACTION", "MICROSOFT.INSIGHTS/DIAGNOSTICSETTINGS/DELETE", "google.iam.admin.v1.CreateServiceAccountKey", "SetIamPolicy", "AccessSecretVersion", "GenerateAccessToken"]
+  sensitive_read_apis: ["GetSecretValue", "BatchGetSecretValue", "GetPasswordData", "GetParameter", "GetParameters", "MICROSOFT.STORAGE/STORAGEACCOUNTS/LISTKEYS/ACTION", "MICROSOFT.STORAGE/STORAGEACCOUNTS/LISTACCOUNTSAS/ACTION", "AccessSecretVersion", "GenerateAccessToken", "GetBlob"]
+  recon_first_apis: ["GetCallerIdentity", "ListBuckets", "ListUsers", "ListRoles", "GetAccountAuthorizationDetails", "storage.buckets.list"]
+  # ---- thresholds / windows ----------------------------------------------------------------------------------------
+  hour_ms: 3600000
+  mfa_fail_min: 3
+  mfa_fail_window_ms: 1800000
+  bf_min_failures: 10
+  bf_window_ms: 1800000
+  bf_success_window_ms: 900000
+  spray_min_users: 10
+  spray_window_ms: 1200000
+  geo_baseline_days: 7
+  device_code_baseline_days: 30
+  ssm_min_targets: 3
+  burst_window_ms: 600000
+  stop_start_window_ms: 3600000
+  short_retention_days: 7
+  secrets_min_distinct: 10
+  secrets_window_ms: 600000
+  secrets_denied_min: 5
+  password_data_min: 3
+  mfa_min_prompts: 5
+  mfa_window_ms: 600000
+  mfa_success_window_ms: 1800000
+  key_listing_min_resources: 5
+  metadata_min_instances: 5
+  ses_min_apis: 3
+  testiam_min: 5
+  testiam_min_perms: 50
+  policy_bf_min: 2
+  trust_enum_min: 5
+  remote_min_targets: 3
+  impersonation_min_targets: 3
+  kms_burst_min: 3
+  ransom_min_objects: 20
+  backup_burst_min: 5
+  mass_launch_min: 10
+  azure_vm_burst_min: 10
+  multizone_min: 5
+  multizone_window_ms: 300000
+  bedrock_denied_min: 10
+  removal_burst_min: 5
+  removal_window_ms: 1800000
+  create_delete_window_ms: 86400000
+  lock_destroy_window_ms: 7200000
+  diag_parent_delete_window_ms: 600000
+  federation_verify_window_ms: 86400000
+  guest_priv_window_ms: 86400000
+  foundry_window_ms: 3600000
+  snapshot_export_window_ms: 7200000
+  cmk_destroy_window_ms: 7200000
+  ses_chain_window_ms: 86400000
+  federation_console_window_ms: 3600000
+  instance_offhost_window_ms: 21600000
+  # behavioural (catalog §5)
+  b1_baseline_days: 14
+  first_seen_max_per_actor_day: 20
+  first_seen_summary_severity: 35
+  b2_country_baseline_days: 30
+  b2_prefix_baseline_days: 14
+  b2_min_history_days: 5
+  b3_rare_api_max_calls: 2
+  b3_baseline_days: 30
+  b3_min_history_days: 7
+  b4_window_ms: 600000
+  b4_min_distinct: 20
+  b4_min_services: 4
+  b4_baseline_mult: 3.0
+  b4_baseline_days: 14
+  b5_window_ms: 3600000
+  b5_min_num: 10
+  b5_min_distinct: 5
+  b5_min_ratio: 0.3
+  b5_z: 3.0
+  b5_sigma_floor: 1.0
+  b5_baseline_days: 14
+  b6_min_km: 500
+  b6_max_kmh: 900
+  b7_window_ms: 3600000
+  b8_window_ms: 86400000
+  b9_baseline_days: 14
+  b9_window_ms: 3600000
+  b10_window_ms: 7200000
+  b11_window_ms: 7200000
+  b11_min_severity: 70
+  b12_window_ms: 3600000
+  b12_long_key_window_ms: 300000
+  b12_min_networks: 2
+  b13_object_window_ms: 900000
+  b13_resource_window_ms: 3600000
+  b13_min_objects: 100
+  b13_min_buckets: 3
+  b13_min_resources: 25
+  b13_baseline_mult: 10.0
+  b13_baseline_days: 14
+  b13_prior_window_ms: 86400000
+  b14_window_ms: 3600000
+  b14_min_bytes: 1000000000
+  b14_min_objects: 1000
+  b14_baseline_mult: 10.0
+  b14_baseline_days: 14
+  b14_sas_min: 2
+  b15_dormant_days: 30
+  b16_baseline_days: 14
+  b17_window_ms: 21600000
+  b18_window_ms: 3600000
+  b18_min_num: 50
+  b18_z: 4.0
+  b18_sigma_floor: 2.0
+  b18_baseline_days: 14
+  # storage data access (cl_storage_data_access): bulk reads by a source new to the store, a known source far above
+  # its own baseline, account keys listed then used for data reads from the same network
+  st_window_ms: 3600000
+  st_min_objects: 50             # distinct objects in one window_ms window
+  st_novel_days: 14              # "new source": no reads of this store by the source in the N days before the burst
+  st_store_history_days: 3       # cold start is judged on the STORE (a new source is the point of the rule)
+  st_baseline_mult: 10.0         # known source: distinct objects >= mult x its p95 per window over baseline_days
+  st_baseline_days: 14
+  st_key_use_window_ms: 7200000  # listKeys / list SAS -> key or SAS data reads from the same IP / network
+  # ---- native rule quality track (rules marked "rules track" in rules_cloud.yaml) ----------------------------------
+  unknown_user_min_failures: 3   # ConsoleLogin "No username found in supplied account" from one IP in bf_window_ms
+  b4_low_min_distinct: 6         # cl_discovery_burst low tier: distinct read APIs in b4_window_ms (b4_min_services)...
+  b4_low_min_denied: 2           # ... with >= N distinct denied APIs ...
+  b4_low_min_recon: 3            # ... or >= N distinct recon_first_apis (whoami / list users, roles, buckets)
+  storage_enum_window_ms: 600000 # cl_storage_enum_burst: object listing of >= N distinct buckets / containers
+  storage_enum_min_buckets: 5
+  storage_enum_baseline_mult: 3.0
+  xfer_new_bucket_window_ms: 3600000   # cl_storage_write_new_bucket: >= N objects written in a window into a bucket
+  xfer_new_bucket_min_objects: 20      # with no activity in the account (store) for novel_days
+  xfer_new_bucket_novel_days: 30
+  novel_network_action_window_ms: 3600000   # first-seen network -> discovery / credential / collection alert, same IP
+  sts_reuse_window_ms: 43200000  # STS credentials issued -> used from another network (max session 12 h)
+  snapshot_burst_min: 3          # snapshots / images of >= N distinct volumes / DBs / instances by one identity per hour
+  # ---- track AWS (rules aws_vpcflow_* / aws_r53_* / aws_nfw_* / aws_s3_* / aws_sso_*; reports/cloud/log_coverage.md) ----
+  # network: stratum / miner ports (egress to a public IP), mining-pool names, DNS tunnelling / DGA, Suricata classes
+  mining_ports: [3333, 3357, 4444, 5555, 7777, 14433, 14444, 45560, 45700]
+  mining_min_flows: 3            # accepted flows to a mining port of one public IP within mining_window_ms -> alert
+  mining_window_ms: 3600000
+  mining_domain_regex: '(^|[.-])(xmr|monero|moneroocean|nicehash|minexmr|nanopool|2miners|f2pool|ethermine|hashvault|supportxmr|c3pool|herominers|unmineable|minergate|cryptonight)[.-]|(^|[.-])stratum[0-9]*\.'
+  dns_tunnel_window_ms: 3600000
+  dns_tunnel_min_names: 40       # distinct names under one registered domain from one host in a window ...
+  dns_tunnel_min_label: 24       # ... whose first labels average >= this many characters (hex / base32 chunks)
+  dns_tunnel_allow_apex: ["amazonaws.com", "amazon.com", "cloudfront.net", "awsdns.com", "akamaiedge.net", "akamai.net", "in-addr.arpa", "ip6.arpa", "microsoft.com", "windowsupdate.com", "ubuntu.com", "googleapis.com"]
+  dga_window_ms: 600000
+  dga_min_nx: 20                 # NXDOMAIN answers for >= this many distinct names ...
+  dga_min_apex: 10               # ... under >= this many registered domains, one host, one window
+  nfw_c2_regex: 'trojan|command and control|(^|[^a-z0-9])c2([^a-z0-9]|$)|cobalt ?strike|beacon|backdoor|botnet|rat checkin|malware'
+  nfw_exploit_regex: 'web application attack|privilege gain|exploit|cve-[0-9]{4}|remote code|injection|traversal|log4j|shellshock'
+  nfw_scan_regex: '(^|[^a-z])scan([^a-z]|$)|network scan|portscan|nmap|masscan|zmap'
+  nfw_mining_regex: 'crypto ?currency|coin ?min|miner|stratum|xmrig|monero'
+  inbound_after_open_window_ms: 86400000   # security group opened to the world -> accepted inbound admin-port flow
+  # S3 data events
+  s3_lifecycle_max_days: 7       # PutBucketLifecycle expiring current / noncurrent objects in <= N days (Codefinger)
+  s3_lifecycle_after_ssec_window_ms: 86400000
+  s3_version_purge_min: 20       # DeleteObject WITH a versionId (permanent delete) of >= N objects ...
+  s3_version_purge_window_ms: 900000
+  s3_enum_min_buckets: 8         # ListObjects* / GetBucketAcl / GetBucketPolicy over >= N buckets in a window
+  s3_enum_window_ms: 600000
+  s3_anon_min_objects: 20        # anonymous GetObject of >= N objects in an hour
+  # IAM Identity Center sign-in
+  sso_spray_min_users: 5         # password failures for >= N users from one IP ...
+  sso_spray_window_ms: 1800000
+  sso_bf_min_failures: 10        # >= N password failures for one user ...
+  sso_bf_window_ms: 1800000
+  sso_mfa_min_challenges: 5      # >= N MFA challenges / failed MFA verifications for one user ...
+  sso_mfa_window_ms: 600000
+  sso_newnet_days: 14            # MFA device registered from a network this user did not use in the last N days
+  sso_mfa_regex: '^(start|complete)(webauthn|virtualmfa|mfa)device(registration)?$|^createmfadeviceforuser$|^enablemfadevice$|^createvirtualmfadevice$'
+  # ---- track Identity SaaS (rules okta_* / gws_* / m365_* / auth0_* / duo_*; log_coverage.md P0-7, P0-11, P0-12, P1-16)
+  gws_cl_services: ["login.googleapis.com", "admin.googleapis.com", "oauth2.googleapis.com"]   # Cloud Logging copy
+  idp_internal_domains: []       # e-mail domains that count as internal for forwarding / sharing (the actor's own
+                                 # UPN domain always does); e.g. ["corp.example", "corp-subsidiary.example"]
+  idp_spray_min_users: 8         # failed sign-ins for >= N distinct users from one IP (spray / stuffing) ...
+  idp_spray_window_ms: 1800000   # ... within 30 min (Okta, Workspace, Auth0)
+  idp_spray_success_window_ms: 3600000   # spray IP -> a successful sign-in from the same IP within 1 h (valid account)
+  idp_push_min_denied: 2         # MFA push fatigue: of the >= mfa_min_prompts prompts in mfa_window_ms, >= N denied /
+                                 # timed out (a user retrying a slow push is prompts only)
+  idp_session_window_ms: 3600000 # one IdP session id from >= 2 networks within 1 h (token / cookie replay)
+  okta_admin_role_regex: "super administrator|super_admin|organization administrator|org_admin|api access management|mobile administrator|application administrator|app_admin"
+  okta_idp_events: ["system.idp.lifecycle.create", "system.idp.lifecycle.activate"]
+  okta_policy_weaken_events: ["policy.lifecycle.deactivate", "policy.lifecycle.delete", "policy.rule.deactivate", "policy.rule.delete"]
+  idp_factor_after_compromise_ms: 21600000   # okta compromise signal -> MFA factor enrolled / reset for the same user
+  gws_broad_scope_regex: 'https://mail\.google\.com/|auth/gmail\.(readonly|modify|compose|send|settings)|auth/drive([ ,]|$)|auth/drive\.readonly|auth/admin\.directory|auth/cloud-platform'
+  gws_trusted_oauth_clients: []  # OAuth client ids allowed broad Workspace scopes (backup / archiving tools)
+  gws_super_roles: ["_seed_admin_role", "super admin", "_super_admin_role"]
+  m365_forward_ops: ["New-InboxRule", "Set-InboxRule", "Set-Mailbox", "New-TransportRule", "Set-TransportRule"]
+  m365_hiding_folder_regex: '^(rss feeds|rss subscriptions|conversation history|archive|junk email)$'
+  m365_lure_keyword_regex: 'invoice|payment|wire|bank|transfer|security|phish|hack|password|mfa|helpdesk|it support|suspicious|urgent'
+  m365_download_min: 50          # distinct files downloaded / synced by one user in m365_download_window_ms ...
+  m365_download_window_ms: 3600000
+  m365_download_baseline_mult: 10.0   # ... and >= N x the user's own hourly p95 over 14 days
+  m365_share_ops: ["AnonymousLinkCreated", "SharingInvitationCreated", "AddedToSecureLink", "SecureLinkCreated", "SharingSet", "CompanyLinkCreated"]
+  m365_share_burst_min: 5        # >= N distinct files shared externally / anonymously by one user per hour
+  m365_share_window_ms: 3600000
+  duo_push_fail_reasons: ["no_response", "user_cancelled", "user_mistake", "user_marked_fraud", "anomalous_push", "user_declined"]
+  # ---- track K8s + GCP (rules k8s_* / gcp_*; reports/cloud/log_coverage.md P0-8, P0-14, P1-5, P1-11) ----------------
+  # Kubernetes control-plane / node / built-in controller identities (RE2 on the raw lower-case username). A stolen
+  # kube-system token of a NON-controller service account is NOT matched (it stays an actor every k8s rule sees).
+  k8s_system_user_regex: '^(system:(kube-[a-z-]+|node:.+|apiserver|volume-scheduler|kube-proxy|gke-[a-z0-9-]+|clustermetrics|addon-manager|konnectivity-server|metrics-server)|system:serviceaccount:kube-system:([a-z0-9-]+-controller|generic-garbage-collector|horizontal-pod-autoscaler|kube-proxy|coredns|cloud-provider)|eks:.+|aksservice|nodeclient)$'
+  k8s_admins: []                 # break-glass / platform admins: exec, RBAC and token rules downgrade to 35 (never dropped)
+  # operators that legitimately read secrets across namespaces (lower-case actor = system:serviceaccount:<ns>:<name>)
+  k8s_secret_readers: ["system:serviceaccount:argocd:argocd-application-controller", "system:serviceaccount:argocd:argocd-server",
+                       "system:serviceaccount:flux-system:kustomize-controller", "system:serviceaccount:flux-system:helm-controller",
+                       "system:serviceaccount:cert-manager:cert-manager", "system:serviceaccount:external-secrets:external-secrets"]
+  # namespaces whose workloads are privileged by design (CNI, node agents, monitoring): privileged pod -> 40
+  k8s_priv_namespaces: [kube-system, calico-system, tigera-operator, gke-managed-system, gmp-system, istio-system, monitoring, falco]
+  k8s_secrets_min_distinct: 8    # distinct secrets (namespace/name) read by one actor in k8s_secrets_window_ms
+  k8s_secrets_window_ms: 600000
+  k8s_discovery_min_resources: 6 # distinct resource types listed / read by one actor in k8s_discovery_window_ms
+  k8s_discovery_window_ms: 600000
+  # resources an intruder enumerates (RBAC, credentials, nodes, admission); `kubectl get all` types are not listed
+  k8s_discovery_resources: [secrets, configmaps, serviceaccounts, roles, rolebindings, clusterroles, clusterrolebindings,
+                            nodes, namespaces, networkpolicies, mutatingwebhookconfigurations,
+                            validatingwebhookconfigurations, selfsubjectrulesreviews, selfsubjectaccessreviews,
+                            customresourcedefinitions, persistentvolumes, certificatesigningrequests]
+  k8s_forbidden_min: 8           # distinct forbidden (401 / 403) requests by one actor or IP in the window
+  k8s_forbidden_window_ms: 600000
+  k8s_newip_baseline_days: 14    # kubectl / API use from a network this user did not use in the last N days
+  k8s_bad_cmd_regex: '(curl|wget)[^|;]*\|\s*(ba)?sh|base64 +-d|/dev/tcp/|\bnc(at)? .*-e|xmrig|minerd|stratum\+tcp|python3? -c|chmod \+x /tmp|nsenter|/var/run/docker\.sock|/run/containerd'
+  k8s_trusted_registry_regex: '^(registry\.corp\.example|[0-9]+\.dkr\.ecr\.[a-z0-9-]+\.amazonaws\.com|[a-z0-9-]+-docker\.pkg\.dev|gcr\.io/corp-|mcr\.microsoft\.com|registry\.k8s\.io|quay\.io/(argoproj|jetstack|prometheus)|docker\.io/(grafana|bitnami)|ghcr\.io/corp-example)/'
+  # GCP audit: VPC Service Controls, BigQuery, serverless, workload identity federation
+  gcp_vpcsc_min: 3               # VPC-SC denials by one actor in gcp_vpcsc_window_ms (one denial is a misconfig signal)
+  gcp_vpcsc_window_ms: 1800000
+  gcp_trusted_export_regex: '^gs://(corp-|backup-corp-)'   # BigQuery EXTRACT destinations inside the company
+  gcp_bq_bulk_bytes: 53687091200 # one query billing >= 50 GiB by a non-analytics principal
+  gcp_bq_read_min_tables: 12     # distinct tables read (jobs / tabledata) by one actor in gcp_bq_read_window_ms
+  gcp_bq_read_window_ms: 1800000
+  gcp_analytics_principals: []   # BI / ETL service accounts allowed to read in bulk (lower-case actor)
+  gcp_deployer_principals: []    # CI deployers of Cloud Run / Functions (also automation_identity_patterns)
+  # ---- track Azure (rules az_kv_* / az_graph_* / az_idp_* / az_sp_*; reports/cloud/log_coverage.md P0-3, P0-9, P0-13,
+  # P1-12). Key Vault data plane: apps read the same few secrets all day; a sweep reads many distinct ones at once.
+  kv_secret_window_ms: 600000    # az_kv_secret_sweep: distinct secrets / keys / certificates read by one actor ...
+  kv_secret_min_distinct: 8      # ... >= N within the window (a deploy reads 2-5; rotation jobs SET, they do not GET)
+  kv_vault_sweep_min: 3          # ... or SecretList on >= N vaults by one actor in the window
+  kv_denied_min: 4               # az_kv_forbidden_then_get: 403 on >= N distinct objects / vaults by one actor ...
+  kv_denied_window_ms: 1800000
+  kv_denied_get_window_ms: 7200000   # ... then a successful read by the same actor within this window
+  kv_purge_min: 3                # az_kv_purge: >= N purges (or delete + purge of >= N objects) by one actor ...
+  kv_purge_window_ms: 3600000
+  kv_backup_min: 3               # az_kv_backup_export: SecretBackup / KeyBackup / CertificateBackup of >= N objects
+  kv_backup_window_ms: 3600000
+  kv_readers: []                 # backup / secret-sync identities allowed to read many secrets (lower-case actor)
+  kv_admins: []                  # vault admins: purge / key delete downgraded to 45 (never dropped)
+  # Microsoft Graph: enumeration = many object types (users, groups, SPs, roles, apps, devices ...) in minutes
+  graph_enum_types: [users, groups, serviceprincipals, applications, directoryroles, devices, rolemanagement,
+                     directoryobjects, oauth2permissiongrants, administrativeunits, domains, organization, contacts,
+                     identity, policies, directoryroletemplates, rolemanagementpolicies, groupsettings]
+  graph_enum_window_ms: 600000
+  graph_enum_min_types: 4        # distinct object types in the window ...
+  graph_enum_min_calls: 40       # ... and >= N calls (an admin portal page load is < 10)
+  graph_enum_baseline_mult: 3.0  # a daily inventory app is judged against its own history (p95 per window)
+  graph_enum_baseline_days: 14
+  graph_mail_window_ms: 3600000
+  graph_mail_min_mailboxes: 5    # one identity reading >= N OTHER users' mailboxes in the window ...
+  graph_mail_baseline_mult: 3.0  # ... and >= mult x its own p95 (a mail backup app reads every mailbox nightly)
+  graph_mail_baseline_days: 14
+  graph_cred_paths_regex: '/(applications|serviceprincipals)/[^/]+/(addpassword|addkey)$|/(applications|serviceprincipals)/[^/]+/federatedidentitycredentials$'
+  graph_token_window_ms: 3600000 # az_graph_token_replay: a sign-in token (UniqueTokenIdentifier) used for Graph ...
+                                 # ... from another /16 (IPv4) or /48 (IPv6) than the sign-in within this window
+  # Entra ID Protection risk event types -> rule (lower-case riskEventType)
+  idp_signin_types: [unlikelytravel, anonymizedipaddress, maliciousipaddress, unfamiliarfeatures, suspiciousipaddress,
+                     newcountry, impossibletravel, nationstateip, riskyipaddress, leakedcredentials,
+                     investigationsthreatintelligence, generic, suspiciousapitraffic, suspiciousbrowser,
+                     mcasimpossibletravel, suspicioussignins]
+  idp_token_types: [anomaloustoken, tokenissueranomaly, attackerinthemiddle, attemptedprtaccess, anomaloususeractivity,
+                    suspiciousauthappapproval]
+  idp_spray_types: [passwordspray, mcassuspiciouspasswordspray]
+  idp_mfa_types: [mfafraud]
+  idp_inbox_types: [suspiciousinboxforwarding, mcassuspiciousinboxmanipulationrules, suspiciousinboxmanipulationrules]
+  idp_closed_states: [dismissed, remediated, confirmedsafe]   # closed by an analyst / the user: context only
+  sp_signin_baseline_days: 14    # az_sp_signin_new_network: service principal sign-in from a network unused for N days
+
+# ---- cloud_ev: one JSON pass over cloud rows (detect_cloud_ev.py) ------------------------------------------------------
+# columns: name -> {src: [source types], paths: [JSONPath, ...]} (first non-empty path wins; other sources -> NULL).
+# All paths of all columns are extracted with ONE json_extract_string call per row.
+columns:
+  raw_time:   {paths: ['$.eventTime', '$.TimeGenerated', '$.time', '$.timestamp', '$.eventTimestamp', '$.ActivityDateTime',
+                       '$.query_timestamp', '$.event.timestamp']}
+  ct_type:    {src: [cloudtrail_json], paths: ['$.userIdentity.type']}
+  ct_arn:     {src: [cloudtrail_json], paths: ['$.userIdentity.arn']}
+  ct_iss:     {src: [cloudtrail_json], paths: ['$.userIdentity.sessionContext.sessionIssuer.arn']}
+  ct_iss_name: {src: [cloudtrail_json], paths: ['$.userIdentity.sessionContext.sessionIssuer.userName']}
+  ct_uname:   {src: [cloudtrail_json], paths: ['$.userIdentity.userName']}
+  ct_akid:    {src: [cloudtrail_json], paths: ['$.userIdentity.accessKeyId']}
+  ct_mfa:     {src: [cloudtrail_json], paths: ['$.userIdentity.sessionContext.attributes.mfaAuthenticated']}
+  ct_invoked: {src: [cloudtrail_json], paths: ['$.userIdentity.invokedBy']}
+  ct_ua:      {src: [cloudtrail_json], paths: ['$.userAgent']}
+  ct_err:     {src: [cloudtrail_json], paths: ['$.errorCode']}
+  ct_msg:     {src: [cloudtrail_json], paths: ['$.errorMessage']}
+  ct_ip:      {src: [cloudtrail_json], paths: ['$.sourceIPAddress']}
+  ct_rp:      {src: [cloudtrail_json], paths: ['$.requestParameters']}
+  ct_re:      {src: [cloudtrail_json], paths: ['$.responseElements']}
+  ct_add:     {src: [cloudtrail_json], paths: ['$.additionalEventData']}
+  ct_ro:      {src: [cloudtrail_json], paths: ['$.readOnly']}
+  ct_region:  {src: [cloudtrail_json], paths: ['$.awsRegion']}
+  ct_etype:   {src: [cloudtrail_json], paths: ['$.eventType']}
+  ct_vpce:    {src: [cloudtrail_json], paths: ['$.vpcEndpointId']}
+  ct_id:      {src: [cloudtrail_json], paths: ['$.eventID']}
+  az_opval:   {src: [azure_activity_json], paths: ['$.OperationNameValue', '$.operationName.value']}
+  az_caller:  {src: [azure_activity_json], paths: ['$.Caller', '$.caller', '$.identity.claims."http://schemas.xmlsoap.org/ws/2005/05/identity/claims/upn"', '$.identity.claims.appid']}
+  az_props:   {src: [azure_activity_json], paths: ['$.Properties_d', '$.Properties', '$.properties']}
+  az_corr:    {src: [azure_activity_json, azure_storageblob_json], paths: ['$.CorrelationId', '$.correlationId']}
+  az_status:  {src: [azure_activity_json], paths: ['$.ActivityStatusValue', '$.status.value', '$.ActivityStatus', '$.Result', '$.resultType', '$.properties.result']}
+  az_substatus: {src: [azure_activity_json], paths: ['$.ActivitySubstatusValue', '$.subStatus.value']}
+  az_sub:     {src: [azure_activity_json], paths: ['$.SubscriptionId', '$.subscriptionId']}
+  az_logged_by: {src: [azure_activity_json], paths: ['$.LoggedByService', '$.loggedByService', '$.properties.loggedByService']}
+  az_tenant:  {src: [azure_activity_json, azure_signin_json, azure_storageblob_json, azure_keyvault_json, azure_graph_json, azure_risk_json], paths: ['$.AADTenantId', '$.TenantId', '$.tenantId', '$.properties.tenantId']}
+  az_location: {src: [azure_activity_json, azure_storageblob_json], paths: ['$.Location', '$.location']}
+  au_cat:     {src: [azure_activity_json], paths: ['$.Category', '$.category', '$.properties.category']}
+  au_name:    {src: [azure_activity_json], paths: ['$.ActivityDisplayName', '$.activityDisplayName', '$.properties.activityDisplayName']}
+  au_by_upn:  {src: [azure_activity_json], paths: ['$.InitiatedBy.user.userPrincipalName', '$.properties.initiatedBy.user.userPrincipalName']}
+  au_by_app:  {src: [azure_activity_json], paths: ['$.InitiatedBy.app.displayName', '$.properties.initiatedBy.app.displayName']}
+  au_by_spid: {src: [azure_activity_json], paths: ['$.InitiatedBy.app.servicePrincipalId', '$.properties.initiatedBy.app.servicePrincipalId']}
+  tr_json:    {src: [azure_activity_json], paths: ['$.TargetResources', '$.targetResources', '$.properties.targetResources']}
+  au_add:     {src: [azure_activity_json], paths: ['$.AdditionalDetails', '$.properties.additionalDetails']}
+  au_reason:  {src: [azure_activity_json], paths: ['$.ResultReason', '$.properties.resultReason']}
+  au_id:      {src: [azure_activity_json, azure_signin_json], paths: ['$.Id', '$.id', '$.properties.id', '$.EventDataId', '$.eventDataId']}
+  si_code:    {src: [azure_signin_json], paths: ['$.ResultType', '$.resultType', '$.Status.errorCode', '$.properties.status.errorCode']}
+  si_ua:      {src: [azure_signin_json], paths: ['$.UserAgent', '$.properties.userAgent']}
+  si_client:  {src: [azure_signin_json], paths: ['$.ClientAppUsed', '$.properties.clientAppUsed']}
+  si_req:     {src: [azure_signin_json], paths: ['$.AuthenticationRequirement', '$.properties.authenticationRequirement']}
+  si_proto:   {src: [azure_signin_json], paths: ['$.AuthenticationProtocol', '$.properties.authenticationProtocol']}
+  si_risk:    {src: [azure_signin_json], paths: ['$.RiskLevelDuringSignIn', '$.properties.riskLevelDuringSignIn']}
+  si_rstate:  {src: [azure_signin_json], paths: ['$.RiskState', '$.properties.riskState']}
+  # si_asn / si_cc / si_lat / si_lon also read the identity SaaS vendor geo (Okta securityContext / geographicalContext,
+  # Duo access_device.location): they feed the shared asn / cc / lat / lon / net columns (Okta / Duo country is a NAME)
+  si_asn:     {src: [azure_signin_json, okta_json], paths: ['$.AutonomousSystemNumber', '$.properties.autonomousSystemNumber', '$.securityContext.asNumber', '$.detail.securityContext.asNumber']}
+  si_cc:      {src: [azure_signin_json, okta_json, duo_auth_json], paths: ['$.LocationDetails.countryOrRegion', '$.properties.location.countryOrRegion', '$.LocationDetails|$.countryOrRegion', '$.Location', '$.client.geographicalContext.country', '$.detail.client.geographicalContext.country', '$.access_device.location.country']}
+  si_lat:     {src: [azure_signin_json, okta_json], paths: ['$.LocationDetails.geoCoordinates.latitude', '$.properties.location.geoCoordinates.latitude', '$.LocationDetails|$.geoCoordinates.latitude', '$.client.geographicalContext.geolocation.lat', '$.detail.client.geographicalContext.geolocation.lat']}
+  si_lon:     {src: [azure_signin_json, okta_json], paths: ['$.LocationDetails.geoCoordinates.longitude', '$.properties.location.geoCoordinates.longitude', '$.LocationDetails|$.geoCoordinates.longitude', '$.client.geographicalContext.geolocation.lon', '$.detail.client.geographicalContext.geolocation.lon']}
+  si_sess:    {src: [azure_signin_json], paths: ['$.SessionId', '$.properties.sessionId', '$.UniqueTokenIdentifier', '$.properties.uniqueTokenIdentifier']}
+  si_appid:   {src: [azure_signin_json], paths: ['$.AppId', '$.properties.appId']}
+  si_authdet: {src: [azure_signin_json], paths: ['$.AuthenticationDetails', '$.properties.authenticationDetails', '$.MfaDetail', '$.Status']}
+  sb_auth:    {src: [azure_storageblob_json], paths: ['$.AuthenticationType', '$.identity.type']}
+  sb_ua:      {src: [azure_storageblob_json], paths: ['$.UserAgentHeader', '$.properties.userAgentHeader']}
+  sb_key:     {src: [azure_storageblob_json], paths: ['$.ObjectKey', '$.properties.objectKey']}
+  sb_account: {src: [azure_storageblob_json], paths: ['$.AccountName']}
+  sb_status:  {src: [azure_storageblob_json], paths: ['$.StatusText', '$.statusText']}
+  g_code:     {src: [gcp_audit_json], paths: ['$.protoPayload.status.code']}
+  g_ua:       {src: [gcp_audit_json], paths: ['$.protoPayload.requestMetadata.callerSuppliedUserAgent']}
+  g_res:      {src: [gcp_audit_json], paths: ['$.protoPayload.resourceName']}
+  g_rtype:    {src: [gcp_audit_json], paths: ['$.resource.type']}
+  g_log:      {src: [gcp_audit_json], paths: ['$.logName']}
+  g_req:      {src: [gcp_audit_json], paths: ['$.protoPayload.request']}
+  g_resp:     {src: [gcp_audit_json], paths: ['$.protoPayload.response']}
+  g_md:       {src: [gcp_audit_json], paths: ['$.protoPayload.metadata']}
+  g_delta:    {src: [gcp_audit_json], paths: ['$.protoPayload.serviceData.policyDelta.bindingDeltas', '$.protoPayload.metadata.datasetChange.bindingDeltas']}
+  g_audit_delta: {src: [gcp_audit_json], paths: ['$.protoPayload.serviceData.policyDelta.auditConfigDeltas']}
+  g_deleg:    {src: [gcp_audit_json], paths: ['$.protoPayload.authenticationInfo.serviceAccountDelegationInfo']}
+  g_principal: {src: [gcp_audit_json], paths: ['$.protoPayload.authenticationInfo.principalEmail']}
+  g_keyname:  {src: [gcp_audit_json], paths: ['$.protoPayload.authenticationInfo.serviceAccountKeyName']}
+  g_authz:    {src: [gcp_audit_json], paths: ['$.protoPayload.authorizationInfo']}
+  g_zone:     {src: [gcp_audit_json], paths: ['$.resource.labels.zone', '$.resource.labels.location']}
+  g_id:       {src: [gcp_audit_json], paths: ['$.insertId']}
+  # ---- track AWS: Identity Center sign-in (CloudTrail), VPC Flow Logs, Route 53 Resolver, Network Firewall ------------
+  ct_sed:     {src: [cloudtrail_json], paths: ['$.serviceEventDetails']}
+  ct_auth_wf: {src: [cloudtrail_json], paths: ['$.additionalEventData.AuthWorkflowID']}
+  ct_cred:    {src: [cloudtrail_json], paths: ['$.additionalEventData.CredentialType', '$.serviceEventDetails.CredentialType']}
+  fl_acct:    {src: [aws_vpcflow_json, aws_r53resolver_json], paths: ['$."account-id"', '$.account_id', '$.AccountId']}
+  fl_dir:     {src: [aws_vpcflow_json], paths: ['$."flow-direction"', '$.flow_direction', '$.FlowDirection']}
+  fl_pkts:    {src: [aws_vpcflow_json], paths: ['$.packets', '$.Packets']}
+  r53_rcode:  {src: [aws_r53resolver_json], paths: ['$.rcode']}
+  r53_qtype:  {src: [aws_r53resolver_json], paths: ['$.query_type']}
+  r53_fw:     {src: [aws_r53resolver_json], paths: ['$.firewall_rule_action']}
+  nfw_type:   {src: [aws_nfw_json], paths: ['$.event.event_type']}
+  nfw_cat:    {src: [aws_nfw_json], paths: ['$.event.alert.category']}
+  nfw_sid:    {src: [aws_nfw_json], paths: ['$.event.alert.signature_id']}
+  # ---- track Azure: sign-in token / principal ids, Key Vault, Microsoft Graph activity, Entra ID Protection ------------
+  si_tokid:   {src: [azure_signin_json], paths: ['$.UniqueTokenIdentifier', '$.properties.uniqueTokenIdentifier']}
+  si_spid:    {src: [azure_signin_json], paths: ['$.ServicePrincipalId', '$.properties.servicePrincipalId']}
+  si_cat:     {src: [azure_signin_json], paths: ['$.Category', '$.category', '$.Type']}
+  kv_status:  {src: [azure_keyvault_json], paths: ['$.properties.httpStatusCode', '$.HttpStatusCode', '$.httpStatusCode_d', '$.resultSignature', '$.ResultSignature']}
+  kv_ua:      {src: [azure_keyvault_json], paths: ['$.properties.clientInfo', '$.ClientInfo', '$.clientInfo_s']}
+  kv_appid:   {src: [azure_keyvault_json], paths: ['$.identity.claim.appid', '$.Identity.claim.appid', '$.identity_claim_appid_g']}
+  kv_mirid:   {src: [azure_keyvault_json], paths: ['$.identity.claim.xms_mirid', '$.Identity.claim.xms_mirid', '$.identity_claim_xms_mirid_s']}
+  gr_method:  {src: [azure_graph_json], paths: ['$.RequestMethod', '$.properties.requestMethod']}
+  gr_status:  {src: [azure_graph_json], paths: ['$.ResponseStatusCode', '$.properties.responseStatusCode']}
+  gr_ua:      {src: [azure_graph_json], paths: ['$.UserAgent', '$.properties.userAgent']}
+  gr_tokid:   {src: [azure_graph_json], paths: ['$.SignInActivityId', '$.properties.signInActivityId']}
+  gr_uid:     {src: [azure_graph_json], paths: ['$.UserId', '$.properties.userId']}
+  gr_spid:    {src: [azure_graph_json], paths: ['$.ServicePrincipalId', '$.properties.servicePrincipalId']}
+  gr_roles:   {src: [azure_graph_json], paths: ['$.Roles', '$.properties.roles']}
+  gr_scopes:  {src: [azure_graph_json], paths: ['$.Scopes', '$.properties.scopes']}
+  rk_type:    {src: [azure_risk_json], paths: ['$.RiskEventType', '$.riskEventType', '$.properties.riskEventType']}
+  rk_level:   {src: [azure_risk_json], paths: ['$.RiskLevel', '$.riskLevel', '$.properties.riskLevel']}
+  rk_state:   {src: [azure_risk_json], paths: ['$.RiskState', '$.riskState', '$.properties.riskState']}
+  rk_detail:  {src: [azure_risk_json], paths: ['$.RiskDetail', '$.riskDetail', '$.properties.riskDetail']}
+  rk_timing:  {src: [azure_risk_json], paths: ['$.DetectionTimingType', '$.detectionTimingType', '$.properties.detectionTimingType']}
+  rk_cat:     {src: [azure_risk_json], paths: ['$.Category', '$.category', '$.OperationName', '$.operationName']}
+  # ---- track K8s + GCP: Kubernetes audit (generic / EKS / AKS AKSAudit), GKE labels, GCP audit metadata ---------------
+  k8s_verb:   {src: [k8s_audit_json], paths: ['$.verb', '$.Verb']}
+  k8s_res:    {src: [k8s_audit_json], paths: ['$.objectRef.resource', '$.ObjectRef.resource']}
+  k8s_sub:    {src: [k8s_audit_json], paths: ['$.objectRef.subresource', '$.ObjectRef.subresource']}
+  k8s_ns:     {src: [k8s_audit_json], paths: ['$.objectRef.namespace', '$.ObjectRef.namespace']}
+  k8s_name:   {src: [k8s_audit_json], paths: ['$.objectRef.name', '$.ObjectRef.name']}
+  k8s_stage:  {src: [k8s_audit_json], paths: ['$.stage', '$.Stage']}
+  k8s_code:   {src: [k8s_audit_json], paths: ['$.responseStatus.code', '$.ResponseStatus.code']}
+  k8s_req:    {src: [k8s_audit_json], paths: ['$.requestObject', '$.RequestObject']}
+  k8s_uri:    {src: [k8s_audit_json], paths: ['$.requestURI', '$.RequestUri']}
+  k8s_uname:  {src: [k8s_audit_json], paths: ['$.user.username', '$.User.username']}
+  k8s_groups: {src: [k8s_audit_json], paths: ['$.user.groups', '$.User.groups']}
+  k8s_ua:     {src: [k8s_audit_json], paths: ['$.userAgent', '$.UserAgent']}
+  k8s_decision: {src: [k8s_audit_json], paths: ['$.annotations."authorization.k8s.io/decision"', '$.Annotations."authorization.k8s.io/decision"']}
+  k8s_id:     {src: [k8s_audit_json], paths: ['$.auditID', '$.AuditId']}
+  # GKE: LogEntry labels survive ingest as log_labels (allow-listed keys) once the P0-4 ingest patch is applied
+  g_k8s_decision: {src: [gcp_audit_json], paths: ['$.log_labels."authorization.k8s.io/decision"']}
+  g_mdjson:   {src: [gcp_audit_json], paths: ['$.protoPayload.metadataJson']}   # BigQuery AuditData export: a JSON STRING
+  g_subject:  {src: [gcp_audit_json], paths: ['$.protoPayload.authenticationInfo.principalSubject']}
+  gf_disp:    {src: [gcp_firewall_json], paths: ['$.jsonPayload.disposition', '$.json_payload.disposition']}
+  gf_dir:     {src: [gcp_firewall_json], paths: ['$.jsonPayload.rule_details.direction', '$.json_payload.rule_details.direction']}
+  gd_qtype:   {src: [gcp_dns_json], paths: ['$.jsonPayload.queryType', '$.jsonPayload.query_type', '$.json_payload.queryType']}
+  gd_rcode:   {src: [gcp_dns_json], paths: ['$.jsonPayload.responseCode', '$.jsonPayload.response_code', '$.json_payload.responseCode']}
+  gfl_id:     {src: [gcp_vpcflow_json, gcp_firewall_json, gcp_dns_json], paths: ['$.insertId', '$.insert_id']}
+  # ---- track Identity SaaS: Okta System Log, Workspace Reports (+ Cloud Logging copy), M365 UAL, Auth0, Duo ----------
+  idp_rid:    {src: [okta_json, m365_ual_json, auth0_json, duo_auth_json], paths: ['$.uuid', '$.detail.uuid', '$.Id', '$.OfficeId', '$.RawEventData.Id', '$.log_id', '$.data.log_id', '$.txid']}
+  ok_sess:    {src: [okta_json], paths: ['$.authenticationContext.externalSessionId', '$.detail.authenticationContext.externalSessionId']}
+  ok_result:  {src: [okta_json], paths: ['$.outcome.result', '$.detail.outcome.result']}
+  ok_reason:  {src: [okta_json], paths: ['$.outcome.reason', '$.detail.outcome.reason']}
+  ok_cred:    {src: [okta_json], paths: ['$.authenticationContext.credentialType', '$.detail.authenticationContext.credentialType']}
+  ok_target:  {src: [okta_json], paths: ['$.target', '$.detail.target']}
+  ok_debug:   {src: [okta_json], paths: ['$.debugContext.debugData', '$.detail.debugContext.debugData']}
+  ok_ua:      {src: [okta_json], paths: ['$.client.userAgent.rawUserAgent', '$.detail.client.userAgent.rawUserAgent']}
+  ok_proxy:   {src: [okta_json], paths: ['$.securityContext.isProxy', '$.detail.securityContext.isProxy']}
+  ok_atype:   {src: [okta_json], paths: ['$.actor.type', '$.detail.actor.type']}
+  gw_ev_r:    {src: [gws_reports_json], paths: ['$.events[0].name']}
+  gw_par_r:   {src: [gws_reports_json], paths: ['$.events[0].parameters']}
+  gw_evs:     {src: [gws_reports_json], paths: ['$.events']}
+  gw_ev_c:    {src: [gcp_audit_json], paths: ['$.protoPayload.metadata.event[0].eventName']}
+  gw_par_c:   {src: [gcp_audit_json], paths: ['$.protoPayload.metadata.event[0].parameter']}
+  m3_upn:     {src: [m365_ual_json], paths: ['$.UserId', '$.RawEventData.UserId']}
+  m3_org:     {src: [m365_ual_json], paths: ['$.OrganizationId', '$.RawEventData.OrganizationId']}
+  m3_params:  {src: [m365_ual_json], paths: ['$.Parameters', '$.RawEventData.Parameters', '$.OperationProperties', '$.RawEventData.OperationProperties']}
+  m3_target:  {src: [m365_ual_json], paths: ['$.TargetUserOrGroupName', '$.RawEventData.TargetUserOrGroupName']}
+  m3_ttype:   {src: [m365_ual_json], paths: ['$.TargetUserOrGroupType', '$.RawEventData.TargetUserOrGroupType']}
+  m3_site:    {src: [m365_ual_json], paths: ['$.SiteUrl', '$.Site_Url', '$.RawEventData.SiteUrl']}
+  m3_modprops: {src: [m365_ual_json], paths: ['$.ModifiedProperties', '$.RawEventData.ModifiedProperties']}
+  m3_objs:    {src: [m365_ual_json], paths: ['$.Target', '$.RawEventData.Target']}
+  m3_ua:      {src: [m365_ual_json], paths: ['$.UserAgent', '$.RawEventData.UserAgent', '$.ClientInfoString', '$.RawEventData.ClientInfoString']}
+  a0_desc:    {src: [auth0_json], paths: ['$.description', '$.data.description']}
+  a0_client:  {src: [auth0_json], paths: ['$.client_id', '$.data.client_id']}
+  duo_result: {src: [duo_auth_json], paths: ['$.result']}
+  duo_factor: {src: [duo_auth_json], paths: ['$.factor']}
+  duo_auth_ip: {src: [duo_auth_json], paths: ['$.auth_device.ip']}
+
+# derived: layers of name -> SQL over the columns above (and earlier layers). Canonical event columns available:
+# ts_ms, source_seq, source_type, action, outcome, host, src_user, target_user, src_ip, signature, app, group_name,
+# bytes_out, file_path. Geo columns (asn, cc, net, hosting, lat, lon, corp_ip, provider) are added after layer 2.
+derived:
+  - is_ct: "source_type = 'cloudtrail_json'"
+    is_azs: "source_type = 'azure_signin_json'"
+    is_aza: "source_type = 'azure_activity_json' AND (az_opval IS NOT NULL OR upper(signature) LIKE 'MICROSOFT.%')"
+    is_azd: "source_type = 'azure_activity_json' AND az_opval IS NULL AND upper(coalesce(signature, '')) NOT LIKE 'MICROSOFT.%' AND (az_logged_by IS NOT NULL OR tr_json IS NOT NULL OR au_name IS NOT NULL)"
+    is_azb: "source_type = 'azure_storageblob_json'"
+    is_gcp: "source_type = 'gcp_audit_json'"
+    is_vpcflow: "source_type IN ('aws_vpcflow_json', 'aws_vpcflow_txt')"
+    is_r53: "source_type = 'aws_r53resolver_json'"
+    is_nfw: "source_type = 'aws_nfw_json'"
+    # track Azure: Key Vault data plane, Microsoft Graph activity, Entra ID Protection risk, service-principal sign-ins
+    is_kv: "source_type = 'azure_keyvault_json'"
+    is_gr: "source_type = 'azure_graph_json'"
+    is_idp: "source_type = 'azure_risk_json'"
+    is_sp_signin: "source_type = 'azure_signin_json' AND (si_spid IS NOT NULL OR coalesce(si_cat, '') ILIKE '%ServicePrincipal%')"
+    kv_kind: "lower(nullif(regexp_extract(coalesce(file_path, ''), '^https?://[^/]+/(secrets|keys|certificates|deletedsecrets|deletedkeys|deletedcertificates)(?:[/?]|$)', 1), ''))"
+    kv_obj: "lower(nullif(regexp_extract(coalesce(file_path, ''), '^https?://([^./]+)[^/]*/[a-z]+/([^/?]+)', 2), ''))"
+    kv_vault: "lower(coalesce(nullif(regexp_extract(coalesce(host, ''), '/vaults/([^/]+)', 1), ''), nullif(regexp_extract(coalesce(file_path, ''), '^https?://([^./]+)\\.vault\\.', 1), '')))"
+    gr_res: "lower(nullif(regexp_extract(coalesce(file_path, ''), '^https?://[^/]+/(?:v1\\.0|beta)/([A-Za-z0-9_.]+)', 1), ''))"
+    gr_path: "lower(nullif(regexp_extract(coalesce(file_path, ''), '^https?://[^/]+/(?:v1\\.0|beta)(/[^?]*)', 1), ''))"
+    gr_mailbox: "lower(nullif(regexp_extract(coalesce(file_path, ''), '/users/([^/?]+)/(?:messages|mailfolders|mailboxsettings|inferenceclassification)', 1), ''))"
+    # a directory COLLECTION listing (/users, /groups?$top=999, /roleManagement/directory/roleAssignments), not an
+    # object read (/users/{id}/photo): enumeration rules count only these
+    gr_list: "regexp_matches(lower(coalesce(file_path, '')), '^https?://[^/]+/(?:v1\\.0|beta)/(?:[a-z0-9_.]+|rolemanagement/directory/[a-z0-9_.]+)/?(?:\\?.*)?$')"
+    rk: "lower(rk_type)"
+    # caller network for token / principal comparisons that must not depend on geo files: IPv4 /16, IPv6 /48
+    ip_net: "CASE WHEN src_ip IS NULL THEN NULL WHEN contains(src_ip, ':') THEN array_to_string(string_split(lower(src_ip), ':')[1:3], ':') ELSE nullif(regexp_extract(src_ip, '^(\\d+\\.\\d+)\\.', 1), '') END"
+    # registered domain, naive (two labels; three for <x>.co.uk-style second levels); NULL without a domain
+    dns_apex: "CASE WHEN dst_domain IS NOT NULL THEN coalesce(nullif(regexp_extract(dst_domain, '([a-z0-9_-]+\\.(?:co|com|net|org|gov|ac|edu)\\.[a-z]{2}|[a-z0-9_-]+\\.[a-z0-9-]+)$', 1), ''), dst_domain) END"
+    api: "signature"
+    api_u: "upper(signature)"
+    actor: "coalesce(CASE WHEN action IN ('login_success', 'login_failed') THEN target_user END, src_user, target_user)"
+    ct_role: "coalesce(nullif(regexp_extract(ct_arn, ':assumed-role/([^/]+)/', 1), ''), ct_iss_name)"
+    ua: "lower(coalesce(ct_ua, si_ua, g_ua, sb_ua, gr_ua, kv_ua))"
+    az_req: "coalesce(json_extract_string(az_props, '$.requestbody'), json_extract_string(az_props, '$.requestBody'))"
+    az_resp: "coalesce(json_extract_string(az_props, '$.responseBody'), json_extract_string(az_props, '$.responsebody'))"
+    az_status_code: "coalesce(json_extract_string(az_props, '$.statusCode'), az_substatus)"
+    region: "lower(coalesce(ct_region, nullif(regexp_extract(g_zone, '^([a-z]+-[a-z]+[0-9]+)', 1), '')))"
+    ok_row: "outcome = 'success' OR (source_type = 'azure_activity_json' AND outcome IS NULL AND lower(coalesce(az_status, '')) IN ('accept', 'accepted'))"
+    dedup_id: "coalesce(ct_id, g_id, CASE WHEN source_type = 'azure_activity_json' AND az_corr IS NOT NULL THEN az_corr || '|' || coalesce(signature, '') || '|' || coalesce(az_status, '') || '|' || coalesce(au_id, '') END, au_id, CASE WHEN idp_rid IS NOT NULL THEN source_type || '|' || idp_rid END)"
+  - ct_svc: "is_ct AND (ct_type = 'AWSService' OR ct_invoked IS NOT NULL OR coalesce(ct_ip, '') LIKE '%.amazonaws.com' OR ct_ip = 'AWS Internal')"
+    ct_instance_role: "is_ct AND regexp_matches(coalesce(ct_arn, ''), ':assumed-role/[^/]+/i-[0-9a-f]{8,17}$')"
+    acct: "lower(CASE WHEN is_aza THEN coalesce(nullif(regexp_extract(host, '^/subscriptions/([^/]+)', 1), ''), az_sub, az_tenant, host) WHEN is_azb THEN coalesce(nullif(regexp_extract(host, '^/subscriptions/([^/]+)', 1), ''), az_tenant, host) WHEN is_kv THEN coalesce(nullif(regexp_extract(host, '^/subscriptions/([^/]+)', 1), ''), az_tenant, host) WHEN is_azs OR is_azd OR is_gr OR is_idp THEN coalesce(az_tenant, host) WHEN is_vpcflow OR is_r53 THEN coalesce(fl_acct, host) WHEN source_type = 'm365_purview_csv' THEN coalesce(host, try(json_extract_string(nullif(regexp_extract(raw_line, '(\\{.*\\})', 1), ''), '$.OrganizationId'))) ELSE host END)"
+    actor_key: "lower(CASE WHEN is_ct AND ct_type = 'AssumedRole' THEN coalesce(ct_role, actor) ELSE actor END)"
+    machine: "coalesce(is_ct AND (ct_type = 'AWSService' OR ct_invoked IS NOT NULL OR coalesce(ct_ip, '') LIKE '%.amazonaws.com' OR ct_ip = 'AWS Internal'), false) OR (is_aza AND regexp_full_match(lower(coalesce(az_caller, '')), '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')) OR (is_gcp AND regexp_matches(lower(coalesce(g_principal, '')), '@(gcp-sa-[a-z0-9-]+\\.iam\\.gserviceaccount\\.com|cloudservices\\.gserviceaccount\\.com|system\\.gserviceaccount\\.com|container-engine-robot\\.iam\\.gserviceaccount\\.com)$')) OR lower(coalesce(actor, '')) IN {cfg.machine_principals}"
+    is_write: "CASE WHEN is_ct THEN coalesce(ct_ro = 'false', regexp_matches(coalesce(api, ''), '^(Create|Delete|Put|Update|Modify|Attach|Detach|Add|Remove|Set|Start|Stop|Terminate|Run|Authorize|Revoke|Enable|Disable|Associate|Disassociate|Import|Schedule|Send|Restore|Register|Deregister|Replace|Reset|Change)')) WHEN is_aza THEN regexp_matches(api_u, '/(WRITE|DELETE|ACTION)$') WHEN is_azd THEN true WHEN is_gcp THEN coalesce(g_log, '') LIKE '%activity' WHEN is_azb THEN api IN ('PutBlob', 'PutBlock', 'PutBlockList', 'DeleteBlob', 'CopyBlob', 'SetBlobProperties', 'SetBlobMetadata') ELSE false END"
+    denied: "(is_ct AND ct_err IN ('AccessDenied', 'AccessDeniedException', 'UnauthorizedOperation', 'Client.UnauthorizedOperation', 'UnauthorizedAccess', 'AuthorizationError', 'Forbidden', 'InvalidClientTokenId')) OR (is_gcp AND g_code IN ('7', '16')) OR (is_aza AND outcome = 'failure' AND (az_status_code ILIKE '%forbidden%' OR az_status_code ILIKE '%authorizationfailed%')) OR (is_azb AND outcome = 'failure' AND (coalesce(sb_status, '') ILIKE '%authoriz%' OR coalesce(sb_status, '') ILIKE '%authentication%'))"
+    ua_family: "coalesce(nullif(regexp_extract(lower(coalesce(ct_ua, si_ua, g_ua, sb_ua, '')), '^(aws-cli|boto3|botocore|aws-sdk-[a-z]+|terraform|pulumi|console|mozilla|python-requests|curl|go-http-client|powershell|azurecli|azure-sdk|azsdk-[a-z]+|google-cloud-sdk|gcloud|grpc-[a-z]+)', 1), ''), CASE WHEN coalesce(ct_ua, si_ua, g_ua, sb_ua) IS NOT NULL THEN 'other' END)"
+    session: "coalesce(ct_akid, si_sess, g_keyname)"
+  - automation: >-
+      len(list_filter([lower(actor), actor_key, lower(ct_iss_name), lower(ct_uname), lower(g_principal), lower(az_caller),
+                       lower(au_by_app)], lambda x: x IS NOT NULL AND regexp_matches(x, {cfg.automation_identity_regex}))) > 0
+  # ---- track Identity SaaS: Okta / Workspace (both shapes) / M365 UAL (JSON + Purview CSV AuditData) / Auth0 / Duo -----
+  # Workspace parameters[] and M365 Parameters[] become lists of {k, v}; a named value = list_filter(..)[1].v (no MAP:
+  # a repeated name must never fail the whole cloud_ev build). try(): a malformed JSON value is NULL, never an error.
+  - is_okta: "source_type = 'okta_json'"
+    is_gws: "source_type = 'gws_reports_json' OR (source_type = 'gcp_audit_json' AND (gw_ev_c IS NOT NULL OR app IN {cfg.gws_cl_services}))"
+    is_m365: "source_type IN ('m365_ual_json', 'm365_purview_csv')"
+    is_auth0: "source_type = 'auth0_json'"
+    is_duo: "source_type = 'duo_auth_json'"
+    gw_ev: "coalesce(gw_ev_r, gw_ev_c)"
+    gw_pl: >-
+      list_transform(try(CAST(json_extract(coalesce(gw_par_r, gw_par_c), '$[*]') AS VARCHAR[])),
+                     lambda x: {'k': json_extract_string(x, '$.name'),
+                                'v': coalesce(json_extract_string(x, '$.value'), json_extract_string(x, '$.boolValue'),
+                                              json_extract_string(x, '$.intValue'), json_extract_string(x, '$.multiValue'),
+                                              json_extract_string(x, '$.multiStrValue'))})
+    m3_csv: "CASE WHEN source_type = 'm365_purview_csv' THEN nullif(regexp_extract(raw_line, '(\\{.*\\})', 1), '') END"
+    ok_tuser: >-
+      lower(json_extract_string(list_filter(try(CAST(json_extract(ok_target, '$[*]') AS VARCHAR[])),
+                                            lambda x: json_extract_string(x, '$.type') = 'User')[1], '$.alternateId'))
+    ok_priv: "lower(coalesce(json_extract_string(ok_debug, '$.privilegeGranted'), json_extract_string(ok_debug, '$.role')))"
+  - gw_user: "lower(list_filter(gw_pl, lambda x: x.k IN ('USER_EMAIL', 'user_email'))[1].v)"
+    gw_role: "lower(list_filter(gw_pl, lambda x: x.k = 'ROLE_NAME')[1].v)"
+    gw_scope: "lower(array_to_string(list_transform(list_filter(gw_pl, lambda x: x.k IN ('scope', 'scope_data')), lambda x: x.v), ' '))"
+    gw_client: "list_filter(gw_pl, lambda x: x.k = 'client_id')[1].v"
+    gw_susp: "lower(list_filter(gw_pl, lambda x: x.k = 'is_suspicious')[1].v)"
+    gw_new: "lower(list_filter(gw_pl, lambda x: x.k = 'NEW_VALUE')[1].v)"
+    m3_par: "coalesce(m3_params, try(json_extract_string(m3_csv, '$.Parameters')), try(json_extract_string(m3_csv, '$.OperationProperties')))"
+    m3_mp: "coalesce(m3_modprops, try(json_extract_string(m3_csv, '$.ModifiedProperties')))"
+    m3_tgt: "lower(coalesce(m3_target, try(json_extract_string(m3_csv, '$.TargetUserOrGroupName'))))"
+    m3_tt: "lower(coalesce(m3_ttype, try(json_extract_string(m3_csv, '$.TargetUserOrGroupType'))))"
+    m3_own_dom: "lower(nullif(regexp_extract(coalesce(m3_upn, try(json_extract_string(m3_csv, '$.UserId')), ''), '@([^@]+)$', 1), ''))"
+  - m3_pl: >-
+      list_transform(try(CAST(json_extract(m3_par, '$[*]') AS VARCHAR[])),
+                     lambda x: {'k': json_extract_string(x, '$.Name'), 'v': json_extract_string(x, '$.Value')})
+  - m3_fwd: >-
+      lower(list_filter(m3_pl, lambda x: x.k IN ('ForwardTo', 'RedirectTo', 'ForwardAsAttachmentTo', 'ForwardingSmtpAddress',
+                                                 'ForwardingAddress', 'BlindCopyTo', 'RedirectMessageTo')
+                                         AND lower(trim(coalesce(x.v, ''))) NOT IN ('', '$null', 'null', 'false'))[1].v)
+    m3_hide: >-
+      len(list_filter(m3_pl, lambda x: (x.k = 'MoveToFolder' AND regexp_matches(lower(coalesce(x.v, '')), {cfg.m365_hiding_folder_regex}))
+                                       OR (x.k IN ('DeleteMessage', 'SoftDeleteMessage') AND lower(coalesce(x.v, '')) IN ('true', '$true')))) > 0
+    m3_lure: >-
+      len(list_filter(m3_pl, lambda x: x.k IN ('SubjectContainsWords', 'BodyContainsWords', 'SubjectOrBodyContainsWords', 'FromAddressContainsWords')
+                                       AND regexp_matches(lower(coalesce(x.v, '')), {cfg.m365_lure_keyword_regex}))) > 0
+    m3_rights: "lower(list_filter(m3_pl, lambda x: x.k = 'AccessRights')[1].v)"
+    m3_audit_off: >-
+      len(list_filter(m3_pl, lambda x: x.k IN ('UnifiedAuditLogIngestionEnabled', 'AuditEnabled', 'AdminAuditLogEnabled')
+                                       AND lower(coalesce(x.v, '')) IN ('false', '$false', '0'))) > 0
+  - m3_fwd_ext: >-
+      m3_fwd IS NOT NULL AND m3_fwd LIKE '%@%' AND NOT coalesce(regexp_extract(m3_fwd, '@([a-z0-9.-]+)', 1) IN {cfg.idp_internal_domains}, false)
+      AND regexp_extract(m3_fwd, '@([a-z0-9.-]+)', 1) IS DISTINCT FROM m3_own_dom
+  # ---- track K8s + GCP: one Kubernetes view over generic / EKS / AKS audit (is_k8s) and GKE audit (is_gke), GCP net ----
+  # GKE methodName io.k8s.<group>.<version>.<resource>[.<subresource>].<verb>; resourceName [<group>/]<v>/namespaces/<ns>/
+  # <resource>/<name>[/<sub>]. kcode: HTTP status (GKE google.rpc code mapped). kfinal: the request's final record.
+  - is_k8s: "source_type = 'k8s_audit_json'"
+    is_gke: "source_type = 'gcp_audit_json' AND app = 'k8s.io'"
+    is_gflow: "source_type = 'gcp_vpcflow_json'"
+    is_gfw: "source_type = 'gcp_firewall_json'"
+    is_gdns: "source_type = 'gcp_dns_json'"
+    gke_m: >-
+      CASE WHEN source_type = 'gcp_audit_json' AND app = 'k8s.io'
+           THEN regexp_extract(signature, '\.v[0-9]+(?:(?:alpha|beta)[0-9]+)?\.([a-z]+)(?:\.([a-z]+))?\.([a-z]+)$',
+                               ['res', 'sub', 'verb']) END
+    g_md2: "CASE WHEN source_type = 'gcp_audit_json' THEN coalesce(g_md, CASE WHEN json_valid(g_mdjson) THEN g_mdjson END) END"
+  - kverb: "lower(CASE WHEN is_k8s THEN k8s_verb WHEN is_gke THEN nullif(gke_m.verb, '') END)"
+    kres: "lower(CASE WHEN is_k8s THEN k8s_res WHEN is_gke THEN nullif(gke_m.res, '') END)"
+    ksub: "lower(CASE WHEN is_k8s THEN k8s_sub WHEN is_gke THEN nullif(gke_m.sub, '') END)"
+    kns: "lower(CASE WHEN is_k8s THEN k8s_ns WHEN is_gke THEN nullif(regexp_extract(g_res, '/namespaces/([^/]+)/', 1), '') END)"
+    kname: >-
+      CASE WHEN is_k8s THEN k8s_name
+           WHEN is_gke THEN string_split(g_res, '/')[list_position(string_split(g_res, '/'), gke_m.res) + 1] END
+    kreq: "CASE WHEN is_k8s THEN k8s_req WHEN is_gke THEN g_req END"
+    kcode: >-
+      CASE WHEN is_k8s THEN TRY_CAST(k8s_code AS INTEGER)
+           WHEN is_gke THEN CASE coalesce(g_code, '0') WHEN '0' THEN 200 WHEN '7' THEN 403 WHEN '16' THEN 401
+                                 WHEN '5' THEN 404 WHEN '6' THEN 409 WHEN '3' THEN 400 ELSE 500 END END
+    kuser: "lower(CASE WHEN is_k8s THEN k8s_uname WHEN is_gke THEN coalesce(g_principal, g_subject) END)"
+    kfinal: "(is_k8s AND coalesce(k8s_stage, 'ResponseComplete') IN ('ResponseComplete', 'Panic')) OR is_gke"
+    kdecision: "lower(coalesce(k8s_decision, g_k8s_decision))"
+    kanon: >-
+      (is_k8s OR is_gke) AND (lower(coalesce(k8s_uname, g_principal, '')) = 'system:anonymous'
+                              OR coalesce(k8s_groups, '') LIKE '%system:unauthenticated%')
+    gcp_vpcsc: >-
+      source_type = 'gcp_audit_json' AND ends_with(coalesce(g_log, ''), '%2Fpolicy')
+      AND coalesce(g_md, g_mdjson, '') LIKE '%VpcServiceControlAuditMetadata%'
+  - k8s_sys: "coalesce(regexp_matches(kuser, {cfg.k8s_system_user_regex}), false)"
+    k8s_ok: "coalesce(kcode < 400, false)"
+    k8s_denied: "coalesce(kcode IN (401, 403), false) OR coalesce(kdecision = 'forbid', false)"
+    k8s_op: "kverb || ' ' || coalesce(kres, '') || coalesce('/' || ksub, '')"
+    k8s_obj: "coalesce(kns || '/', '') || coalesce(kname, '')"
+    k8s_priv: >-
+      kreq IS NOT NULL AND (regexp_matches(kreq, '"(privileged|hostPID|hostNetwork|hostIPC)"\s*:\s*true')
+                            OR kreq LIKE '%"hostPath"%'
+                            OR regexp_matches(kreq, '"add"\s*:\s*\[[^\]]*"(SYS_ADMIN|ALL|SYS_PTRACE|SYS_MODULE)"'))
+    k8s_hostroot: >-
+      kreq IS NOT NULL AND (regexp_matches(kreq, '"hostPath"\s*:\s*\{\s*"path"\s*:\s*"(/|/etc|/root|/proc|/var/run/docker\.sock|/run/containerd[^"]*|/var/lib/kubelet[^"]*)"')
+                            OR (regexp_matches(kreq, '"hostPID"\s*:\s*true') AND regexp_matches(kreq, '"privileged"\s*:\s*true')))
+    k8s_bad_image: >-
+      kreq IS NOT NULL AND len(list_filter(regexp_extract_all(kreq, '"image"\s*:\s*"([^"]+)"', 1),
+                                           lambda i: NOT regexp_matches(i, {cfg.k8s_trusted_registry_regex}))) > 0
+    k8s_bad_cmd: "kreq IS NOT NULL AND regexp_matches(kreq, {cfg.k8s_bad_cmd_regex})"
+    # exec / attach command from the request URI (?command=sh&command=-c&command=curl+...%7C+sh), URL-decoded
+    k8s_cmd: >-
+      CASE WHEN is_k8s AND ksub IN ('exec', 'attach') AND k8s_uri LIKE '%command=%'
+           THEN url_decode(replace(regexp_replace(regexp_replace(k8s_uri, '^[^?]*\?', ''), '&?(container|stdin|stdout|stderr|tty)=[^&]*', '', 'g'), '+', ' ')) END

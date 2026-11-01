@@ -1,0 +1,51 @@
+# Stage 0 envelope unwrap (attacklens/cloud_unpack.py, gap P0-1). Native cloud delivery wrappers are expanded into
+# one-record-per-line JSON before profiling: CloudTrail {"Records":[...]} (.json / .json.gz / inside .tar / .zip),
+# Azure {"records":[...]}, JSON arrays, API pages, EventBridge `detail`, CloudWatch Logs subscription payloads,
+# Pub/Sub push / pull messages, LookupEvents `CloudTrailEvent` strings. Files that are already one record per line
+# are left alone (passthrough). Every record in / out / skipped / failed is counted (unwrap_accounting.json).
+
+# Streaming / size guards (bounded memory: O(chunk + largest record), never O(document)).
+chunk_chars: 1048576            # text read per refill
+inline_max_chars: 4194304       # a top-level value up to this size is decoded in one go; bigger ones are streamed
+max_record_chars: 67108864      # one record (or one base64 payload) bigger than this -> failed record_too_large
+max_depth: 6                    # envelope nesting (tar > gz > Records > EventBridge > ...)
+max_expand_ratio: 200           # decompressed bytes / compressed bytes of one input file (zip / gzip bomb guard)
+min_bomb_bytes: 268435456       # the ratio applies only above this many decompressed bytes
+max_expanded_bytes: 64000000000 # hard cap on decompressed bytes from one input file
+max_archive_members: 100000     # tar / zip members per input file
+max_out_file_bytes: 1000000000  # output part rotation
+sniff_bytes: 65536              # bytes read to classify a file (passthrough or unpack)
+sniff_lines: 10
+
+# {"<key>": [...]} documents whose array holds the records. Value: sibling keys allowed next to the array
+# (null = any; a trailing * is a prefix match). A record that merely contains such a key is never mistaken for
+# a page because the siblings must match.
+array_envelopes:
+  Records: null                 # CloudTrail S3 file; Kinesis / SQS / Lambda event batches
+  records: null                 # Azure diagnostic export, Event Hub message body
+  receivedMessages: null        # Pub/Sub pull response
+  entries: [nextPageToken]      # Cloud Logging entries.list page
+  items: [kind, etag, nextPageToken]   # Google Workspace Reports / k8s List pages
+  value: ["@odata*", nextLink]  # Graph / ARM / Log Analytics pages
+  Events: [NextToken]           # CloudTrail LookupEvents response
+  logs: [nextPageToken, next_page_token]   # paged log APIs
+
+# Wrapped single records.
+eventbridge:                    # {"detail-type": ..., "source": ..., "detail": {record}}
+  bucket_by_detail_type:        # substring of detail-type -> output bucket (records of one bucket share a file)
+    "via CloudTrail": cloudtrail
+  skip_empty_detail: true       # scheduled events carry detail {} (no record)
+string_json:                    # a JSON document carried as a string field
+  - {field: CloudTrailEvent, require_any: [EventId, EventName, EventTime], bucket: cloudtrail}
+base64:                         # {"<outer>": {"<field>": base64}} (gzip inside is detected by magic)
+  - {outer: message, field: data, require_any: [messageId, message_id, publishTime, attributes], bucket: pubsub}
+  - {outer: awslogs, field: data, require_any: [], bucket: cwl}
+  - {outer: kinesis, field: data, require_any: [partitionKey, sequenceNumber], bucket: kinesis}
+cloudwatch:                     # CloudWatch Logs subscription payload {messageType, logGroup, logEvents[]}
+  skip_message_types: [CONTROL_MESSAGE]
+skip_documents:                 # documents that are not event records (counted as skipped, never dropped silently)
+  cloudtrail_digest: [digestStartTime, digestS3Bucket]
+# Records under one envelope are split into output files by the first of these string fields, so one file keeps
+# one source type (Azure Event Hub mixes SignInLogs / AuditLogs / Administrative in one stream).
+bucket_fields: [Type, category]
+max_buckets: 64

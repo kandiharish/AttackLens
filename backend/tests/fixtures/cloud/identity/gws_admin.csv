@@ -1,0 +1,2 @@
+Date,Event,Description,Actor,IP address
+2026-10-24T02:00:07Z,Assign role,alice@corp.example assigned role _SEED_ADMIN_ROLE to eve@corp.example,alice@corp.example,203.0.113.5

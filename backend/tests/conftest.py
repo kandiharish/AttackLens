@@ -48,19 +48,100 @@ def _install_config_cache() -> None:
 _install_config_cache()
 
 
+# Default integration paths (config/integrations.yaml spool.*, live watch_dir/siem). Tests must point every
+# connector / sink / status path at tmp_path (test_integrations.integrations() does); a test that falls back to
+# these defaults pollutes the real status the API shows.
+_REPO = Path(__file__).resolve().parents[2]
+GUARDED_DIRS = (_REPO / "data" / "spool", _REPO / "data" / "raw" / "live" / "siem")
+
+
+def _guarded_state() -> list[tuple[str, int, int]]:
+    out = []
+    for root in GUARDED_DIRS:
+        if root.exists():
+            out += [(p.as_posix(), p.stat().st_size, p.stat().st_mtime_ns) for p in root.rglob("*") if p.is_file()]
+    return sorted(out)
+
+
+@pytest.fixture(autouse=True)
+def _repo_spool_untouched() -> Iterator[None]:
+    """Fails the test that creates or modifies anything under data/spool or data/raw/live/siem."""
+    before = _guarded_state()
+    yield
+    after = _guarded_state()
+    if after != before:
+        changed = sorted(set(after) ^ set(before))
+        pytest.fail("test wrote to the repo's default integration paths (point spool.* / state / status at "
+                    f"tmp_path; or another process is using data/spool right now): {changed[:5]}")
+
+
 def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line("markers", "slow: > ~5 s, not an L3 accuracy test; opt-in with -m slow or RUN_SLOW=1")
+    config.addinivalue_line("markers", "sigma: runs the SigmaHQ pack (config/sigma); every other test runs with "
+                                       "ATTACKLENS_SIGMA=0")
+    config.addinivalue_line("markers", "live: real vendor software in Docker (tools/live, backend/tests/live); "
+                                       "deselected unless -m mentions `live` or RUN_LIVE=1")
+
+
+def _sigma_env(mp: pytest.MonkeyPatch, on: bool) -> None:
+    if on:
+        mp.delenv("ATTACKLENS_SIGMA", raising=False)
+    else:
+        mp.setenv("ATTACKLENS_SIGMA", "0")
+
+
+# Sigma (~1700 community predicates per Stage 2) is off unless the test carries @pytest.mark.sigma, so tests that do
+# not concern Sigma stay fast and exact; marked tests always run it, whatever the caller's environment. Three layers,
+# because pytest sets up wider-scoped fixtures first: a module-scoped pipeline fixture (e.g. the L3 `run`) runs before
+# any function fixture, so it follows its module's marker (`pytestmark = pytest.mark.sigma`) instead.
+@pytest.fixture(scope="session", autouse=True)
+def _sigma_off_for_session() -> Iterator[None]:
+    mp = pytest.MonkeyPatch()
+    _sigma_env(mp, False)
+    yield
+    mp.undo()
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _sigma_per_module(request: pytest.FixtureRequest) -> Iterator[None]:
+    marks = getattr(request.module, "pytestmark", None) or []
+    mp = pytest.MonkeyPatch()
+    _sigma_env(mp, any(m.name == "sigma" for m in (marks if isinstance(marks, list) else [marks])))
+    yield
+    mp.undo()
+
+
+@pytest.fixture(autouse=True)
+def _sigma_only_when_marked(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
+    _sigma_env(monkeypatch, request.node.get_closest_marker("sigma") is not None)
 
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
-    """`slow` tests are skipped unless selected explicitly (keeps `pytest -m "not stress"` under its budget)."""
+    """`slow` tests are skipped unless selected explicitly (keeps `pytest -m "not stress"` under its budget).
+    `live` tests (Docker + real vendors) are DESELECTED unless the -m expression names `live` or RUN_LIVE=1, so
+    `pytest backend -m "not stress"` never starts a container."""
     import os
-    if "slow" in (config.getoption("markexpr") or "") or os.environ.get("RUN_SLOW") == "1":
+    markexpr = config.getoption("markexpr") or ""
+    if "live" not in markexpr and os.environ.get("RUN_LIVE") != "1":
+        live = [i for i in items if i.get_closest_marker("live") is not None]
+        if live:
+            config.hook.pytest_deselected(items=live)
+            items[:] = [i for i in items if i.get_closest_marker("live") is None]
+    if "slow" in markexpr or os.environ.get("RUN_SLOW") == "1":
         return
     skip = pytest.mark.skip(reason="slow: run with -m slow (or RUN_SLOW=1)")
     for item in items:
         if "slow" in item.keywords:
             item.add_marker(skip)
+
+
+def insert_rows(con: Any, table: str, col_types: list[tuple[str, str]], rows: list[list[Any]]) -> None:
+    """INSERT rows (lists in col_types order) as ONE columnar statement: unnest(list::TYPE[]) per column. Same values
+    as executemany (checked incl. NULLs, lists, UBIGINT > 2^63), but executemany costs ~0.5-5 ms per row."""
+    if not rows:
+        return
+    sel = ", ".join(f'unnest(${i + 1}::{t}[]) AS "{c}"' for i, (c, t) in enumerate(col_types))
+    con.execute(f"INSERT INTO {table} SELECT {sel}", [list(col) for col in zip(*rows)])
 
 
 def _new_ctx(tmp_path: Path, set_name: str = "fx", raw_dir: Path | None = None) -> RunContext:
@@ -100,8 +181,8 @@ def make_events_parquet(tmp_path: Path, rows: list[dict[str, Any]], set_name: st
         d.mkdir(parents=True, exist_ok=True)
         con.execute("CREATE OR REPLACE TEMP TABLE _fx (" +
                     ", ".join(f'"{c}" {CANONICAL_COLUMNS[c]}' for c in data_cols) + ")")
-        con.executemany(f"INSERT INTO _fx VALUES ({', '.join('?' for _ in data_cols)})",
-                        [[r.get(c) for c in data_cols] for r in grp])
+        insert_rows(con, "_fx", [(c, CANONICAL_COLUMNS[c]) for c in data_cols],
+                    [[r.get(c) for c in data_cols] for r in grp])
         con.execute(f"COPY _fx TO '{(d / 'data.parquet').as_posix()}' (FORMAT PARQUET)")
         con.execute("DROP TABLE _fx")
     db.register_events(con, ctx.events_glob)
@@ -147,15 +228,12 @@ def write_episodes(ctx: RunContext, eps: list[dict[str, Any]], hubs: list[str] |
     con = ctx.con
     con.execute("CREATE OR REPLACE TEMP TABLE _eps (" + ", ".join(f'"{c}" {t}' for c, t in EPISODE_TYPES.items())
                 + ")")
-    if rows:
-        con.executemany(f"INSERT INTO _eps VALUES ({', '.join('?' for _ in cols)})", [[r[c] for c in cols]
-                                                                                    for r in rows])
+    insert_rows(con, "_eps", list(EPISODE_TYPES.items()), [[r[c] for c in cols] for r in rows])
     out = ctx.work_dir / "episodes.parquet"
     con.execute(f"COPY _eps TO '{out.as_posix()}' (FORMAT PARQUET)")
     con.execute("DROP TABLE _eps")
     con.execute("CREATE OR REPLACE TEMP TABLE _hubs_fx (entity VARCHAR)")
-    if hubs:
-        con.executemany("INSERT INTO _hubs_fx VALUES (?)", [(h,) for h in hubs])
+    insert_rows(con, "_hubs_fx", [("entity", "VARCHAR")], [[h] for h in hubs or []])
     con.execute(f"COPY _hubs_fx TO '{(ctx.work_dir / 'background_hubs.parquet').as_posix()}' (FORMAT PARQUET)")
     con.execute("DROP TABLE _hubs_fx")
     return out

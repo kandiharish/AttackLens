@@ -1,6 +1,20 @@
 # Stage 3 link / Stage 4 incidents / reach-next parameters (DEVELOPMENT.md §4, §6).
 # Owned by backend-builder. seed/critical confidence live in rules.yaml `thresholds`; raw_ref_score lives here (risk).
 
+spill:
+  # Stage 2.5 above rules.yaml thresholds.episode_cap: keep exactly episode_cap episodes in a deterministic order:
+  # seeds, then the seed neighbourhood (spill_hops / spill_hop_window_ms, nearer hops first), then the rest.
+  # Inside a tier: confidence band (desc), then round-robin over diversity_key groups (one noisy rule cannot take
+  # every slot), then confidence, severity, merged_alert_count desc, ts_ms, episode_id.
+  # fill_to_cap false = literal §4 (keep only the seed neighbourhood; rt10 kept 426 of 54 585 with a 25 000 cap).
+  fill_to_cap: true
+  confidence_band: 10
+  diversity_key: [rule_id, technique_id]
+  # Per-rule quota inside the fill tier: fill episodes within their rule's best min_per_rule (confidence first) rank
+  # before all other fill. n30: both port_scan episodes (conf 30) were spilled behind 18 700 ips_signatures (conf
+  # 52-59) in the fill tier. No-op when every rule is under the quota. 0 = off.
+  min_per_rule: 50
+
 link:
   # Link windows tau_R (ms) and multipliers M_R. weight = M_R * rarity_j * exp(-dt / tau_R)
   rules:
@@ -8,9 +22,14 @@ link:
     # ext_ip_tau_ms: window for the attacker-IP variant (same external src_ip on two subjects), 2 h.
     # src_tau_ms: window for the i.subject_host = j.src_host variant only (6 h); weight decay still uses tau_ms.
     # Omit (or set = tau_ms) for the literal 24 h.
-    R2: {tau_ms: 7200000, mult: 1.0}     # same session (subject_host + user), 2 h
-    R3: {tau_ms: 259200000, mult: 1.3}   # account pivot (target_user -> later user), 72 h
+    R2: {tau_ms: 7200000, mult: 1.0, ext_dst_tau_ms: 86400000}     # same session (subject_host + user), 2 h
+    # ext_dst_tau_ms: window of the peer-session variant (r2_ext_dst_session), 24 h.
+    R3: {tau_ms: 259200000, mult: 1.3, cross_host_tau_ms: 21600000}  # account pivot, 72 h on the same host
+    # cross_host_tau_ms: R3 window when i and j are on different hosts (6 h); omit for the literal 72 h.
     R4: {tau_ms: 86400000, mult: 1.2}    # Collection -> Exfiltration on same host, 24 h
+  # Link window measured from i's END (last_ts_ms) to j's start: a long session (beacon running 33 h) still links
+  # to what follows it; overlapping episodes have gap 0. Order and tie-break stay on start times. start = literal.
+  window_from: end
   # Fan-out cap: for each target episode j keep at most this many predecessors per rule (best weight first).
   max_preds_per_rule: 5
   # Rarity used when an episode has none.
@@ -34,6 +53,16 @@ link:
   r2_ip_session: true
   # false: hub IPs may still key a user-less IP session (the victim server is a busy IP); true bars them.
   r2_ip_session_bar_hubs: false
+  # A user-less IP session (same endpoint IP, no shared peer) links only when at least ONE end counts as a tactic
+  # (>= this, = gate.min_tactic_confidence) and the two come from different rules. n30: 22 985 of 23 169 R2 edges
+  # were this variant (9 530 zero-second ips_signatures -> ips_signatures pairs, different peers and tactics).
+  # Both ends >= 65 was too strict: it cut inbound RDP (70) -> lateral (27.5) and port scan (55) -> lateral on the
+  # FortiGate L3 fixture. 0 / false = literal.
+  r2_ip_session_min_confidence: 40
+  r2_ip_session_distinct_rules: true
+  # R2 peer session: same subject and the same external, non-hub dst_ip, any user, window R2.ext_dst_tau_ms
+  # (download from X -> beacon to X -> exfil to X across days).
+  r2_ext_dst_session: true
   # R1 attacker-IP handoff on the same external (non-internal, non-hub) src_ip; window R1.ext_ip_tau_ms.
   r1_ext_ip: true
   # R2 attacker-IP session: same subject + same external src_ip within R2 tau (user may differ / be NULL).
@@ -45,6 +74,10 @@ gate:
   min_tactics: 2
   # Episodes below this confidence do not count toward |tactics(C)| (they still join the component). 0 = literal.
   min_tactic_confidence: 40
+  # Context-only rules never donate a tactic to |tactics(C)| (they still join the component, links and paths):
+  # they describe HOW (tooling), not a step. cloud eval: the only 2 cloud incidents got their 2nd tactic solely
+  # from the stratus-red-team user agent; the same actions via aws-cli were suppressed. [] = literal.
+  context_only_rules: [cl_attack_tool_user_agent]
   # A component with < min_tactics counted tactics may pass the "max Confidence >= critical" path only if its
   # top-confidence episode has merged_alert_count >= this (e.g. one stray .locked file = 1 alert -> suppressed;
   # S5 ransom_rename = 300 -> kept). 1 = literal §6.3 behaviour. Components with >= min_tactics tactics unchanged.
@@ -58,9 +91,63 @@ gate:
   multi_technique_window_ms: 7200000
   multi_technique_min_conf: 60
   multi_technique_min_seeds: 0
+  # Episodes below this confidence do not count as a burst technique / rule (cf. min_tactic_confidence for
+  # tactics). 0 = every episode counts (literal).
+  multi_technique_min_technique_conf: 40   # measured 31 Oct: g50m Sigma FA 28.6 -> 0; native-only g1 / f1 / g50m unchanged
   # Incidents kept only via the burst path get risk = max(risk, burst_risk_floor), so a confirmed single-tactic
   # burst (e.g. C2 av -> beacon -> tor) never sorts below single-tactic noise. 0 = literal §6.4 risk.
   burst_risk_floor: 50
+  # Shared-destination chain path: a component also passes if ONE subject shows >= chain_min_techniques_same_dst
+  # distinct parent techniques from >= chain_min_rules rules, all towards the same external dst_ip within
+  # chain_window_ms, each with confidence >= chain_min_technique_conf, and max confidence >= seed (n30: allowed
+  # malware download from X, then beaconing to X 49 min later: 2 techniques, both C2). 0 = off. Uses the burst
+  # risk floor.
+  chain_min_techniques_same_dst: 2
+  chain_min_rules: 2
+  chain_window_ms: 7200000
+  chain_min_technique_conf: 40
+  # Single-step critical allow-list: a component with ONE allow-listed technique episode at confidence >=
+  # min_confidence passes on its own (no 2nd tactic, no critical_min_merged_alerts). Kept incidents are flagged by
+  # prefixing entry_point.summary with "<label>: " and counted in incidents stats kept_via_single_step.
+  # Match = technique_id or sub_technique_id equals the entry or starts with "<entry>." (T1003 covers T1003.001).
+  # An entry may be {id, min_confidence} to RAISE the bar for it. Ids checked against config/attack_v20.json.
+  # Every other component keeps the gate above unchanged. enabled: false (or empty lists) = literal gate.
+  single_step_critical:
+    enabled: true
+    min_confidence: 80
+    label: "Single-step critical"
+    techniques:
+      # OS Credential Dumping (LSASS, SAM, NTDS, DCSync, shadow): never routine; one dump = every cached credential.
+      - T1003
+      # Disable or Modify Windows Event Log: blinds the defender; no business reason on a production host.
+      - T1685.001
+      # Disable or Modify Cloud Log (CloudTrail StopLogging / DeleteTrail; v20 id of the old T1562.008).
+      - T1685.002
+      # Disable or Modify Linux Audit System Log (auditd stopped, audit rules wiped).
+      - T1685.004
+      # Clear Windows Event Logs (v20 Defense Impairment id).
+      - T1685.005
+      # Clear Windows Event Logs under the id v20 still carries and rules.yaml emits (log_cleared): same act.
+      - T1070.001
+      # Clear Linux or Mac System Logs.
+      - T1685.006
+      # Transfer Data to Cloud Account: a snapshot / image / bucket shared to a foreign account IS the exfiltration.
+      - T1537
+      # Data from Cloud Storage: a bucket made public / external or bulk-read (rules are being relabelled
+      # between T1537 and T1530, so both ids are listed); routine reads stay below 80.
+      - T1530
+      # Data Destruction (KMS key scheduled for deletion, mass delete): unrecoverable loss in one call.
+      - T1485
+      # Additional Cloud Credentials (an access key for ANOTHER principal = IAM backdoor); admin-allowlisted
+      # principals are already scored down by the rule.
+      - T1098.001
+      # Cloud Accounts (root / console login abuse): routine logins exist, so only at very high confidence.
+      - {id: T1078.004, min_confidence: 90}
+    # Not listed: T1486 Data Encrypted for Impact (lone .locked files were 54.5 % strict FA at 30M, see
+    # critical_min_merged_alerts); T1685 parent / T1685.003 / .007 (tool tweaks, noisy in Sigma).
+    # Whole tactics (name or TA id). Empty on purpose: Defense Impairment (TA0112) also holds routine admin acts
+    # (T1070.004 File Deletion, T1222 permission changes, T1578.002 Create Cloud Instance).
+    tactics: []
   # Fallbacks; real values come from rules.yaml thresholds (seed_confidence, critical_confidence).
   seed_confidence: 65
   critical_confidence: 90
@@ -89,6 +176,14 @@ path:
   # severity (literal §6.6). Seeds (confidence >= seed_confidence) are always shown as backbone or branch.
   dp_node_score: confidence
   max_branches: 5
+  # Backbone ends below this confidence move to branches; a weak step between two backbone steps (a bridge) stays.
+  # rt10 (real FortiGate) backbone confidences were 3, 65, ..., 65, 10: blocked-IPS noise opened and closed the path.
+  # 0 = off. 40 = gate.min_tactic_confidence (a step that does not count as a tactic does not frame the path).
+  backbone_end_min_confidence: 40
+  # A seed with no shown predecessor is still shown (alone) when it links INTO a shown step by one of these rules
+  # (cloud_small A5: the T1098 seed lost its DP slot to a weak Initial Access chain). Entity links only: R4 joins
+  # on the host alone (a cloud account id), which pulled a days-long exfil-volume seed into A1. [] = off.
+  lead_in_seed_rules: ["R1", "R2", "R3"]
   max_evidence_lines: 3
   max_evidence_chars: 300
 

@@ -10,6 +10,7 @@ import logging
 from typing import Any
 
 from attacklens.db import line_reader, sql_list, sql_str
+from attacklens.ingest_maps import apply_source_maps
 from attacklens.schemas import CANONICAL_COLUMNS
 
 log = logging.getLogger(__name__)
@@ -58,15 +59,15 @@ def json_select(stype: str, files: list[str], root: str, scfg: dict[str, Any], s
                 formats: list[str], rejects: str | None = None) -> str:
     fields: dict[str, list[str]] = scfg.get("fields") or {}
     paths: list[str] = []
-    index: dict[str, list[int]] = {}
+    index: dict[str, list[int]] = {}  # field -> 1-based positions in paths
     for f in FIELDS:
         for p in fields.get(f) or []:
             paths.append(p)
             index.setdefault(f, []).append(len(paths))
-    vals = {f: "coalesce(" + ", ".join(_clean(f"v[{i}]") for i in idx) + ")" for f, idx in index.items()}
-    top = {k: None for k in sources.get("label_keys") or []}
-    nested = {k: {s: None for s in subs} for k, subs in (sources.get("label_nested_keys") or {}).items()}
-    raw = json_raw_line(top, nested)
+    vals = apply_source_maps({f: "coalesce(" + ", ".join(_clean(f"v[{i}]") for i in idx) + ")"
+                              for f, idx in index.items()}, scfg)  # per-source outcome / action maps (cloud)
+    raw = json_raw_line({k: None for k in sources.get("label_keys") or []},
+                        {k: {s: None for s in subs} for k, subs in (sources.get("label_nested_keys") or {}).items()})
     return (f"SELECT {sql_str(stype)} AS source_type, rel, line, {raw} AS raw_line, v IS NULL AS malformed, "
             f"{ts_expr('f_ts0', formats)} AS ts_ms, * EXCLUDE (v, line, rel, f_ts0) FROM ("
             f"SELECT rel, line, v, {vals.get('ts', 'CAST(NULL AS VARCHAR)')} AS f_ts0, {_fcols(vals)} FROM ("

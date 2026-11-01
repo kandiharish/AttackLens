@@ -103,3 +103,28 @@ def test_frontier_hosts_not_reported_as_reach(tmp_path: Path) -> None:
     rows = admin("svc_backup", "srv-file-01", "0x1") + [flow("srv-file-01", "srv-b", 445)]
     got = compute(tmp_path, rows, users=["svc_backup"], hosts=["srv-file-01"])
     assert got == [("srv-b", 1, None, False, None)]
+
+
+# ================================================================ reach-next on IP data (firewall rows, no host names)
+def fw_flow(src: str, dst: str, port: int, action: str = "conn_allowed") -> dict:
+    return {"ts_ms": T0 + MIN, "action": action, "source_type": "fortigate_kv", "host": "fgt-01", "src_ip": src,
+            "dst_ip": dst, "dst_port": port}
+
+
+def test_ip_flows_without_host_map_fall_back_to_ips(tmp_path: Path) -> None:
+    rows = [fw_flow("10.0.2.37", "10.0.0.10", 445), fw_flow("10.0.0.10", "10.0.0.20", 5985)]
+    got = compute(tmp_path, rows, hosts=["10.0.2.37"])
+    assert [(h, hops) for h, hops, *_ in got] == [("10.0.0.10", 1), ("10.0.0.20", 2)]
+
+
+def test_conn_allowed_never_attributed_to_the_logging_device(tmp_path: Path) -> None:
+    assert compute(tmp_path, [fw_flow("10.0.2.37", "10.0.0.10", 445)], hosts=["fgt-01"]) == []
+
+
+def test_external_destination_is_not_a_reach_target(tmp_path: Path) -> None:
+    rows = [fw_flow("10.0.2.37", "203.0.113.9", 22), fw_flow("10.0.2.37", "10.0.0.10", 22)]
+    assert [g[0] for g in compute(tmp_path, rows, hosts=["10.0.2.37"])] == ["10.0.0.10"]
+
+
+def test_denied_ip_flow_is_not_reach(tmp_path: Path) -> None:
+    assert compute(tmp_path, [fw_flow("10.0.2.37", "10.0.0.10", 445, "conn_denied")], hosts=["10.0.2.37"]) == []

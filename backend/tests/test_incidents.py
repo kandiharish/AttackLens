@@ -12,7 +12,7 @@ import pytest
 from attacklens import config, incidents, link
 from attacklens.models import Incident
 
-from .conftest import make_events_parquet, write_episodes
+from .conftest import insert_rows, make_events_parquet, write_episodes
 
 T0 = 1792807200000
 MIN, H = 60_000, 3_600_000
@@ -193,8 +193,9 @@ def _write_edges(ctx, rows: list[tuple[str, str, str, float]]) -> None:
     con = ctx.con
     con.execute("CREATE OR REPLACE TEMP TABLE _ed (i VARCHAR, j VARCHAR, rule VARCHAR, weight DOUBLE, dt_ms BIGINT, "
                 "why_linked VARCHAR)")
-    if rows:
-        con.executemany("INSERT INTO _ed VALUES (?, ?, ?, ?, 0, ?)", [(i, j, r, w, f"{r} {i}->{j}") for i, j, r, w in rows])
+    insert_rows(con, "_ed", [("i", "VARCHAR"), ("j", "VARCHAR"), ("rule", "VARCHAR"), ("weight", "DOUBLE"),
+                             ("dt_ms", "BIGINT"), ("why_linked", "VARCHAR")],
+                [[i, j, r, w, 0, f"{r} {i}->{j}"] for i, j, r, w in rows])
     con.execute(f"COPY _ed TO '{(ctx.work_dir / 'edges.parquet').as_posix()}' (FORMAT PARQUET)")
 
 
@@ -277,6 +278,40 @@ def test_unlinked_seed_is_shown_or_suppressed_never_lost(tmp_path: Path) -> None
     assert "z9" in shown | sup_ids and stats["episode_accounting"]["ok"] is True
 
 
+def test_lead_in_seed_is_shown_with_its_link(tmp_path: Path) -> None:
+    # cloud_small A5 shape: weak Initial Access chain w1..w4 takes b's DP slot from seed s (Persistence 80); s used
+    # to be peeled into a one-episode suppressed group. It must be shown, with its edge into the shown path.
+    def ep(i: str, k: int, tactic: str, conf: float) -> dict:
+        return {"episode_id": i, "ts_ms": T0 + k * MIN, "host": "corp-data-5678", "tactic": tactic,
+                "technique_id": "T1098", "src_user": "dsingh", "severity": 80, "confidence": conf}
+    eps = [ep("x", 0, "Persistence", 60), ep("s", 1, "Persistence", 80), ep("w1", 2, "Initial Access", 51),
+           ep("w2", 3, "Initial Access", 30), ep("w3", 4, "Initial Access", 51), ep("w4", 5, "Initial Access", 26),
+           ep("b", 6, "Privilege Escalation", 75), ep("c", 7, "Defense Impairment", 85)]
+    edges = [("x", "s", "R3", 1.07), ("s", "w1", "R2", 0.86), ("w1", "w2", "R2", 1.0), ("w2", "w3", "R2", 0.81),
+             ("w3", "w4", "R2", 0.86), ("w4", "b", "R2", 1.0), ("s", "b", "R3", 1.3), ("b", "c", "R3", 1.3)]
+    stats, data, sup = _stage4_with(tmp_path, eps, edges)
+    assert stats["episode_accounting"]["ok"] is True and len(data) == 1
+    inc = data[0]
+    assert "s" in {x["episode_id"] for b in inc["branches"] for x in b}
+    assert ("s", "b") in {(e["from"], e["to"]) for e in inc["edges"]}
+    assert all(e["from"] != "x" for e in inc["edges"])  # x is a hidden member, never an edge end
+    assert not any("s" in c["episode_ids"] for c in sup["components"])
+
+
+def test_lead_in_seed_never_donates_a_gate_tactic(tmp_path: Path) -> None:
+    # cloud_small CI noise: one-tactic Execution path (conf 43) + a Defense Impairment seed linking into it -> the
+    # extracted path still fails the gate (the seed is not a donor); every episode stays accounted
+    def ep(i: str, k: int, tactic: str, conf: float) -> dict:
+        return {"episode_id": i, "ts_ms": T0 + k * MIN, "host": "111122223333", "tactic": tactic,
+                "technique_id": "T1648", "src_user": "gha-1", "severity": 80, "confidence": conf}
+    eps = [ep("s", 0, "Defense Impairment", 75)] + [ep(f"x{k}", k, "Execution", 43) for k in (1, 2, 3)]
+    edges = [("x1", "x2", "R2", 1.0), ("x2", "x3", "R2", 1.0), ("s", "x2", "R2", 0.5)]
+    stats, data, sup = _stage4_with(tmp_path, eps, edges)
+    assert data == [] and stats["episode_accounting"]["ok"] is True
+    assert any("s" in c["episode_ids"] and c["reason"].startswith("extracted path fails gate")
+               for c in sup["components"])
+
+
 def test_episode_accounting_invariant_on_s1_component(tmp_path: Path) -> None:
     ctx, stats = _stage4(tmp_path)
     ctx.con.close()
@@ -321,3 +356,36 @@ def test_evidence_clipped_in_published_steps(tmp_path: Path) -> None:
         ctx.con.close()
     ev = next(s["evidence"] for d in data for s in d["backbone"] if s["episode_id"] == "s1")
     assert ev == ["a" * 299 + "…", "b" * 300]
+
+
+def test_branch_hosts_are_marked_compromised(tmp_path: Path) -> None:
+    branch = {"episode_id": "b1", "ts_ms": T0 + 30 * MIN, "host": "ws-br-01", "tactic": "Persistence",
+              "technique_id": "T1547", "src_user": "pmehta", "severity": 75, "confidence": 70}
+    stats, data, _ = _stage4_with(tmp_path, SEEDS + [branch], SEED_EDGES + [("s2", "b1", "R1", 0.5)])
+    inc = next(Incident.model_validate(d) for d in data if d["backbone"][0]["episode_id"] == "s1")
+    assert [s.episode_id for b in inc.branches for s in b] == ["b1"]
+    nodes = {n.id: n.compromised for n in inc.graph.nodes}
+    assert nodes["host:ws-br-01"] is True and nodes["user:pmehta"] is True and nodes["host:srv-dc-01"] is True
+
+
+def _sum(**kw) -> str:
+    from attacklens.models import Step
+    base = {"step": 0, "episode_id": "e", "ts": "2026-10-24T02:00:00Z", "technique_id": "T1048",
+            "technique_name": "Exfiltration Over Alternative Protocol", "tactic": "Exfiltration", "severity": 80,
+            "confidence": 80, "merged_alert_count": 1, "user": None, "src_ip": None, "dst_ip": None, "host": None}
+    return incidents.entry_summary(Step(**{**base, **kw}))
+
+
+@pytest.mark.parametrize("kw,expected", [
+    ({"host": "10.0.2.37", "src_ip": "10.0.2.37", "dst_ip": "203.0.113.5"},
+     "Exfiltration Over Alternative Protocol by host:10.0.2.37 towards ip:203.0.113.5"),
+    ({"host": "10.10.20.15", "src_ip": "203.0.113.66", "dst_ip": "10.10.20.15"},
+     "Exfiltration Over Alternative Protocol from ip:203.0.113.66 against host:10.10.20.15"),
+    ({"host": "ws-fin-010", "dst_ip": "198.51.100.23"},
+     "Exfiltration Over Alternative Protocol against host:ws-fin-010 towards ip:198.51.100.23"),
+    ({"host": "srv-dc-01", "src_ip": "203.0.113.57", "user": "svc_backup"},
+     "Exfiltration Over Alternative Protocol on user:svc_backup from ip:203.0.113.57 against host:srv-dc-01"),
+    ({"host": "10.0.2.37", "src_ip": "10.0.2.37"}, "Exfiltration Over Alternative Protocol by host:10.0.2.37"),
+])
+def test_entry_summary_wording(kw: dict, expected: str) -> None:
+    assert _sum(**kw) == expected

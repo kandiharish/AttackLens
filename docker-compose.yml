@@ -1,5 +1,6 @@
 # docker compose up -d   ->   http://localhost:8000  (API under /api, SPA at /; other host port: ATTACKLENS_PORT=8001)
-# First start generates data/raw/demo (200 MB synthetic) and runs the pipeline into data/out/demo (~1 min).
+# First start generates data/raw/docker_demo (200 MB synthetic) and runs the pipeline into data/out/docker_demo
+# (~1-2 min); later starts reuse it. Only product files are in the image (.dockerignore is an allowlist).
 services:
   attacklens:
     build: .
@@ -10,12 +11,14 @@ services:
     volumes:
       - ./data:/app/data
     environment:
-      ATTACKLENS_OUT: /app/data/out/demo
+      DEMO_SET: docker_demo
+      ATTACKLENS_OUT: /app/data/out/docker_demo
       DEMO_SIZE: 200M
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3)"]
       interval: 15s
       timeout: 5s
       retries: 3
-      start_period: 180s
+      # first start builds the demo set before the API is up (~3-11 min depending on CPU); later starts take seconds
+      start_period: 1200s
     restart: unless-stopped

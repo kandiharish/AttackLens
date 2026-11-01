@@ -1,16 +1,58 @@
-data/
-.venv/
-venv/
+# --- Python / Node build output ---
 __pycache__/
+*.py[cod]
+*.egg-info/
 .pytest_cache/
-*.parquet
+.hypothesis/
+.coverage
+htmlcov/
+.venv/
+.venv-*/
+venv/
 node_modules/
 dist/
-.env
-.claude/worktrees/
-.claude/settings.local.json
-*.egg-info/
+build/
+
+# --- Desktop EXE / installer (work in progress, not part of the submission) ---
+packaging/
+*.exe
+*.msi
+*.spec
+backend/attacklens/desktop*.py
+backend/tests/test_desktop*.py
+
+# --- Data, logs and run output (large or confidential) ---
+data/
 logs/
-50g.txt
+*.parquet
 *.log
+*.txt
+50g.txt
+# Test fixtures are small synthetic logs the tests need: keep them.
+!backend/tests/fixtures/**/*.log
+!backend/tests/fixtures/**/*.txt
+
+# --- Secrets ---
+.env
+.env.*
+
+# --- AI assistant / local tooling files ---
+CLAUDE.md
+**/CLAUDE.md
+.claude/
+.playwright-mcp/
+
+# --- Scratch reports and screenshots ---
 reports/stress/*_findings.md
+reports/qa/ui/
+reports/cloud/patches/
+
+# --- OS / editor ---
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+*.swp
+*.tmp
+*.bak

@@ -173,3 +173,12 @@ def test_no_rule_reads_label_fields(rules: list[dict]) -> None:
         for f in LABEL_FIELDS:
             assert not re.search(rf"\b{re.escape(f)}\b", r.get("where", "").lower()), (r["id"], f)
         assert "labels_extra" not in text and "threat." not in text, r["id"]
+
+
+def test_sigma_is_off_for_unmarked_tests() -> None:
+    """conftest: only @pytest.mark.sigma tests (and modules with pytestmark sigma) run the SigmaHQ pack."""
+    import os
+    from attacklens import sigma_detect
+    assert os.environ.get("ATTACKLENS_SIGMA") == "0"
+    assert sigma_detect.enabled(config.load_config()) is False
+    assert config.load_config()["pipeline"]["sigma"]["enabled"] is True   # shipped config keeps it on

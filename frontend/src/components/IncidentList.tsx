@@ -1,9 +1,10 @@
-import { tacticIndex } from '../lib/attack'
-import { isFirewall } from '../lib/entity'
-import { fmtSpan, riskStyle } from '../lib/format'
+import { useMemo, useRef, useState } from 'react'
+import { fmtDay, fmtShortSpan, riskStyle } from '../lib/format'
+import { summaryTitle } from '../lib/plain'
 import type { IncidentSummary } from '../types'
+import { EmptyState, ErrorNote, Spinner } from './ui'
 
-const MAX_HOSTS = 6
+type SortKey = 'risk' | 'time'
 
 interface Props {
   incidents: IncidentSummary[] | null
@@ -14,70 +15,104 @@ interface Props {
 }
 
 export function IncidentList({ incidents, error, selectedId, onSelect, onRetry }: Props) {
+  const [query, setQuery] = useState('')
+  const [sort, setSort] = useState<SortKey>('risk')
+  const listRef = useRef<HTMLUListElement>(null)
+
+  const rows = useMemo(() => {
+    if (!incidents) return null
+    const q = query.trim().toLowerCase()
+    const filtered = q
+      ? incidents.filter((r) => [r.id, r.entry_summary, summaryTitle(r), ...r.hosts, ...r.tactics].some((s) => s.toLowerCase().includes(q)))
+      : incidents
+    return [...filtered].sort((a, b) => (sort === 'risk' ? b.risk - a.risk || b.last_ts.localeCompare(a.last_ts) : b.last_ts.localeCompare(a.last_ts) || b.risk - a.risk))
+  }, [incidents, query, sort])
+
+  // ↑/↓ moves the selection through the visible (filtered + sorted) rows.
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    if (!rows || rows.length === 0 || (e.key !== 'ArrowDown' && e.key !== 'ArrowUp')) return
+    e.preventDefault()
+    const i = rows.findIndex((r) => r.id === selectedId)
+    const next = e.key === 'ArrowDown' ? Math.min(rows.length - 1, i + 1) : Math.max(0, i < 0 ? 0 : i - 1)
+    const id = rows[next].id
+    onSelect(id)
+    requestAnimationFrame(() => listRef.current?.querySelector<HTMLElement>(`[data-id="${CSS.escape(id)}"]`)?.focus())
+  }
+
   return (
-    <nav aria-label="Incidents" className="flex h-full flex-col">
-      <div className="flex items-baseline justify-between border-b border-slate-800 px-3 py-2">
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-400">Incidents</h2>
-        <span className="text-[11px] text-slate-500">{incidents ? `${incidents.length} · by risk` : ''}</span>
+    <nav aria-label="Incidents" className="card flex h-full min-h-0 flex-col overflow-hidden">
+      <div className="space-y-3 border-b border-line px-5 pt-4 pb-4">
+        <div className="flex items-baseline justify-between">
+          <h2 className="headline text-[16px]">Incidents</h2>
+          <span className="text-[12px] text-muted tabular-nums">{rows && incidents ? (rows.length === incidents.length ? `${incidents.length} found` : `${rows.length} of ${incidents.length}`) : ''}</span>
+        </div>
+        <div className="flex gap-2">
+          <label className="relative min-w-0 flex-1">
+            <span className="sr-only">Search incidents</span>
+            <svg viewBox="0 0 16 16" className="pointer-events-none absolute top-1/2 left-3 h-3.5 w-3.5 -translate-y-1/2 text-muted" aria-hidden="true">
+              <circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" strokeWidth="1.5" />
+              <path d="M10.5 10.5L14 14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+            </svg>
+            <input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search host, user…"
+              className="focus-ring h-9 w-full rounded-full border border-line-strong bg-white pr-3 pl-8 text-[13px] text-ink placeholder:text-muted"
+            />
+          </label>
+          <label className="shrink-0">
+            <span className="sr-only">Sort by</span>
+            <select
+              value={sort}
+              onChange={(e) => setSort(e.target.value as SortKey)}
+              className="focus-ring h-9 rounded-full border border-line-strong bg-white px-3 text-[13px] text-ink"
+              title="Sort incidents"
+            >
+              <option value="risk">Riskiest</option>
+              <option value="time">Latest</option>
+            </select>
+          </label>
+        </div>
       </div>
 
-      {error && (
-        <div role="alert" className="m-3 rounded border border-rose-800 bg-rose-950/50 p-2 text-xs text-rose-200">
-          <p>{error}</p>
-          <button type="button" onClick={onRetry} className="mt-2 rounded bg-rose-800 px-2 py-0.5 text-rose-50 hover:bg-rose-700">
-            Retry
-          </button>
-        </div>
-      )}
-      {!error && incidents === null && <p className="p-3 text-xs text-slate-500">Loading…</p>}
-      {incidents && incidents.length === 0 && <p className="p-3 text-xs text-slate-500">No incidents in this run.</p>}
+      {error && <ErrorNote onRetry={onRetry}>{error}</ErrorNote>}
+      {!error && incidents === null && <Spinner label="Loading incidents…" />}
+      {rows && rows.length === 0 && <EmptyState title={incidents && incidents.length ? 'No matches' : 'No incidents in this run'}>{query ? `Nothing matches “${query}”.` : undefined}</EmptyState>}
 
-      <ul className="flex-1 space-y-1 overflow-y-auto p-2">
-        {incidents?.map((inc) => {
-          const rs = riskStyle(inc.risk)
+      <ul ref={listRef} className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3" onKeyDown={onKeyDown} aria-label="Incident list (use arrow keys)">
+        {rows?.map((inc) => {
           const active = inc.id === selectedId
-          const tactics = [...inc.tactics].sort((a, b) => tacticIndex(a) - tacticIndex(b))
+          const rs = riskStyle(inc.risk)
+          const title = summaryTitle(inc)
           return (
             <li key={inc.id}>
               <button
                 type="button"
+                data-id={inc.id}
                 onClick={() => onSelect(inc.id)}
                 aria-current={active ? 'true' : undefined}
-                className={`w-full rounded-md border p-2 text-left transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 ${
-                  active ? 'border-sky-500/70 bg-slate-800' : 'border-slate-800 bg-slate-900 hover:border-slate-600'
+                title={`${inc.id} · ${inc.entry_summary}`}
+                className={`focus-ring relative flex w-full flex-col gap-2 overflow-hidden rounded-xl border py-3.5 pr-4 pl-5 text-left ${
+                  active ? 'border-brand/60 bg-accent-tint shadow-card' : 'border-line bg-white hover:border-line-strong hover:shadow-card'
                 }`}
               >
-                <div className="flex items-center gap-2">
-                  <span className={`rounded px-1.5 py-0.5 font-mono text-xs font-bold tabular-nums ${rs.badge}`} title={`Risk ${inc.risk} (${rs.label})`}>
-                    {inc.risk}
+                <span className={`absolute inset-y-0 left-0 w-1 ${rs.bar}`} aria-hidden="true" />
+                <span className="flex items-center gap-2">
+                  <span className={`inline-flex h-6 items-center gap-1.5 rounded-full border px-2.5 text-[11px] font-semibold tracking-[0.06em] uppercase ${rs.pill}`}>
+                    {rs.label}
+                    <span className="font-mono tracking-normal tabular-nums">{inc.risk}</span>
                   </span>
-                  <span className="truncate font-mono text-[11px] text-slate-400">{inc.id}</span>
-                </div>
-                <p className="mt-1 text-xs font-medium text-slate-200">
-                  {inc.merged_alert_count.toLocaleString('en-US')} alerts → 1 incident
-                  <span className="text-slate-500"> · {inc.episode_count} episodes</span>
-                </p>
-                <p className="mt-0.5 text-[11px] text-slate-500">{fmtSpan(inc.first_ts, inc.last_ts)}</p>
-                <p className="mt-1 line-clamp-2 text-[11px] text-slate-400">{inc.entry_summary}</p>
-                <div className="mt-1 flex flex-wrap gap-1">
-                  {tactics.map((t) => (
-                    <span key={t} className="rounded bg-slate-800 px-1 py-px text-[10px] text-sky-200 ring-1 ring-slate-700">
-                      {t}
-                    </span>
-                  ))}
-                </div>
-                {inc.hosts.length > 0 && (
-                  <p className="mt-1 line-clamp-2 font-mono text-[10px] text-slate-500" title={inc.hosts.join(', ')}>
-                    {inc.hosts.slice(0, MAX_HOSTS).map((h, i) => (
-                      <span key={h}>
-                        {i > 0 && ' · '}
-                        <span className={isFirewall(h) ? 'text-orange-300' : undefined}>{h}</span>
-                        {isFirewall(h) && <span className="text-orange-400"> (fw)</span>}
-                      </span>
-                    ))}
-                    {inc.hosts.length > MAX_HOSTS && <span> · +{inc.hosts.length - MAX_HOSTS} more</span>}
-                  </p>
-                )}
+                </span>
+                <span className="line-clamp-2 text-[14px] leading-snug font-semibold text-ink">{title}</span>
+                <span className="flex items-center gap-2 text-[12px] text-ink-2 tabular-nums">
+                  <span>
+                    <strong className="font-semibold text-ink">{inc.merged_alert_count.toLocaleString('en-US')}</strong> alerts → 1 incident
+                  </span>
+                  <span className="ml-auto text-muted" title={fmtShortSpan(inc.first_ts, inc.last_ts)}>
+                    {fmtDay(inc.first_ts)}
+                  </span>
+                </span>
               </button>
             </li>
           )
